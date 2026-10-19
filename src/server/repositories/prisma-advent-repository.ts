@@ -1,15 +1,22 @@
 import { DomainError } from "@/domain/errors";
 import { Prisma, type PrismaClient } from "@/generated/prisma/client";
-import type {
-  AdventRepository,
-  CompleteLoginInput,
-  CompleteLoginResult,
-  DayBlockResultRecord,
-  DayOpenRecord,
-  IdentityRepository,
-  LoginTokenRecord,
-  ParticipantRecord,
-  RewardGrantRecord
+import {
+  GENERATED_CODE_ATTEMPTS,
+  type AdventRepository,
+  type AssignCodeResult,
+  type CodeSource,
+  type CompleteLoginInput,
+  type CompleteLoginResult,
+  type DayBlockResultRecord,
+  type DayOpenRecord,
+  type GrantWithCampaign,
+  type IdentityRepository,
+  type IssueGrantInput,
+  type IssueGrantResult,
+  type LoginTokenRecord,
+  type ParticipantRecord,
+  type RedeemOutcome,
+  type RewardGrantRecord
 } from "@/server/repositories/advent-repository";
 
 type Tx = Prisma.TransactionClient;
@@ -44,6 +51,57 @@ function isMissingParent(error: unknown): boolean {
 
 function participantMissing(): DomainError {
   return new DomainError("not_found", "Участник не найден.");
+}
+
+/** Параллельная выдача с тем же ключом успела раньше: транзакция откатывается (вместе со списанием остатка) и читает её результат. */
+class GrantRaceLost extends Error {}
+/** Пул кодов пуст при `requireCode`: транзакция откатывается целиком. */
+class CodePoolEmpty extends Error {}
+
+function mapGrant(grant: RewardGrantRecord): RewardGrantRecord {
+  return {
+    id: grant.id,
+    participantId: grant.participantId,
+    day: grant.day,
+    source: grant.source,
+    rewardId: grant.rewardId,
+    code: grant.code,
+    expiresAt: grant.expiresAt,
+    status: grant.status,
+    redeemedAt: grant.redeemedAt,
+    createdAt: grant.createdAt
+  };
+}
+
+/**
+ * Берёт код для выдачи внутри транзакции и записывает его в выдачу. `null` — свободного кода в пуле нет.
+ * - `list`: `SELECT … WHERE grantId IS NULL … LIMIT 1 FOR UPDATE SKIP LOCKED`: параллельные выдачи берут разные строки и не ждут друг друга;
+ * - `generated`: `INSERT … ON CONFLICT DO NOTHING` в `RewardCode` (уникальность кампания+код); при столкновении — следующий код
+ *   (ошибка уникальности внутри транзакции PostgreSQL её бы отменила, поэтому конфликт отдаётся без исключения);
+ * - `static`: общий код, строки в пуле нет.
+ */
+async function takeCode(tx: Tx, campaignSlug: string, grantId: string, rewardId: string, source: CodeSource): Promise<string | null> {
+  let code: string | null = null;
+  if (source.kind === "static") {
+    code = source.code;
+  } else if (source.kind === "list") {
+    const rows = await tx.$queryRaw<Array<{ code: string }>>`
+      SELECT "code" FROM "RewardCode"
+      WHERE "campaignSlug" = ${campaignSlug} AND "rewardId" = ${rewardId} AND "grantId" IS NULL
+      ORDER BY "code" LIMIT 1 FOR UPDATE SKIP LOCKED`;
+    if (rows.length === 0) return null;
+    code = rows[0].code;
+    await tx.$executeRaw`UPDATE "RewardCode" SET "grantId" = ${grantId}::uuid WHERE "campaignSlug" = ${campaignSlug} AND "code" = ${code}`;
+  } else {
+    for (let attempt = 0; attempt < GENERATED_CODE_ATTEMPTS && code === null; attempt += 1) {
+      const candidate = source.next();
+      const { count } = await tx.rewardCode.createMany({ data: [{ campaignSlug, rewardId, code: candidate, grantId }], skipDuplicates: true });
+      if (count === 1) code = candidate;
+    }
+    if (code === null) throw new Error("Не удалось подобрать уникальный код награды");
+  }
+  await tx.rewardGrant.update({ where: { id: grantId }, data: { code } });
+  return code;
 }
 
 /**
@@ -182,6 +240,124 @@ export class PrismaAdventRepository implements AdventRepository, IdentityReposit
 
   async listGrants(participantId: string): Promise<RewardGrantRecord[]> {
     return this.prisma.rewardGrant.findMany({ where: { participantId }, orderBy: [{ createdAt: "asc" }, { day: "asc" }] });
+  }
+
+  async issueGrant(input: IssueGrantInput, retry = true): Promise<IssueGrantResult> {
+    const { grant, campaignSlug } = input;
+    try {
+      return await this.prisma.$transaction(async (tx): Promise<IssueGrantResult> => {
+        const key = { participantId_source_day: { participantId: grant.participantId, source: grant.source, day: grant.day } };
+        const existing = await tx.rewardGrant.findUnique({ where: key });
+        if (existing) return { status: "existing", grant: mapGrant(existing), codeMissing: existing.code === null && input.code !== null };
+        if (input.consumeStock) {
+          const updated = await tx.$executeRaw`
+            UPDATE "RewardStock" SET "left" = "left" - 1
+            WHERE "campaignSlug" = ${campaignSlug} AND "rewardId" = ${grant.rewardId} AND "left" > 0`;
+          if (updated === 0) return { status: "stock_exhausted" };
+        }
+        const { count } = await tx.rewardGrant.createMany({ data: [{ ...grant, code: null }], skipDuplicates: true });
+        if (count === 0) throw new GrantRaceLost();
+        let code: string | null = null;
+        if (input.code) {
+          code = await takeCode(tx, campaignSlug, grant.id, grant.rewardId, input.code);
+          if (code === null && input.requireCode) throw new CodePoolEmpty();
+        }
+        return { status: "created", grant: { ...mapGrant(grant), code }, codeMissing: input.code !== null && code === null };
+      });
+    } catch (error) {
+      if (error instanceof CodePoolEmpty) return { status: "pool_empty" };
+      if (error instanceof GrantRaceLost && retry) return this.issueGrant(input, false);
+      if (isMissingParent(error)) throw participantMissing();
+      throw error;
+    }
+  }
+
+  async assignGrantCode(grantId: string, source: CodeSource | null, expiresAt: Date | null): Promise<AssignCodeResult> {
+    return this.prisma.$transaction(async (tx): Promise<AssignCodeResult> => {
+      await tx.$queryRaw`SELECT "id" FROM "RewardGrant" WHERE "id" = ${grantId}::uuid FOR UPDATE`;
+      const grant = await tx.rewardGrant.findUnique({ where: { id: grantId }, include: { participant: { select: { campaignSlug: true } } } });
+      if (!grant) throw new DomainError("not_found", "Выдача не найдена.");
+      if (source === null) {
+        if (grant.expiresAt !== null || expiresAt === null) return { grant: mapGrant(grant), status: "existing" };
+        const updated = await tx.rewardGrant.update({ where: { id: grantId }, data: { expiresAt } });
+        return { grant: mapGrant(updated), status: "assigned" };
+      }
+      if (grant.code !== null) return { grant: mapGrant(grant), status: "existing" };
+      const code = await takeCode(tx, grant.participant.campaignSlug, grant.id, grant.rewardId, source);
+      if (code === null) return { grant: mapGrant(grant), status: "pool_empty" };
+      const updated = expiresAt === null ? { ...grant, code } : await tx.rewardGrant.update({ where: { id: grantId }, data: { expiresAt } });
+      return { grant: { ...mapGrant(updated), code }, status: "assigned" };
+    });
+  }
+
+  async getGrant(grantId: string): Promise<GrantWithCampaign | null> {
+    const grant = await this.prisma.rewardGrant.findUnique({ where: { id: grantId }, include: { participant: { select: { campaignSlug: true } } } });
+    return grant ? { ...mapGrant(grant), campaignSlug: grant.participant.campaignSlug } : null;
+  }
+
+  async findGrantsByCode(campaignSlug: string, code: string): Promise<RewardGrantRecord[]> {
+    const rows = await this.prisma.rewardGrant.findMany({
+      where: { code: { equals: code, mode: "insensitive" }, participant: { campaignSlug } },
+      orderBy: { createdAt: "asc" },
+      take: 50
+    });
+    return rows.map(mapGrant);
+  }
+
+  async redeemGrant(campaignSlug: string, grantId: string, now: Date): Promise<RedeemOutcome> {
+    // Одно условное UPDATE: из двух одновременных погашений успешно ровно одно.
+    const { count } = await this.prisma.rewardGrant.updateMany({
+      where: { id: grantId, status: "issued", participant: { campaignSlug }, OR: [{ expiresAt: null }, { expiresAt: { gt: now } }] },
+      data: { status: "redeemed", redeemedAt: now }
+    });
+    const grant = await this.prisma.rewardGrant.findFirst({ where: { id: grantId, participant: { campaignSlug } } });
+    if (!grant) return { status: "not_found" };
+    if (count === 1) return { status: "redeemed", grant: mapGrant(grant) };
+    return { status: grant.status === "redeemed" ? "already_redeemed" : "expired", grant: mapGrant(grant) };
+  }
+
+  async ensureStock(campaignSlug: string, items: ReadonlyArray<{ rewardId: string; left: number }>): Promise<void> {
+    if (items.length === 0) return;
+    await this.prisma.rewardStock.createMany({ data: items.map((item) => ({ campaignSlug, rewardId: item.rewardId, left: item.left })), skipDuplicates: true });
+  }
+
+  async stockLeft(campaignSlug: string): Promise<Record<string, number>> {
+    const rows = await this.prisma.rewardStock.findMany({ where: { campaignSlug } });
+    return Object.fromEntries(rows.map((row) => [row.rewardId, row.left]));
+  }
+
+  async importCodes(campaignSlug: string, rewardId: string, codes: readonly string[]): Promise<{ added: number; duplicates: number }> {
+    let added = 0;
+    for (let offset = 0; offset < codes.length; offset += 1000) {
+      const chunk = codes.slice(offset, offset + 1000);
+      const { count } = await this.prisma.rewardCode.createMany({ data: chunk.map((code) => ({ campaignSlug, rewardId, code })), skipDuplicates: true });
+      added += count;
+    }
+    return { added, duplicates: codes.length - added };
+  }
+
+  async poolOverview(campaignSlug: string): Promise<Record<string, { total: number; free: number }>> {
+    const rows = await this.prisma.$queryRaw<Array<{ rewardId: string; total: bigint; free: bigint }>>`
+      SELECT "rewardId", COUNT(*) AS total, COUNT(*) FILTER (WHERE "grantId" IS NULL) AS free
+      FROM "RewardCode" WHERE "campaignSlug" = ${campaignSlug} GROUP BY "rewardId"`;
+    return Object.fromEntries(rows.map((row) => [row.rewardId, { total: Number(row.total), free: Number(row.free) }]));
+  }
+
+  async listCampaignGrants(campaignSlug: string): Promise<RewardGrantRecord[]> {
+    const rows = await this.prisma.rewardGrant.findMany({ where: { participant: { campaignSlug } }, orderBy: [{ createdAt: "asc" }, { id: "asc" }] });
+    return rows.map(mapGrant);
+  }
+
+  async grantTotals(campaignSlug: string): Promise<Array<{ rewardId: string; issued: number; redeemed: number }>> {
+    const rows = await this.prisma.rewardGrant.groupBy({ by: ["rewardId", "status"], where: { participant: { campaignSlug } }, _count: { _all: true } });
+    const totals = new Map<string, { rewardId: string; issued: number; redeemed: number }>();
+    for (const row of rows) {
+      const entry = totals.get(row.rewardId) ?? { rewardId: row.rewardId, issued: 0, redeemed: 0 };
+      entry.issued += row._count._all;
+      if (row.status === "redeemed") entry.redeemed += row._count._all;
+      totals.set(row.rewardId, entry);
+    }
+    return [...totals.values()].sort((a, b) => a.rewardId.localeCompare(b.rewardId));
   }
 
   async mergeParticipants(fromId: string, intoId: string): Promise<void> {

@@ -4,8 +4,10 @@ import { notFound } from "next/navigation";
 import { adminAuthorized } from "@/server/admin";
 import { getPrisma } from "@/server/db";
 import { loadAdminClaims, loadDashboardMetrics } from "@/server/metrics";
-import { quizTenantForPage } from "@/server/page-tenant";
+import { anyTenantForPage } from "@/server/page-tenant";
+import { isAdventTenant } from "@/server/tenants";
 
+import { AdventAdmin } from "./AdventAdmin";
 import { ExportButton } from "./ExportButton";
 import {
   CLAIM_STATUS_LABELS,
@@ -24,7 +26,9 @@ export default async function AdminPage() {
   // Основной замок — proxy (src/proxy.ts); проверка здесь на случай, если страницу отдали в обход него.
   if (!(await adminAuthorized(await headers()))) notFound();
 
-  const { campaign } = (await quizTenantForPage());
+  const tenant = await anyTenantForPage();
+  if (isAdventTenant(tenant)) return <AdventAdmin tenant={tenant} />;
+  const { campaign } = tenant;
   const prisma = getPrisma();
   const [metrics, claims] = await Promise.all([loadDashboardMetrics(prisma, campaign), loadAdminClaims(prisma, campaign)]);
   const started = metrics.funnel[0]?.count ?? 0;

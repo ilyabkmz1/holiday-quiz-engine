@@ -221,6 +221,10 @@ export const adventSchema = adventBaseSchema.superRefine((advent, context) => {
       const blockPath = [...dayPath, "blocks", blockIndex];
       if (block.type === "promo") {
         checkReward(block.rewardId, `блоке promo дня ${day.n}`, [...blockPath, "rewardId"]);
+        // Подарок дня и награда за закрытие дня хранятся одной выдачей (ключ «участник, day, день»): два разных приза не поместились бы.
+        if (day.rewardId !== undefined && day.rewardId !== block.rewardId) {
+          issue(context, `В дне ${day.n} блок promo (${block.rewardId}) и rewardId дня (${day.rewardId}) различаются: за день выдаётся один подарок`, [...blockPath, "rewardId"]);
+        }
       }
       if (block.type === "task") {
         const { task } = block;

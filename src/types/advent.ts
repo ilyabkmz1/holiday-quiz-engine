@@ -1,6 +1,7 @@
 // Контракты публичного API адвента (`/api/advent/*`). Ни правильных ответов неотвеченных заданий, ни исхода удачи
 // до фиксации ответа в этих типах нет: верные варианты приходят только в `AdventTaskOutcome` после записи ответа.
 import type { AdventPhase, DoorStatus } from "@/domain/advent";
+import type { AdventReward } from "@/config/advent-schema";
 import type { GrantSource, GrantStatus } from "@/server/repositories/advent-repository";
 import type { PublicTask, TaskOutcome, TaskPayloadBody } from "@/types/api";
 
@@ -14,9 +15,9 @@ export type AdventDoor = {
   /** Когда день открывается (ISO). */
   unlocksAt: string;
   status: DoorStatus;
-  /** День открыт и пройден: все блоки истории и заданий выполнены. */
+  /** День открыт и пройден: выполнены все блоки, включая удачу и подарок дня. */
   completed: boolean;
-  /** Выполнено блоков истории и заданий из имеющихся. */
+  /** Выполнено блоков дня из имеющихся. */
   blocksDone: number;
   blocksTotal: number;
   /** Положена ли награда дня при открытии сейчас (с учётом `rewardOnlyOnDay`). */
@@ -40,9 +41,13 @@ export type AdventTaskOutcome = {
 export type AdventBlockState =
   | { index: number; type: "story"; lines: string[]; done: boolean }
   | { index: number; type: "task"; task: PublicTask; done: boolean; outcome: AdventTaskOutcome | null }
-  /** Блоки удачи и подарка заработают на этапе A2: исхода и кода в состоянии нет. */
-  | { index: number; type: "luck"; choices: number; done: false; ready: false }
-  | { index: number; type: "promo"; rewardId: string; done: false; ready: false };
+  /**
+   * Блок удачи: до выполнения исхода в состоянии нет (`reveal: null`). `ready` — доступен (остальные блоки дня
+   * пройдены), `needsIdentity` — для выдачи приза нужен вход по ссылке (анонимному участнику ответ `identity_required`).
+   */
+  | { index: number; type: "luck"; choices: number; done: boolean; ready: boolean; needsIdentity: boolean; reveal: AdventGrantView | null }
+  /** Блок подарка дня: раскрывает награду `rewardId`. Поля — как у блока удачи. */
+  | { index: number; type: "promo"; rewardId: string; done: boolean; ready: boolean; needsIdentity: boolean; reveal: AdventGrantView | null };
 
 /** Содержимое открытого дня. Для закрытых и ещё не открытых дней его в состоянии нет. */
 export type AdventDayContent = {
@@ -55,17 +60,33 @@ export type AdventDayContent = {
 
 export type AdventGoal = { opened: number; rewardId: string; label: string; reached: boolean; granted: boolean };
 
+/** Награда участника. Код и QR видны только владельцу (состояние отдаётся по его cookie). */
 export type AdventGrantView = {
+  /** Id выдачи: по нему гасится награда на кассе. */
+  id: string;
   source: GrantSource;
   day: number;
   rewardId: string;
+  kind: AdventReward["kind"];
   label: string;
   description: string;
   status: GrantStatus;
+  /** Срок действия; пуст, пока награда не активирована (нужен вход по ссылке) и у наград без срока. */
   expiresAt: string | null;
-  /** Код погашения; до A2 всегда `null`. */
+  /** Код погашения; `null`, пока не назначен (см. `needsIdentity`, `codePending`) и у наград без кодов. */
   code: string | null;
   grantedAt: string;
+  redeemedAt: string | null;
+  /** Как гасится: онлайн, на кассе, оба способа или не гасится. */
+  redeem: AdventReward["redeem"];
+  /** Ссылка для онлайн-погашения (`reward.url`). */
+  url: string | null;
+  /** Награда с кодом, остатком или погашением на кассе, а участник ещё не вошёл по ссылке: код появится после входа. */
+  needsIdentity: boolean;
+  /** Участник вошёл, но кода пока нет: пул кодов пуст, оператор ещё не загрузил новые. */
+  codePending: boolean;
+  /** Личный QR для кассы: содержимое и ссылка на `/redeem`; `null`, если награда не гасится на кассе или QR недоступен. */
+  qr: { payload: string; url: string | null } | null;
 };
 
 export type AdventState = {
@@ -103,5 +124,16 @@ export type AdventState = {
 
 export type CreateParticipantResponse = { participantId: string; state: AdventState };
 export type OpenDayResponse = { state: AdventState };
-export type SubmitBlockResponse = { block: { index: number; type: "story" | "task"; outcome: AdventTaskOutcome | null }; state: AdventState };
+/** `outcome` — разбор задания; `reward` — выданная награда блока удачи или подарка дня (после фиксации). */
+export type SubmittedBlock = {
+  index: number;
+  type: "story" | "task" | "luck" | "promo";
+  outcome: AdventTaskOutcome | null;
+  reward: AdventGrantView | null;
+};
+
+export type SubmitBlockResponse =
+  | { status: "ok"; block: SubmittedBlock; state: AdventState }
+  /** Анонимному участнику награда с кодом или остатком не выдаётся: блок не отмечен, приз не разыгран, остаток не списан. */
+  | { status: "identity_required"; block: SubmittedBlock; state: AdventState };
 export type IdentityRequestResponse = { sent: true };

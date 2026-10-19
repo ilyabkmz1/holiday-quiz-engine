@@ -29,6 +29,9 @@ const runtimeEnvBase = z.object({
   TENANT_BASE_DOMAIN: optionalString,
   // Администратор процесса (ADMIN_USERNAME/ADMIN_PASSWORD) в многоарендном режиме без TENANT: только явно, см. src/server/admin-auth.ts.
   SUPERADMIN: z.string().optional().transform((value) => value === "true"),
+  // Секрет подписи личного QR для погашения наград адвента на кассе (HMAC). Обязателен в production, если у адвент-арендатора
+  // есть награды с redeem cashier/both (см. launch-checks); не короче 32 символов: `openssl rand -hex 32`.
+  REWARD_QR_SECRET: z.preprocess((value) => (value === "" ? undefined : value), z.string().min(32).optional()),
   // Секрет для проверки Caddy перед выпуском сертификата (on-demand TLS): /api/internal/tls-ask?domain=…&token=…
   TLS_ASK_TOKEN: optionalString,
   NODE_ENV: z.enum(["development", "test", "production"]).default("development")

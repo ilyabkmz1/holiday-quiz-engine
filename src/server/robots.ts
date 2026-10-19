@@ -18,7 +18,7 @@ export function robotsRules(env: RobotsEnv): MetadataRoute.Robots {
     rules: {
       userAgent: "*",
       allow: ["/$", "/share/"],
-      disallow: ["/admin", "/api", "/verify", "/quest", "/"]
+      disallow: ["/admin", "/api", "/verify", "/quest", "/redeem", "/"]
     }
   };
 }

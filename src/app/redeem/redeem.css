@@ -1,0 +1,18 @@
+/* Касса адвента: крупные элементы для телефона и планшета на кассе; цвета — из токенов бренда арендатора. */
+.redeem { min-height: 100vh; min-height: 100dvh; background: var(--bg); color: var(--ink); font-family: var(--font); }
+.redeem-page { display: flex; flex-direction: column; gap: 16px; max-width: 520px; margin: 0 auto; padding: 24px 16px 56px; }
+.redeem h1 { margin: 0; font-size: clamp(24px, 6vw, 32px); line-height: 1.2; }
+.redeem-eyebrow { margin: 0; font-size: 11px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: var(--cyan); }
+.redeem-note { margin: 0; font-size: 15px; line-height: 1.5; color: var(--muted); }
+.redeem-form { display: flex; flex-direction: column; gap: 10px; }
+.redeem-form label { font-weight: 600; }
+.redeem-form input { min-height: 52px; padding: 0 14px; border-radius: 14px; border: 2px solid color-mix(in srgb, var(--haze) 30%, transparent); background: var(--card); color: var(--ink); font: inherit; font-size: 20px; letter-spacing: 0.04em; }
+.redeem-button { display: inline-flex; align-items: center; justify-content: center; min-height: 52px; padding: 0 24px; border: 0; border-radius: 14px; cursor: pointer; font: inherit; font-size: 18px; font-weight: 700; background: var(--blue); color: var(--on-accent); }
+.redeem-button:disabled { opacity: 0.6; cursor: progress; }
+.redeem-result { display: flex; flex-direction: column; gap: 10px; padding: 20px; border-radius: 18px; background: var(--panel); border: 2px solid var(--muted); }
+.redeem-result h2 { margin: 0; font-size: 22px; }
+.redeem-result.ok { border-color: var(--green); }
+.redeem-result.warn { border-color: var(--gold); }
+.redeem-result.bad { border-color: var(--coral); }
+.redeem-reward { margin: 0; font-size: 20px; font-weight: 800; }
+.redeem :where(a, button, input):focus-visible { outline: 3px solid var(--cyan); outline-offset: 2px; }

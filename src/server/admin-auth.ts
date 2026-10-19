@@ -2,6 +2,9 @@ import { parseBasicAuth, verifyBasicAuth } from "@/server/auth";
 import type { RuntimeEnv } from "@/server/env";
 import { dummyHash, needsRehash, verifyPassword } from "@/server/password";
 
+/** Роль входа: оператор — админка и импорт кодов, кассир — только погашение наград (`/redeem`). Администратор процесса — оператор. */
+export type AdminRole = "operator" | "cashier";
+
 /** Откуда взялось право входа: логин арендатора из БД или администратор процесса из окружения. */
 export type AdminIdentity = "tenant" | "process";
 
@@ -11,7 +14,7 @@ export type AdminAuthDeps = {
   /** Арендатор по Host запроса: логин проверяется только в его рамках. */
   tenantSlug: string;
   env: AdminAuthEnv;
-  findAdmin: (tenantSlug: string, username: string) => Promise<{ passwordHash: string; disabledAt: Date | null } | null>;
+  findAdmin: (tenantSlug: string, username: string) => Promise<{ passwordHash: string; disabledAt: Date | null; role?: AdminRole } | null>;
   /** Хеш пересчитан под текущие параметры: сохранить (необязательно). */
   onRehash?: (tenantSlug: string, username: string, password: string) => Promise<void>;
 };
@@ -30,11 +33,19 @@ export function processAdminAllowed(env: Pick<AdminAuthEnv, "TENANT" | "SUPERADM
  * на чужом арендаторе такой строки нет, поэтому подмена Host доступа не даёт.
  */
 export async function authenticateAdmin(authorization: string | null, deps: AdminAuthDeps): Promise<AdminIdentity | null> {
+  return (await authenticateAdminRole(authorization, deps))?.identity ?? null;
+}
+
+/** То же, что `authenticateAdmin`, но с ролью логина (по умолчанию `operator`: логины без роли работают как раньше). */
+export async function authenticateAdminRole(
+  authorization: string | null,
+  deps: AdminAuthDeps
+): Promise<{ identity: AdminIdentity; role: AdminRole } | null> {
   const credentials = parseBasicAuth(authorization);
   if (!credentials) return null;
   const { env, tenantSlug } = deps;
 
-  if (processAdminAllowed(env) && verifyBasicAuth(authorization, env.ADMIN_USERNAME, env.ADMIN_PASSWORD)) return "process";
+  if (processAdminAllowed(env) && verifyBasicAuth(authorization, env.ADMIN_USERNAME, env.ADMIN_PASSWORD)) return { identity: "process", role: "operator" };
 
   let record: Awaited<ReturnType<AdminAuthDeps["findAdmin"]>> = null;
   try {
@@ -51,5 +62,5 @@ export async function authenticateAdmin(authorization: string | null, deps: Admi
   if (deps.onRehash && needsRehash(record.passwordHash)) {
     await deps.onRehash(tenantSlug, credentials.username, credentials.password).catch(() => undefined);
   }
-  return "tenant";
+  return { identity: "tenant", role: record.role ?? "operator" };
 }

@@ -198,6 +198,7 @@ Workflow `.github/workflows/ci.yml` запускается на push в `main` �
 | `TENANT` | Пакет арендатора; пусто — выбор по `Host` |
 | `TENANT_BASE_DOMAIN` | Общий домен для адресов вида `<slug>.<домен>` |
 | `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURE`, `SMTP_FROM`, `SMTP_USER`/`SMTP_PASSWORD` | Почта (авторизация необязательна, обе переменные вместе) |
+| `REWARD_QR_SECRET` | Подпись личного QR для погашения наград адвента на кассе (≥ 32 символов, `openssl rand -hex 32`); в production обязательна, если есть награды `redeem: cashier/both` |
 | `ADMIN_USERNAME`, `ADMIN_PASSWORD` | Суперадминистратор (пароль ≥ 16 символов); действует при `TENANT=<slug>` или `SUPERADMIN=true` |
 | `STAGING_USERNAME`, `STAGING_PASSWORD` | Закрытый стенд: HTTP Basic auth на весь сайт |
 | `QUIZ_FORCE_OPEN`, `QUIZ_LOCAL_STACK` | Открыть кампанию вне дат (см. «Быстрый старт») |
