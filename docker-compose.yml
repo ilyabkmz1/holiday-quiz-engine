@@ -1,0 +1,55 @@
+services:
+  db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: quiz
+      POSTGRES_USER: quiz
+      POSTGRES_PASSWORD: quiz-local-only
+    volumes:
+      - quiz-postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U quiz -d quiz"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+  mailpit:
+    image: axllent/mailpit:v1.27
+    ports:
+      - "127.0.0.1:8025:8025"
+  migrate:
+    build:
+      context: .
+      target: migrate
+    environment:
+      DATABASE_URL: postgresql://quiz:quiz-local-only@db:5432/quiz?schema=public
+    depends_on:
+      db:
+        condition: service_healthy
+  app:
+    build:
+      context: .
+      args:
+        # export APP_VERSION=$(git rev-parse --short HEAD) перед docker compose build; без него — dev.
+        APP_VERSION: ${APP_VERSION:-dev}
+    environment:
+      DATABASE_URL: postgresql://quiz:quiz-local-only@db:5432/quiz?schema=public
+      APP_URL: http://localhost:3000
+      TENANT: demo-office
+      SMTP_HOST: mailpit
+      SMTP_PORT: 1025
+      SMTP_SECURE: "false"
+      SMTP_FROM: Holiday Quiz <quiz@example.test>
+      ADMIN_USERNAME: operator
+      ADMIN_PASSWORD: local-password-change-before-production
+      QUIZ_FORCE_OPEN: "true"
+      QUIZ_LOCAL_STACK: "true"
+    ports:
+      - "127.0.0.1:3000:3000"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      mailpit:
+        condition: service_started
+
+volumes:
+  quiz-postgres:

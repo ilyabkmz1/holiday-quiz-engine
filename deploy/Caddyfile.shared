@@ -1,0 +1,58 @@
+# Общий сервер для всех клиентов: поддомены <slug>.<TENANT_BASE_DOMAIN> и собственные домены клиентов.
+# Включается переменной CADDYFILE=./Caddyfile.shared в /opt/quiz/.env (вместо ./Caddyfile для одного домена).
+#
+# TLS по запросу (on-demand): сертификат выпускается при первом обращении к домену, но только если приложение
+# подтвердит, что домен принадлежит арендатору (ask -> GET /api/internal/tls-ask). Чужой или случайный домен получает отказ
+# ещё до обращения к Let's Encrypt, поэтому его нельзя использовать, чтобы исчерпать лимиты ACME.
+# Wildcard-сертификат на *.<TENANT_BASE_DOMAIN> (DNS-01) здесь не нужен; если нужен, соберите Caddy с модулем DNS-провайдера (см. deploy/README.md).
+{
+	email {$ACME_EMAIL}
+	on_demand_tls {
+		# Caddy добавляет ?domain=<имя>; секрет TLS_ASK_TOKEN лежит в .env, не в git.
+		ask http://app:3000/api/internal/tls-ask?token={$TLS_ASK_TOKEN}
+	}
+}
+
+https:// {
+	tls {
+		on_demand
+	}
+	encode zstd gzip
+
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		Content-Security-Policy "frame-ancestors 'none'"
+		-Server
+	}
+
+	# Внутренний путь проверки домена снаружи недоступен: его вызывает только сам Caddy напрямую у app.
+	@internal path /api/internal/*
+	respond @internal 404
+
+	reverse_proxy app:3000 {
+		lb_try_duration 5s
+		lb_try_interval 500ms
+	}
+
+	log {
+		output stdout
+		format filter {
+			wrap json
+			fields {
+				request>uri query {
+					delete token
+				}
+				request>headers>Authorization delete
+				request>headers>Cookie delete
+				request>remote_ip delete
+				request>client_ip delete
+				request>remote_port delete
+				request>headers>X-Forwarded-For delete
+			}
+		}
+	}
+}
+
+# Обычный HTTP: редирект на HTTPS выполняет Caddy автоматически.

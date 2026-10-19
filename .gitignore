@@ -1,0 +1,31 @@
+.swe-helper/
+node_modules/
+.next/
+coverage/
+test-results/
+playwright-report/
+.env
+.env.local
+.env.production
+.env.staging
+.env.*.local
+dist/
+src/generated/
+*.pptx
+
+tsconfig.tsbuildinfo
+
+# Секреты деплоя живут только на ВМ (/opt/quiz/.env); в git только *.example
+deploy/.env
+deploy/.env.local
+deploy/*.bak*
+deploy/backups/
+deploy/.env.*
+!deploy/.env.*.example
+backups/
+*.dump
+*.dump.gz
+*.sql.gz
+
+# Папки quiz:export с секретами клиента
+exports/

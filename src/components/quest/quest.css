@@ -1,0 +1,314 @@
+/* ——— Квест: мир-иллюстрация, персонаж, карточка задания ——— */
+.quest { position: fixed; inset: 0; overflow: hidden; background: var(--deep); color: var(--ink); }
+.quest-center { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; padding: 24px; text-align: center; }
+.quest-btn { width: auto; min-width: 240px; }
+
+.qw-stage { position: absolute; inset: 0; background: var(--deep); overflow: hidden; }
+.qw-viewport { position: absolute; inset: 0; overflow: hidden; touch-action: none; cursor: pointer; user-select: none; -webkit-user-select: none; -webkit-tap-highlight-color: transparent; }
+.qw-world { position: absolute; left: 0; top: 0; transform-origin: 0 0; will-change: transform; }
+.qw-img { position: absolute; left: 0; top: 0; width: 1536px; height: 1024px; max-width: none; pointer-events: none; }
+.qw-dim { position: absolute; inset: 0; background: var(--void); pointer-events: none; }
+.qw-vignette { position: absolute; inset: 0; z-index: 1; pointer-events: none; box-shadow: inset 0 0 140px 80px var(--deep); }
+
+/* комнаты: непройденные притемнены, пройденные светятся */
+.qw-room { position: absolute; pointer-events: none; }
+.qw-room::before { content: ""; position: absolute; inset: -7% -5%; background: radial-gradient(closest-side, color-mix(in srgb, var(--void) 60%, transparent) 62%, color-mix(in srgb, var(--void) 30%, transparent) 85%, color-mix(in srgb, var(--void) 0%, transparent)); transition: opacity 0.9s ease; }
+.qw-room.is-active::before { opacity: 0.18; }
+.qw-room.is-lit::before { opacity: 0; }
+.qw-room::after { content: ""; position: absolute; inset: -22% -14%; background: radial-gradient(closest-side, color-mix(in srgb, var(--gold-soft) 78%, transparent), color-mix(in srgb, var(--gold-soft) 30%, transparent) 62%, color-mix(in srgb, var(--gold-soft) 0%, transparent)); opacity: 0; transition: opacity 1.2s ease; }
+.qw-room.is-lit::after { opacity: 1; animation: qwGlow 3.6s ease-in-out infinite; }
+@keyframes qwGlow { 0%, 100% { opacity: 0.7; } 50% { opacity: 1; } }
+
+/* подсказка пути: пунктир от персонажа к следующей комнате */
+.qw-trail { position: absolute; left: 0; top: 0; pointer-events: none; z-index: 2; overflow: visible; }
+.qw-trail polyline { fill: none; stroke: var(--gold-soft); stroke-width: 7; stroke-linecap: round; stroke-linejoin: round; stroke-dasharray: 0.1 20; opacity: 0.85; filter: drop-shadow(0 0 5px color-mix(in srgb, var(--gold) 90%, transparent)); animation: qwDash 1.1s linear infinite; }
+@keyframes qwDash { to { stroke-dashoffset: -20.1; } }
+.qw-door { position: absolute; width: 70px; height: 70px; margin: -35px 0 0 -35px; border-radius: 50%; border: 3px solid var(--gold-soft); box-shadow: 0 0 22px 4px color-mix(in srgb, var(--gold) 70%, transparent), inset 0 0 18px color-mix(in srgb, var(--gold) 50%, transparent); pointer-events: none; z-index: 2; animation: qwDoor 1.5s ease-in-out infinite; }
+@keyframes qwDoor { 0%, 100% { transform: scale(0.75); opacity: 0.6; } 50% { transform: scale(1.1); opacity: 1; } }
+
+/* искорки-бонусы и метка тапа */
+.qw-bonus { position: absolute; width: 18px; height: 18px; margin: -9px 0 0 -9px; opacity: 0.92; pointer-events: none; z-index: 3; filter: drop-shadow(0 0 6px color-mix(in srgb, var(--cyan) 95%, transparent)); animation: qwFloat 2.6s ease-in-out infinite; transition: transform 0.35s ease-out, opacity 0.35s ease-out; }
+.qw-bonus:nth-of-type(3n) { animation-delay: -0.9s; }
+.qw-bonus:nth-of-type(3n + 1) { animation-delay: -1.7s; }
+.qw-bonus > svg { width: 18px; height: 18px; }
+.qw-bonus.got { opacity: 0; transform: translateY(-26px) scale(1.7); animation: none; }
+@keyframes qwFloat { 0%, 100% { translate: 0 0; } 50% { translate: 0 -5px; } }
+.qw-target { position: absolute; width: 34px; height: 34px; margin: -17px 0 0 -17px; border-radius: 50%; border: 3px solid var(--cyan); pointer-events: none; z-index: 3; animation: qwTarget 0.9s ease-out infinite; }
+@keyframes qwTarget { from { transform: scale(0.5); opacity: 1; } to { transform: scale(1.5); opacity: 0; } }
+
+/* персонажи: якорь — точка под ногами */
+.qw-hero, .qw-player, .qw-robot { position: absolute; left: 0; top: 0; width: 0; height: 0; }
+.qw-hero { left: auto; top: auto; }
+.qw-hero { margin: 0; }
+.qw-sprite { position: absolute; left: -20px; top: -61.6px; width: 40px; height: 64px; transform: scale(1.15); transform-origin: 50% 96%; }
+.qw-player { pointer-events: none; will-change: transform; }
+.qs { display: block; overflow: visible; }
+.qs * { transform-box: view-box; }
+.qs-bob { transform-origin: 20px 62px; }
+.qs-leg { transform-origin: 20px 43px; }
+.qs-legL { transform-origin: 16px 43px; }
+.qs-legR { transform-origin: 24px 43px; }
+.qs-armL { transform-origin: 8px 30px; }
+.qs-armR { transform-origin: 32px 30px; }
+.qs-head { transform-origin: 20px 26px; }
+.qs-eye { transform-box: fill-box; transform-origin: center; animation: blink 5.5s infinite; }
+.qs-idle .qs-bob { animation: qsBreathe 3.2s ease-in-out infinite; }
+.qs-walk .qs-bob { animation: qsBob 0.36s ease-in-out infinite; }
+.qs-walk .qs-legL, .qs-walk .qs-armR { animation: qsStep 0.36s ease-in-out infinite; }
+.qs-walk .qs-legR, .qs-walk .qs-armL { animation: qsStep 0.36s ease-in-out -0.18s infinite; }
+.qs-walk .qs-head { animation: qsNod 0.36s ease-in-out infinite; }
+.qs-joy .qs-bob { animation: qsJump 0.52s ease-out infinite; }
+.qs-joy .qs-armL { transform: rotate(150deg); }
+.qs-joy .qs-armR { transform: rotate(-150deg); }
+.qs-hero.mood-happy .qs-bob { animation: qsJump 0.55s ease-out 3; }
+.qs-hero.mood-sad .qs-head { transform: rotate(7deg) translateY(1.5px); }
+.qs-hero.mood-sad .qs-bob { transform: translateY(1px); animation: none; }
+.qs-marker { animation: qsMarker 1.3s ease-in-out infinite; }
+@keyframes qsBreathe { 0%, 100% { transform: scaleY(1); } 50% { transform: scaleY(1.025); } }
+@keyframes qsBob { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-2.4px); } }
+@keyframes qsStep { 0%, 100% { transform: rotate(-26deg); } 50% { transform: rotate(26deg); } }
+@keyframes qsNod { 0%, 100% { transform: rotate(-2.5deg); } 50% { transform: rotate(2.5deg); } }
+@keyframes qsJump { 0%, 100% { transform: translateY(0); } 45% { transform: translateY(-11px); } }
+@keyframes qsMarker { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-3px); } }
+
+/* робот-помощник */
+.qw-robot { z-index: 4000; will-change: transform; pointer-events: none; }
+.qw-robot-bob { position: absolute; left: -22px; top: -22px; animation: qwHover 2.4s ease-in-out infinite; filter: drop-shadow(0 0 10px color-mix(in srgb, var(--cyan) 80%, transparent)); }
+@keyframes qwHover { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-6px); } }
+
+/* облачка: в экранных координатах, их ставит цикл камеры (transform) */
+.qw-bubble { position: absolute; left: 0; top: 0; z-index: 12; width: max-content; max-width: min(290px, calc(100vw - 24px)); padding: 10px 14px; border-radius: 16px; background: var(--paper); color: var(--paper-ink); font-size: 14.5px; font-weight: 600; line-height: 1.3; text-align: left; box-shadow: 0 10px 28px rgba(0, 0, 0, 0.4); pointer-events: none; will-change: transform; --tail: 0px; }
+.qw-bubble b { display: block; margin-bottom: 2px; font-size: 12px; color: var(--ink-soft); }
+.qw-bubble::after { content: ""; position: absolute; left: calc(50% + var(--tail)); bottom: -8px; margin-left: -8px; border: 8px solid transparent; border-bottom: 0; border-top-color: var(--paper); }
+.qw-bubble-robot { background: color-mix(in srgb, var(--panel) 95%, transparent); color: var(--ink); border: 1.5px solid var(--cyan); font-weight: 500; font-size: 14px; max-width: min(230px, calc(100vw - 24px)); }
+.qw-bubble-robot::after { border-top-color: var(--cyan); bottom: -9px; }
+
+/* праздник: вспышка, салют, игрушка летит к ёлке */
+.qw-flash { position: absolute; width: 380px; height: 380px; margin: -190px 0 0 -190px; border-radius: 50%; background: radial-gradient(closest-side, color-mix(in srgb, color-mix(in srgb, var(--gold-soft) 40%, #fff) 95%, transparent), color-mix(in srgb, var(--gold-soft) 45%, transparent) 55%, color-mix(in srgb, var(--gold-soft) 0%, transparent)); pointer-events: none; z-index: 3500; animation: qwFlash 1.2s ease-out both; }
+@keyframes qwFlash { from { transform: scale(0.2); opacity: 1; } to { transform: scale(1.4); opacity: 0; } }
+.qw-sparks-pos { position: absolute; width: 400px; height: 400px; margin: -200px 0 0 -200px; z-index: 3500; pointer-events: none; }
+.qw-sparks-pos .sparks { overflow: visible; }
+.qw-toy-fly { position: absolute; left: 0; top: 0; margin: -15px 0 0 -15px; z-index: 3600; filter: drop-shadow(0 0 10px color-mix(in srgb, var(--gold-soft) 95%, transparent)); animation: qwToyFly 1.9s cubic-bezier(0.45, 0, 0.35, 1) 0.35s both; }
+@keyframes qwToyFly {
+  0% { transform: translate(var(--fx), var(--fy)) scale(0.4); opacity: 0; }
+  12% { transform: translate(var(--fx), calc(var(--fy) - 40px)) scale(1.5); opacity: 1; }
+  55% { transform: translate(calc((var(--fx) + var(--tx)) / 2), calc(min(var(--fy), var(--ty)) - 120px)) scale(1.25); opacity: 1; }
+  100% { transform: translate(var(--tx), var(--ty)) scale(1); opacity: 1; }
+}
+.qw-toy { position: absolute; width: 22px; height: 22px; margin: -11px 0 0 -11px; z-index: 3; filter: drop-shadow(0 0 7px color-mix(in srgb, var(--gold-soft) 90%, transparent)); animation: pop 0.5s cubic-bezier(0.2, 1.6, 0.4, 1) both; }
+.qw-tree-flash { position: absolute; width: 300px; height: 300px; margin: -150px 0 0 -150px; border-radius: 50%; background: radial-gradient(closest-side, color-mix(in srgb, var(--gold-soft) 80%, transparent), color-mix(in srgb, var(--gold-soft) 0%, transparent)); pointer-events: none; z-index: 3; opacity: 0; animation: qwTreeFlash 1s ease-out 1.8s both; }
+@keyframes qwTreeFlash { 0% { opacity: 0; transform: scale(0.5); } 30% { opacity: 1; } 100% { opacity: 0; transform: scale(1.4); } }
+
+/* интерфейс поверх мира */
+.qw-ui { z-index: 10; }
+.qw-hud { position: absolute; left: 0; right: 0; top: 0; display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; padding: 10px 14px 28px; background: linear-gradient(color-mix(in srgb, var(--deep) 85%, transparent), color-mix(in srgb, var(--deep) 0%, transparent)); pointer-events: none; }
+.qw-title { margin: 0; font-size: 15px; font-weight: 800; letter-spacing: 0.01em; }
+.qw-sub { margin: 2px 0 0; font-size: 12px; color: var(--muted-2); }
+.qw-hud-right { display: flex; gap: 6px; align-items: center; }
+.qw-pill-flake { color: var(--ice); font-size: 13px; }
+.qw-controls { position: absolute; left: 14px; right: 14px; bottom: 96px; width: fit-content; max-width: calc(100% - 28px); margin: 0 auto; padding: 8px 14px; border-radius: 999px; background: color-mix(in srgb, var(--bg) 82%, transparent); border: 1px solid var(--line); font-size: 13px; color: var(--muted-2); text-align: center; pointer-events: none; animation: qwFade 0.6s ease both; }
+@keyframes qwFade { from { opacity: 0; } }
+.qw-controls-touch { display: none; }
+@media (pointer: coarse) { .qw-controls-touch { display: inline; } .qw-controls-keys { display: none; } }
+.qw-dock { position: absolute; left: 12px; right: 12px; bottom: max(14px, env(safe-area-inset-bottom)); display: flex; flex-direction: column; align-items: center; gap: 8px; pointer-events: none; }
+.qw-dock > * { pointer-events: auto; }
+.qw-help { width: auto; min-width: 220px; min-height: 54px; padding: 0 30px; animation: pop 0.45s cubic-bezier(0.2, 1.6, 0.4, 1) both; }
+.qw-list-btn { width: auto; min-height: 44px; padding: 0 18px; background: color-mix(in srgb, var(--bg) 78%, transparent); font-size: 14px; }
+
+.qw-list { z-index: 14; position: absolute; left: 12px; right: 12px; bottom: 76px; max-height: 58dvh; overflow-y: auto; padding: 14px; border-radius: 20px; background: var(--panel); border: 1px solid var(--line); box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5); }
+.qw-list-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px; }
+.qw-list h2 { font-size: 17px; }
+.qw-list-close { width: 44px; height: 44px; border: 0; border-radius: 12px; background: transparent; font-size: 26px; line-height: 1; }
+.qw-list ul { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; }
+.qw-list-item { display: flex; align-items: center; gap: 12px; width: 100%; min-height: 56px; padding: 8px 14px; border-radius: 14px; border: 1.5px solid color-mix(in srgb, var(--haze) 20%, transparent); background: var(--card); text-align: left; }
+.qw-list-item:hover { border-color: var(--cyan); }
+.qw-list-dot { flex: none; width: 14px; height: 14px; border-radius: 50%; box-shadow: 0 0 10px currentColor; }
+.qw-list-text { display: flex; flex-direction: column; gap: 2px; font-size: 13px; color: var(--muted-2); }
+.qw-list-text b { font-size: 15px; color: var(--ink); }
+
+/* карточка задания: нижний лист на телефоне, панель справа на десктопе */
+.qw-sheet { position: absolute; z-index: 30; left: 0; right: 0; bottom: 0; height: auto; max-height: 45dvh; min-height: 96px; display: flex; flex-direction: column; border-radius: 24px 24px 0 0; background: var(--panel); border-top: 1px solid var(--line); box-shadow: 0 -18px 50px rgba(0, 0, 0, 0.5); animation: qwSheetUp 0.36s cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+@keyframes qwSheetUp { from { transform: translateY(100%); } to { transform: none; } }
+@keyframes qwSheetIn { from { transform: translateX(40px); opacity: 0; } to { transform: none; opacity: 1; } }
+.qw-sheet-grip { flex: none; width: 44px; height: 4px; margin: 8px auto 10px; border-radius: 4px; background: color-mix(in srgb, color-mix(in srgb, var(--haze) 80%, #fff) 35%, transparent); }
+.qw-sheet-close { position: absolute; z-index: 8; right: 6px; top: 6px; width: 44px; height: 44px; border: 0; border-radius: 12px; background: color-mix(in srgb, var(--bg) 60%, transparent); color: var(--ink); font-size: 26px; line-height: 1; }
+.qw-sheet-body { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 6px 14px 16px; -webkit-overflow-scrolling: touch; }
+.qs-loading { padding: 20px 0; }
+.qs-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 6px 48px 8px 0; }
+.qs-head-left { min-width: 0; }
+.qs-head-right { display: flex; gap: 6px; align-items: center; }
+.qs-result { display: flex; flex-direction: column; gap: 12px; padding-top: 10px; }
+.qs-result-title { font-size: 22px; font-weight: 800; }
+
+/* механики внутри карточки: сцена плоская, без фоновых картинок и больших полей */
+.quest-sheet .room-layout { display: flex; flex-direction: column; gap: 10px; padding: 0; grid-template-columns: none; }
+.quest-sheet .scene { border-radius: 16px; min-height: 0; overflow: visible; background: rgba(255, 255, 255, 0.04); }
+.quest-sheet .scene-body { padding: 10px 12px; align-items: stretch; gap: 10px; }
+.quest-sheet .scene .bubble { font-size: 15px; max-width: none; padding: 10px 12px; border-radius: 4px 16px 16px 16px; font-weight: 500; box-shadow: none; }
+.quest-sheet .scene-stage .scene-body { flex-direction: row-reverse; align-items: center; }
+.quest-sheet .scene-stage .scene-body .bubble { flex: 1; min-width: 0; }
+.quest-sheet .scene-stage .bubble::after { display: none; }
+.quest-sheet .who { margin: 0; padding: 0; align-self: center; flex: none; width: 84px; flex-direction: column; align-items: center; gap: 4px; }
+.quest-sheet .who .hero-face { width: 52px; height: 52px; }
+.quest-sheet .who-chip { font-size: 10px; line-height: 1.2; padding: 3px 8px; border-radius: 10px; text-align: center; }
+.quest-sheet .slots-wrap { padding-top: 6px; }
+/* задания со слотами: сценарий остаётся на виду, пока прокручиваются карточки */
+.quest-sheet .scene:has(.slots-wrap) { position: sticky; top: 0; z-index: 3; margin-right: 44px; background: var(--card); box-shadow: 0 8px 14px color-mix(in srgb, var(--panel) 90%, transparent); }
+@media (max-height: 640px) { .quest-sheet .scene:has(.slots-wrap) { position: static; } }
+.quest-sheet .slot { min-height: 58px; font-size: 12px; gap: 4px; }
+.quest-sheet .hand { margin-top: 0; padding: 12px; border-radius: 16px; background: rgba(255, 255, 255, 0.03); border: 1px solid var(--line); flex: none; }
+.quest-sheet .hand-head { font-size: 12px; }
+.quest-sheet .card { min-height: 76px; padding: 10px; font-size: 14px; gap: 6px; }
+.quest-sheet .card-ic { width: 30px; height: 30px; }
+.quest-sheet .reveal-title { font-size: 17px; }
+.quest-sheet .talk-face .hero-face { width: 48px; height: 48px; }
+
+@media (min-width: 760px) {
+  .qw-hud { padding: 14px 24px 34px; }
+  .qw-title { font-size: 18px; }
+  .qw-sub { font-size: 13px; }
+  .qw-controls { bottom: 90px; }
+  .qw-list { left: 50%; right: auto; width: 380px; transform: translateX(-50%); bottom: 86px; }
+  .qw-sheet { left: auto; top: 76px; right: 16px; bottom: 16px; width: 460px; height: auto; max-height: none; border-radius: 24px; border: 1px solid var(--line); animation-name: qwSheetIn; }
+  .qw-sheet-grip { display: none; }
+  .qw-sheet-body { padding: 8px 18px 18px; }
+  .quest-sheet .card { min-height: 84px; font-size: 15px; }
+}
+
+
+/* ——— Полная версия квеста ——— */
+.qw-layer { position: absolute; inset: 0; }
+.pill-btn { cursor: pointer; color: var(--ink); min-width: 44px; min-height: 44px; justify-content: center; font-size: 16px; }
+.qw-hud { z-index: 20; }
+.qw-hud-right { flex-wrap: wrap; justify-content: flex-end; pointer-events: auto; }
+.qw-hud-left { min-width: 0; }
+.qw-goal { margin: 6px 0 0; display: inline-block; max-width: min(300px, 60vw); padding: 5px 11px; border-radius: 999px; background: color-mix(in srgb, var(--gold) 16%, transparent); border: 1px solid color-mix(in srgb, var(--gold) 55%, transparent); color: var(--gold-soft); font-size: 13px; font-weight: 700; line-height: 1.25; }
+.qw-room-hud { display: flex; align-items: center; gap: 8px; margin-top: 6px; flex-wrap: wrap; }
+.qw-eyebrow { font-size: 11px; }
+.qw-rush-bar { position: absolute; left: 0; right: 0; bottom: 6px; height: 5px; }
+
+/* картинка: нарисованный робот закрывается, когда он слетает и становится компаньоном */
+.qw-robot-patch { position: absolute; pointer-events: none; z-index: 1; opacity: 0; transition: opacity 0.8s ease; background: radial-gradient(closest-side, var(--patch) 62%, color-mix(in srgb, var(--patch) 70%, transparent) 82%, color-mix(in srgb, var(--patch) 0%, transparent)); }
+.qw-robot-patch[data-on="true"] { opacity: 1; }
+.qw-hero-prologue { position: absolute; }
+.qw-robot[data-trick="true"] .qw-robot-bob { animation: qwTrick 1.2s ease-in-out; }
+@keyframes qwTrick { 0% { transform: rotate(0) translateY(0); } 40% { transform: rotate(360deg) translateY(-34px) scale(1.25); } 100% { transform: rotate(720deg) translateY(0); } }
+.qs-robot-fly { display: block; animation: qwFlyWobble 0.5s ease-in-out infinite; }
+@keyframes qwFlyWobble { 0%, 100% { transform: translateY(0) rotate(-6deg); } 50% { transform: translateY(-5px) rotate(6deg); } }
+.qs-robot { display: block; }
+.qw-snow-burst { animation: qwBurst 3.2s ease-out both; }
+@keyframes qwBurst { 0% { opacity: 0; } 15% { opacity: 1; } 100% { opacity: 0; } }
+
+/* герои: смотрят на игрока, машут, бегут к ёлке в раунде рывка */
+.qw-hero-move { position: absolute; left: 0; top: 0; width: 0; height: 0; transition: transform 1.4s cubic-bezier(0.45, 0, 0.25, 1); }
+.qw-hero[data-gather="true"] .qw-hero-move { transform: translate(var(--gx), var(--gy)); }
+.qw-hero[data-flip="true"] .qw-sprite { transform: scale(-1.15, 1.15); }
+.qw-hero[data-near="true"] .qs-armR { transform-origin: 32px 30px; animation: qsWave 0.7s ease-in-out infinite; }
+.qs-hero.pose-wave .qs-armR { animation: qsWave 0.7s ease-in-out infinite; }
+.qs-hero.pose-cheer .qs-bob { animation: qsJump 0.5s ease-out infinite; }
+.qs-run .qs-bob { animation: qsBob 0.26s ease-in-out infinite; }
+.qs-run .qs-legL, .qs-run .qs-armR { animation: qsStep 0.26s ease-in-out infinite; }
+.qs-run .qs-legR, .qs-run .qs-armL { animation: qsStep 0.26s ease-in-out -0.13s infinite; }
+@keyframes qsWave { 0%, 100% { transform: rotate(150deg); } 50% { transform: rotate(120deg); } }
+.qs-player.qs-run .qs-bob { animation: qsBob 0.26s ease-in-out infinite; }
+.qw-player[hidden] { display: none; }
+.qw-player .qs-shadow { opacity: 0.5; }
+
+/* ошибка в задании: свет в комнате мигает, предохранитель искрит */
+.qw-room.is-fault::before { animation: qwFault 1.4s steps(2, jump-none) both; opacity: 0.2; background: radial-gradient(closest-side, color-mix(in srgb, var(--alarm) 50%, transparent) 62%, color-mix(in srgb, var(--alarm) 20%, transparent) 85%, color-mix(in srgb, var(--alarm) 0%, transparent)); }
+@keyframes qwFault { 0%, 40%, 80% { opacity: 0.9; } 20%, 60%, 100% { opacity: 0.1; } }
+.qw-room.is-fault::after { opacity: 1; background: radial-gradient(closest-side, color-mix(in srgb, var(--alarm) 60%, transparent), color-mix(in srgb, var(--alarm) 0%, transparent) 70%); animation: qwFault 1.4s steps(2, jump-none) both; }
+.qw-hero[data-fault] .qw-sprite::after { content: "⚡"; position: absolute; left: 22px; top: -8px; font-size: 22px; animation: qwSpark 1.4s ease-out both; }
+@keyframes qwSpark { 0% { opacity: 0; transform: scale(0.4); } 15% { opacity: 1; transform: scale(1.3); } 100% { opacity: 0; transform: translateY(-14px) scale(1); } }
+
+/* искорки ведут к цели; на ёлке в финале */
+.qw-bonus.lead { opacity: 1; filter: drop-shadow(0 0 9px color-mix(in srgb, var(--gold-soft) 95%, transparent)) drop-shadow(0 0 4px #fff); animation: qwLead 1.1s ease-in-out infinite; }
+@keyframes qwLead { 0%, 100% { translate: 0 0; scale: 1; } 50% { translate: 0 -6px; scale: 1.35; } }
+.qw-tree-flake { position: absolute; width: 18px; height: 18px; margin: -9px 0 0 -9px; z-index: 3; pointer-events: none; filter: drop-shadow(0 0 6px color-mix(in srgb, var(--cyan) 95%, transparent)); animation: pop 0.6s cubic-bezier(0.2, 1.6, 0.4, 1) both; }
+
+/* маяк цели и стрелка у края экрана */
+.qw-pointer { position: absolute; left: 0; top: 0; z-index: 11; width: 0; height: 0; pointer-events: none; will-change: transform; }
+.qw-pointer-beacon { position: absolute; left: -23px; top: -50px; width: 46px; height: 46px; border-radius: 50%; display: grid; place-items: center; background: var(--gold); color: var(--on-gold); font-size: 28px; font-weight: 900; border: 3px solid #fff; box-shadow: 0 0 0 0 color-mix(in srgb, var(--gold) 80%, transparent), 0 6px 18px rgba(0, 0, 0, 0.45); animation: qwBeacon 1.4s ease-in-out infinite; }
+@keyframes qwBeacon { 0%, 100% { transform: translateY(0); box-shadow: 0 0 0 0 color-mix(in srgb, var(--gold) 70%, transparent), 0 6px 18px rgba(0, 0, 0, 0.45); } 50% { transform: translateY(-6px); box-shadow: 0 0 0 14px color-mix(in srgb, var(--gold) 0%, transparent), 0 6px 18px rgba(0, 0, 0, 0.45); } }
+.qw-pointer-arrow { display: none; position: absolute; left: -22px; top: -22px; width: 44px; height: 44px; transform: rotate(var(--angle, 0deg)); }
+.qw-pointer-arrow::before { content: ""; position: absolute; inset: 0; border-radius: 50%; background: var(--gold); border: 3px solid #fff; box-shadow: 0 6px 18px rgba(0, 0, 0, 0.45); }
+.qw-pointer-arrow::after { content: ""; position: absolute; left: 14px; top: 11px; border-left: 14px solid var(--on-gold); border-top: 10px solid transparent; border-bottom: 10px solid transparent; }
+.qw-pointer[data-edge="true"] .qw-pointer-beacon { display: none; }
+.qw-pointer[data-edge="true"] .qw-pointer-arrow { display: block; animation: qwArrow 1.1s ease-in-out infinite; }
+@keyframes qwArrow { 0%, 100% { scale: 1; } 50% { scale: 1.18; } }
+
+/* праздник */
+.qw-celebration { position: absolute; left: 0; top: 0; width: 0; height: 0; pointer-events: none; }
+.qw-garland-run { position: absolute; left: 0; top: 0; z-index: 3400; overflow: visible; }
+.qw-garland-run path { fill: none; stroke: color-mix(in srgb, var(--gold-soft) 70%, #fff); stroke-width: 9; stroke-linecap: round; stroke-dasharray: 0.12 1; filter: drop-shadow(0 0 10px color-mix(in srgb, var(--gold-soft) 95%, transparent)); animation: qwGarland 1.9s ease-in-out both; }
+@keyframes qwGarland { from { stroke-dashoffset: 0.12; opacity: 1; } 90% { opacity: 1; } to { stroke-dashoffset: -1; opacity: 0; } }
+.qw-toy-hand { position: absolute; z-index: 3600; margin: -17px 0 0 -17px; filter: drop-shadow(0 0 10px color-mix(in srgb, var(--gold-soft) 95%, transparent)); animation: pop 0.4s cubic-bezier(0.2, 1.6, 0.4, 1) both; }
+.qw-toy-fly { animation-delay: 0s; animation-duration: 1.3s; }
+.qw-points-fly { position: absolute; left: 0; top: 0; z-index: 40; font-size: 24px; font-weight: 900; color: var(--gold); text-shadow: 0 2px 10px rgba(0, 0, 0, 0.6); pointer-events: none; animation: qwPoints 1.2s cubic-bezier(0.5, 0, 0.3, 1) both; }
+@keyframes qwPoints { 0% { transform: translate(var(--fx), var(--fy)) scale(0.6); opacity: 0; } 18% { transform: translate(var(--fx), calc(var(--fy) - 30px)) scale(1.4); opacity: 1; } 100% { transform: translate(var(--tx), var(--ty)) scale(0.8); opacity: 0.2; } }
+.qw-tree-flash { position: absolute; margin: -150px 0 0 -150px; animation-delay: 0s; z-index: 3500; }
+
+/* рывок: сервисы-комнаты на шаре */
+.qw-services { position: absolute; inset: 0; z-index: 15; pointer-events: none; }
+.qw-service { position: absolute; left: 0; top: 0; margin: -32px 0 0 -32px; width: 64px; min-height: 64px; padding: 6px 4px 4px; border-radius: 18px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; background: color-mix(in srgb, var(--bg) 86%, transparent); border: 2px solid var(--sc, var(--cyan)); color: var(--ink); box-shadow: 0 0 18px color-mix(in srgb, var(--sc, var(--cyan)) 55%, transparent), 0 6px 16px rgba(0, 0, 0, 0.45); pointer-events: auto; cursor: pointer; will-change: transform; }
+.qw-service:hover { background: color-mix(in srgb, var(--card-2) 95%, transparent); }
+.qw-service-title { font-size: 10px; font-weight: 700; line-height: 1.1; text-align: center; max-width: 60px; }
+.qw-service .card-key { position: absolute; right: 4px; top: 2px; font-size: 10px; opacity: 0.7; }
+.qw-hint { position: absolute; z-index: 12; left: 12px; right: 12px; bottom: 14px; margin: 0 auto; width: fit-content; max-width: calc(100% - 24px); padding: 8px 14px; border-radius: 999px; background: color-mix(in srgb, var(--bg) 82%, transparent); border: 1px solid var(--line); font-size: 13px; color: var(--muted-2); text-align: center; pointer-events: none; }
+
+/* нижняя панель: пролог, вступление в рывок, итог времени */
+.qw-panel { position: absolute; z-index: 25; left: 12px; right: 12px; bottom: max(14px, env(safe-area-inset-bottom)); max-width: 520px; margin: 0 auto; display: flex; flex-direction: column; gap: 10px; padding: 16px; border-radius: 22px; background: var(--panel); border: 1px solid var(--line); box-shadow: 0 -10px 40px rgba(0, 0, 0, 0.45); animation: qwSheetUp 0.4s cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+.qw-panel-title { font-size: 21px; font-weight: 800; line-height: 1.1; }
+.qw-panel .mfa { margin: 2px 0; }
+.qw-overlay { position: absolute; inset: 0; z-index: 60; overflow-y: auto; background: var(--deep); display: flex; flex-direction: column; padding-top: 12px; }
+.qw-overlay .screen { flex: none; }
+.qw-ui { z-index: 10; }
+
+/* итог и заявка внутри карточки мира */
+.quest-sheet .qf-panel { padding: 8px 2px 4px; text-align: left; gap: 12px; background: none; border: 0; box-shadow: none; border-radius: 0; }
+.quest-sheet .qf-title { font-size: 26px; }
+.quest-sheet .big-score { font-size: 38px; }
+.quest-sheet .btn-stack { flex-direction: column; align-items: stretch; }
+.quest-sheet .btn-stack .btn { width: 100%; }
+.quest-sheet .final-score, .quest-sheet .final-ornaments { justify-content: flex-start; }
+.quest-sheet .bar-row { grid-template-columns: 96px minmax(0, 1fr) 52px; font-size: 13px; }
+.quest-sheet .qf-claim { padding: 4px 2px 0; }
+.quest-sheet .qf-claim .claim-title { font-size: 24px; }
+.qf-flakes { margin: 0; }
+.qs-ornament { display: flex; align-items: center; gap: 8px; margin: 0; }
+.share-flakes { margin: 6px 0 0; }
+
+/* на телефоне облачка и карточка не закрывают мир: карточка ≤ 45% высоты */
+@media (max-width: 759px) {
+  .qw-hud-right { max-width: 62vw; }
+  /* рывок: один ряд плашек (Закрыто, таймер, очки, звук), без переноса на вторую строку */
+  .quest[data-phase="rush"] .qw-hud-right { max-width: 100%; flex-wrap: nowrap; }
+  .quest[data-phase="rush"] .qw-hud .pill-lg { font-size: 14px; padding: 7px 11px; }
+  .qw-sheet { max-height: 45dvh; }
+}
+@media (min-width: 760px) {
+  .qw-goal { max-width: 420px; }
+  .qw-panel { left: 50%; right: auto; width: 520px; transform: translateX(-50%); animation-name: qwPanelIn; }
+}
+@keyframes qwPanelIn { from { transform: translate(-50%, 40px); opacity: 0; } to { transform: translate(-50%, 0); opacity: 1; } }
+
+@media (prefers-reduced-motion: reduce) {
+  .qw-hero-move { transition: none; }
+  .qw-pointer-beacon, .qw-pointer-arrow, .qw-bonus.lead, .qs-robot-fly, .qw-robot-bob, .qw-service, .qw-room.is-lit::after { animation: none !important; }
+  .qw-room.is-fault::before, .qw-room.is-fault::after { animation: none; opacity: 0.55; }
+  .qw-hero[data-fault] .qw-sprite::after { animation: none; opacity: 1; }
+  .qw-snow-burst { display: none; }
+  .qw-panel, .qw-sheet { animation: none; }
+}
+
+.qw-hud { flex-wrap: wrap; }
+.qw-room-hud { flex-basis: 100%; order: 3; margin-top: 0; }
+.qw-bubble { z-index: 18; }
+.qw-bubble-pinned::after { display: none; }
+.qw-sheet-tall { max-height: 64dvh; }
+.quest-sheet .hand-head { padding-right: 44px; }
+.qw-sheet:focus { outline: none; }
+@media (min-width: 760px) { .qw-sheet-tall { max-height: none; } }
+.qw-service { margin: -26px 0 0 -26px; width: 52px; min-height: 52px; border-radius: 15px; padding: 4px 2px 2px; }
+.qw-service-title { font-size: 9px; max-width: 50px; }
+@media (min-width: 760px) { .qw-service { margin: -32px 0 0 -32px; width: 64px; min-height: 64px; } .qw-service-title { font-size: 10px; max-width: 60px; } }

@@ -1,0 +1,112 @@
+{
+  "id": "b2b",
+  "title": "B2B и SaaS",
+  "toneHints": [
+    "Деловой тон без давления: факт, цифра или кейс дня.",
+    "Награда — полезный материал: чек-лист, вебинар, шаблон.",
+    "Лид в выгрузку: просите контакт в обмен на материал, а не скидку."
+  ],
+  "presentation": "calendar",
+  "schedule": {
+    "timezone": "Europe/Moscow",
+    "unlockHour": 9,
+    "catchUp": "all",
+    "rewardOnlyOnDay": false
+  },
+  "streak": {
+    "endowedDay": false,
+    "freezes": 2,
+    "comebackBonusRewardId": "comeback-material",
+    "goals": [
+      {
+        "openedShare": 0.4,
+        "rewardId": "goal-webinar"
+      },
+      {
+        "openedShare": 0.75,
+        "rewardId": "final-entry"
+      }
+    ]
+  },
+  "rewards": [
+    {
+      "id": "daily-material",
+      "kind": "gift",
+      "label": "Чек-лист дня",
+      "description": "Материал по теме дня.",
+      "redeem": "none"
+    },
+    {
+      "id": "comeback-material",
+      "kind": "gift",
+      "label": "Шаблон «С возвращением»",
+      "description": "Подарок тем, кто вернулся после пропуска.",
+      "redeem": "none"
+    },
+    {
+      "id": "goal-webinar",
+      "kind": "gift",
+      "label": "Доступ к вебинару",
+      "description": "Закрытый вебинар за пять открытых дверей.",
+      "redeem": "none"
+    },
+    {
+      "id": "luck-a",
+      "kind": "gift",
+      "label": "Заметка эксперта",
+      "description": "Утешительный приз удачи.",
+      "redeem": "none"
+    },
+    {
+      "id": "luck-b",
+      "kind": "gift",
+      "label": "Консультация эксперта",
+      "description": "Редкий приз удачи.",
+      "stock": 5,
+      "redeem": "none"
+    },
+    {
+      "id": "final-entry",
+      "kind": "finalEntry",
+      "label": "Участие в финальном розыгрыше",
+      "description": "Главный приз для участников.",
+      "redeem": "none"
+    }
+  ],
+  "luck": {
+    "skin": "boxes",
+    "fallbackRewardId": "luck-a"
+  },
+  "reminders": {
+    "channel": "email",
+    "sendAtLocal": "09:00",
+    "subject": "Дверь {day}: {teaser}",
+    "preheader": "Материал дня уже открыт"
+  },
+  "audience": {
+    "kind": "customers",
+    "leaderboard": "off"
+  },
+  "dayTemplates": [
+    {
+      "id": "fact-of-day",
+      "title": "Факт дня",
+      "teaser": "Цифра, которая меняет взгляд на задачу",
+      "blocks": [
+        "story",
+        "task"
+      ],
+      "hint": "Один факт из отрасли и вопрос на понимание."
+    },
+    {
+      "id": "case-of-day",
+      "title": "Кейс дня",
+      "teaser": "Как это сработало у клиента",
+      "blocks": [
+        "story",
+        "promo"
+      ],
+      "hint": "Короткий кейс; материал дня — подробный разбор."
+    }
+  ]
+}

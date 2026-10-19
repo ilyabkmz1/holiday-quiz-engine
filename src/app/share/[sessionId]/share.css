@@ -1,0 +1,15 @@
+.share-page {
+  display: grid; place-items: center; min-height: 100vh; min-height: 100dvh; padding: 24px 16px;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--bg) 78%, transparent), color-mix(in srgb, var(--bg) 96%, transparent)), var(--bg) var(--page-art) center / cover no-repeat;
+  color: var(--ink); font-family: var(--font);
+}
+.share-card { width: 100%; max-width: 560px; padding: 32px 24px; border: 1px solid color-mix(in srgb, var(--haze) 22%, transparent); border-radius: 24px; background: color-mix(in srgb, var(--panel) 88%, transparent); text-align: center; }
+.share-eyebrow { margin: 0; font-size: 12px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: var(--cyan); }
+.share-card h1 { margin: 16px 0 6px; line-height: 1; }
+.share-score { font-size: clamp(56px, 18vw, 96px); font-weight: 800; color: var(--gold); font-variant-numeric: tabular-nums; }
+.share-unit { font-size: 22px; font-weight: 500; color: var(--muted-2); }
+.share-tier { margin: 8px 0 0; font-size: clamp(20px, 5vw, 26px); font-weight: 800; line-height: 1.25; overflow-wrap: anywhere; }
+.share-lead { margin: 14px 0 24px; line-height: 1.5; color: var(--muted-2); }
+.share-button { display: flex; align-items: center; justify-content: center; min-height: 54px; padding: 0 20px; border-radius: 16px; background: var(--blue); color: var(--on-accent); font-weight: 700; font-size: 16px; text-decoration: none; box-shadow: 0 10px 30px color-mix(in srgb, var(--blue) 45%, transparent); }
+.share-button:hover { filter: brightness(1.08); }
+.share-button:focus-visible { outline: 3px solid var(--cyan); outline-offset: 2px; }

@@ -1,0 +1,10 @@
+node_modules
+.next
+.git
+.env*
+coverage
+.swe-helper
+*.pptx
+src/generated
+test-results
+playwright-report

@@ -1,0 +1,111 @@
+{
+  "id": "corporate",
+  "title": "Корпоративный (HR)",
+  "toneHints": [
+    "Дружелюбный внутренний тон: ценности, люди и продукты компании.",
+    "Без денежных призов и промокодов: баллы, мерч и командный зачёт.",
+    "Один вопрос в день занимает меньше минуты."
+  ],
+  "presentation": "calendar",
+  "schedule": {
+    "timezone": "Europe/Moscow",
+    "unlockHour": 9,
+    "catchUp": "all",
+    "rewardOnlyOnDay": false
+  },
+  "streak": {
+    "endowedDay": true,
+    "freezes": 2,
+    "goals": [
+      {
+        "openedShare": 0.5,
+        "rewardId": "goal-points"
+      },
+      {
+        "openedShare": 0.83,
+        "rewardId": "final-merch"
+      }
+    ]
+  },
+  "rewards": [
+    {
+      "id": "daily-points",
+      "kind": "points",
+      "label": "Баллы за день",
+      "description": "Баллы в личный и командный зачёт.",
+      "redeem": "none"
+    },
+    {
+      "id": "goal-points",
+      "kind": "points",
+      "label": "Бонусные баллы за серию",
+      "description": "Бонус за шесть открытых дверей.",
+      "redeem": "none"
+    },
+    {
+      "id": "luck-a",
+      "kind": "points",
+      "label": "Баллы удачи",
+      "description": "Утешительный приз удачи.",
+      "redeem": "none"
+    },
+    {
+      "id": "luck-b",
+      "kind": "gift",
+      "label": "Мерч компании",
+      "description": "Редкий приз удачи.",
+      "stock": 10,
+      "redeem": "none"
+    },
+    {
+      "id": "final-merch",
+      "kind": "gift",
+      "label": "Мерч за прохождение",
+      "description": "Подарок в финале.",
+      "redeem": "none"
+    },
+    {
+      "id": "final-entry",
+      "kind": "finalEntry",
+      "label": "Участие в финальном розыгрыше",
+      "description": "Главный приз для сотрудников.",
+      "redeem": "none"
+    }
+  ],
+  "luck": {
+    "skin": "wheel",
+    "fallbackRewardId": "luck-a"
+  },
+  "reminders": {
+    "channel": "email",
+    "sendAtLocal": "09:00",
+    "subject": "Дверь {day}: {teaser}",
+    "preheader": "Один вопрос на минуту"
+  },
+  "audience": {
+    "kind": "employees",
+    "leaderboard": "teams"
+  },
+  "dayTemplates": [
+    {
+      "id": "values",
+      "title": "Ценности",
+      "teaser": "Что для нас важно",
+      "blocks": [
+        "story",
+        "task"
+      ],
+      "hint": "Ситуация из рабочей жизни и вопрос о ценности, без «правильного» ответа в id."
+    },
+    {
+      "id": "people",
+      "title": "Люди компании",
+      "teaser": "Знакомьтесь с коллегами",
+      "blocks": [
+        "story",
+        "luck"
+      ],
+      "hint": "Короткая история коллеги; удача — для настроения."
+    }
+  ]
+}

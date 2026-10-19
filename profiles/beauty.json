@@ -1,0 +1,150 @@
+{
+  "id": "beauty",
+  "title": "Салоны красоты и спа",
+  "toneHints": [
+    "Заботливый, спокойный голос мастера.",
+    "Совет по уходу вместо рекламы: польза на каждый день.",
+    "Награда — апгрейд услуги или скидка на запись, срок неделя."
+  ],
+  "presentation": "calendar",
+  "schedule": {
+    "timezone": "Europe/Moscow",
+    "unlockHour": 0,
+    "catchUp": {
+      "window": 2
+    },
+    "rewardOnlyOnDay": false
+  },
+  "streak": {
+    "endowedDay": true,
+    "freezes": 1,
+    "comebackBonusRewardId": "comeback-upgrade",
+    "goals": [
+      {
+        "openedShare": 0.4,
+        "rewardId": "goal-discount"
+      },
+      {
+        "openedShare": 0.75,
+        "rewardId": "final-entry"
+      }
+    ]
+  },
+  "rewards": [
+    {
+      "id": "daily-upgrade",
+      "kind": "gift",
+      "label": "Апгрейд услуги",
+      "description": "Дополнительный уход к записи.",
+      "codes": {
+        "generated": {
+          "prefix": "CARE",
+          "length": 6
+        }
+      },
+      "validDays": 7,
+      "redeem": "both"
+    },
+    {
+      "id": "comeback-upgrade",
+      "kind": "gift",
+      "label": "Апгрейд «С возвращением»",
+      "description": "Подарок тем, кто вернулся после пропуска.",
+      "codes": {
+        "generated": {
+          "prefix": "BACK",
+          "length": 6
+        }
+      },
+      "validDays": 7,
+      "redeem": "both"
+    },
+    {
+      "id": "goal-discount",
+      "kind": "promo",
+      "label": "Скидка на запись",
+      "description": "Скидка за пять открытых дверей.",
+      "codes": {
+        "generated": {
+          "prefix": "SPA",
+          "length": 6
+        }
+      },
+      "validDays": 7,
+      "redeem": "both"
+    },
+    {
+      "id": "luck-a",
+      "kind": "gift",
+      "label": "Мини-уход в подарок",
+      "description": "Утешительный приз удачи.",
+      "codes": {
+        "generated": {
+          "prefix": "LUCK",
+          "length": 6
+        }
+      },
+      "validDays": 7,
+      "redeem": "both"
+    },
+    {
+      "id": "luck-b",
+      "kind": "promo",
+      "label": "Крупная скидка на запись",
+      "description": "Редкий приз удачи.",
+      "codes": {
+        "generated": {
+          "prefix": "TOP",
+          "length": 6
+        }
+      },
+      "validDays": 7,
+      "stock": 10,
+      "redeem": "both"
+    },
+    {
+      "id": "final-entry",
+      "kind": "finalEntry",
+      "label": "Участие в финальном розыгрыше",
+      "description": "Главный приз салона.",
+      "redeem": "none"
+    }
+  ],
+  "luck": {
+    "skin": "scratch",
+    "fallbackRewardId": "luck-a"
+  },
+  "reminders": {
+    "channel": "email",
+    "sendAtLocal": "11:00",
+    "subject": "Дверь {day}: {teaser}",
+    "preheader": "Совет по уходу и подарок дня"
+  },
+  "audience": {
+    "kind": "customers",
+    "leaderboard": "off"
+  },
+  "dayTemplates": [
+    {
+      "id": "care-tip",
+      "title": "Совет по уходу",
+      "teaser": "Мастер делится секретом",
+      "blocks": [
+        "story",
+        "promo"
+      ],
+      "hint": "Один практичный совет, который можно применить сегодня."
+    },
+    {
+      "id": "service-day",
+      "title": "Услуга дня",
+      "teaser": "Знакомьтесь с новой процедурой",
+      "blocks": [
+        "story",
+        "task",
+        "promo"
+      ],
+      "hint": "Вопрос про подбор процедуры, подарок — апгрейд к записи."
+    }
+  ]
+}

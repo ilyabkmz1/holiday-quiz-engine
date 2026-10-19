@@ -1,0 +1,333 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum SessionStatus {
+  playing
+  completed
+}
+
+/// Откуда награда адвента: день, удача, цель серии, бонус за возвращение, подаренный день.
+enum GrantSource {
+  day
+  luck
+  goal
+  comeback
+  endowed
+}
+
+enum GrantStatus {
+  issued
+  redeemed
+}
+
+enum ClaimStatus {
+  claim_pending
+  email_verified
+  exported
+  fulfilled
+}
+
+model Campaign {
+  slug          String        @id
+  title         String
+  configVersion Int           @default(1)
+  createdAt     DateTime      @default(now())
+  sessions      GameSession[]
+  claims        PrizeClaim[]
+  participants  Participant[]
+  rewardCodes   RewardCode[]
+  rewardStocks  RewardStock[]
+}
+
+model GameSession {
+  id              String        @id @db.Uuid
+  campaignSlug    String
+  accessKeyHash   String        @unique
+  status          SessionStatus @default(playing)
+  score           Int?
+  rewardTierTitle String?
+  startedAt       DateTime      @default(now())
+  completedAt     DateTime?
+  campaign        Campaign      @relation(fields: [campaignSlug], references: [slug], onDelete: Restrict)
+  answers         Answer[]
+  taskAnswers     TaskAnswer[]
+  roomEntries     RoomEntry[]
+  tasksShown      TaskShown[]
+  rushRun         RushRun?
+  rushAnswers     RushAnswer[]
+  claim           PrizeClaim?
+
+  @@index([campaignSlug, status])
+}
+
+/// Устаревшая таблица ответов «анкеты». Новая механика пишет в TaskAnswer; таблица оставлена,
+/// чтобы миграция была аддитивной и не ломала уже созданные сессии.
+model Answer {
+  id                String      @id @db.Uuid
+  sessionId         String      @db.Uuid
+  questionId        String
+  selectedOptionIds Json
+  awardedPoints     Int
+  createdAt         DateTime    @default(now())
+  session           GameSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@unique([sessionId, questionId])
+  @@index([sessionId])
+}
+
+/// Ответ на задание комнаты. `seq` — порядковый номер ответа в сессии (сквозь комнаты): по нему считается комбо.
+model TaskAnswer {
+  id         String      @id @db.Uuid
+  sessionId  String      @db.Uuid
+  taskId     String
+  seq        Int
+  payload    Json
+  basePoints Int
+  comboBonus Int
+  combo      Int
+  answeredAt DateTime
+  session    GameSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@unique([sessionId, taskId])
+  @@unique([sessionId, seq])
+}
+
+/// Вход в комнату: серверная отметка начала отсчёта бонуса скорости. Пишется один раз.
+model RoomEntry {
+  sessionId String      @db.Uuid
+  roomId    String
+  enteredAt DateTime
+  session   GameSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@id([sessionId, roomId])
+}
+
+/// Первая выдача задания игроку: серверная отметка начала отсчёта времени задания. Пишется один раз.
+model TaskShown {
+  sessionId String      @db.Uuid
+  taskId    String
+  shownAt   DateTime
+  session   GameSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@id([sessionId, taskId])
+}
+
+/// Прогон рывка: один на сессию. `deadlineAt` сдвигается на штраф за каждую ошибку, `poolOrder` — выданный порядок заявок.
+model RushRun {
+  sessionId  String      @id @db.Uuid
+  startedAt  DateTime
+  deadlineAt DateTime
+  poolOrder  Json
+  finishedAt DateTime?
+  session    GameSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+}
+
+/// Ответ на элемент пула рывка: один на элемент.
+model RushAnswer {
+  sessionId  String      @db.Uuid
+  itemId     String
+  serviceId  String
+  correct    Boolean
+  answeredAt DateTime
+  session    GameSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@id([sessionId, itemId])
+}
+
+model PrizeClaim {
+  id              String             @id @db.Uuid
+  campaignSlug    String
+  sessionId       String             @unique @db.Uuid
+  normalizedEmail String
+  name            String
+  company         String
+  consentAt       DateTime
+  status          ClaimStatus        @default(claim_pending)
+  createdAt       DateTime           @default(now())
+  verifiedAt      DateTime?
+  /// Момент первой выгрузки в CSV; пуст у заявок, выгруженных до появления поля.
+  exportedAt      DateTime?
+  campaign        Campaign           @relation(fields: [campaignSlug], references: [slug], onDelete: Restrict)
+  session         GameSession        @relation(fields: [sessionId], references: [id], onDelete: Restrict)
+  verification    EmailVerification?
+
+  @@unique([campaignSlug, normalizedEmail])
+  @@index([campaignSlug, status])
+}
+
+model EmailVerification {
+  claimId   String     @id @db.Uuid
+  tokenHash String     @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  claim     PrizeClaim @relation(fields: [claimId], references: [id], onDelete: Cascade)
+}
+
+model AuditEvent {
+  id        String   @id @default(uuid()) @db.Uuid
+  eventType String
+  entityId  String?
+  metadata  Json?
+  createdAt DateTime @default(now())
+
+  @@index([eventType, createdAt])
+}
+
+// ---------------------------------------------------------------------------------------------
+// Адвент. Таблицы квиза выше не затрагиваются; все данные разделены по `campaignSlug`, как у квиза.
+// ---------------------------------------------------------------------------------------------
+
+/// Участник адвента: анонимный (cookie) или привязанный к email после magic-link. Ключ cookie хранится только хешем.
+/// Дополнительные устройства (ссылка входа на другом устройстве) лежат в ParticipantKey.
+model Participant {
+  id                 String             @id @db.Uuid
+  campaignSlug       String
+  accessKeyHash      String             @unique
+  /// Появляется после подтверждения ссылки входа; в паре с campaignSlug уникален.
+  normalizedEmail    String?
+  teamId             String?
+  /// Согласие на обработку персональных данных (152-ФЗ).
+  consentAt          DateTime?
+  /// Отдельное согласие на рассылку (ст. 18 38-ФЗ); не зависит от consentAt.
+  marketingConsentAt DateTime?
+  reminderOptIn      Boolean            @default(false)
+  unsubscribeHash    String?            @unique
+  createdAt          DateTime           @default(now())
+  campaign           Campaign           @relation(fields: [campaignSlug], references: [slug], onDelete: Restrict)
+  keys               ParticipantKey[]
+  dayOpens           DayOpen[]
+  blockResults       DayBlockResult[]
+  grants             RewardGrant[]
+  loginTokens        LoginToken[]
+  reminders          ReminderDelivery[]
+
+  @@unique([campaignSlug, normalizedEmail])
+  @@index([campaignSlug])
+}
+
+/// Ключ доступа дополнительного устройства (хеш). После слияния участников сюда переезжают ключи поглощённого участника.
+model ParticipantKey {
+  accessKeyHash String      @id
+  participantId String      @db.Uuid
+  createdAt     DateTime    @default(now())
+  participant   Participant @relation(fields: [participantId], references: [id], onDelete: Cascade)
+
+  @@index([participantId])
+}
+
+/// Открытие двери дня. Пишется один раз; `onTime` — открыта в сам день (идёт в серию), а не догнана позже.
+model DayOpen {
+  participantId String      @db.Uuid
+  day           Int
+  openedAt      DateTime
+  onTime        Boolean
+  participant   Participant @relation(fields: [participantId], references: [id], onDelete: Cascade)
+
+  @@id([participantId, day])
+}
+
+/// Результат блока дня (история: подтверждение, задание: баллы). Пишется один раз.
+model DayBlockResult {
+  participantId String      @db.Uuid
+  day           Int
+  blockIndex    Int
+  result        Json
+  points        Int
+  createdAt     DateTime    @default(now())
+  participant   Participant @relation(fields: [participantId], references: [id], onDelete: Cascade)
+
+  @@id([participantId, day, blockIndex])
+}
+
+/// Выданная награда. Ключ идемпотентности — (participantId, source, day). Поле `day` не пустое:
+/// в PostgreSQL NULL в уникальном индексе считаются разными, поэтому для наград «раз за кампанию»
+/// (comeback, endowed) используется день 0, для целей серии — число открытых дверей цели, для дня и удачи — номер дня.
+model RewardGrant {
+  id            String      @id @db.Uuid
+  participantId String      @db.Uuid
+  day           Int         @default(0)
+  source        GrantSource
+  rewardId      String
+  /// Код из пула (A2); без кода (подарок, баллы, участие в розыгрыше) пуст.
+  code          String?
+  expiresAt     DateTime?
+  status        GrantStatus @default(issued)
+  redeemedAt    DateTime?
+  createdAt     DateTime    @default(now())
+  participant   Participant @relation(fields: [participantId], references: [id], onDelete: Cascade)
+  rewardCode    RewardCode?
+
+  @@unique([participantId, source, day])
+  @@index([participantId])
+}
+
+/// Код из загруженного пула (A2). Выдаётся одной транзакцией вместе с RewardGrant.
+model RewardCode {
+  campaignSlug String
+  rewardId     String
+  code         String
+  grantId      String?      @unique @db.Uuid
+  campaign     Campaign     @relation(fields: [campaignSlug], references: [slug], onDelete: Restrict)
+  grant        RewardGrant? @relation(fields: [grantId], references: [id], onDelete: SetNull)
+
+  @@unique([campaignSlug, code])
+  @@index([campaignSlug, rewardId, grantId])
+}
+
+/// Остаток награды для розыгрыша удачи (A2).
+model RewardStock {
+  campaignSlug String
+  rewardId     String
+  left         Int
+  campaign     Campaign @relation(fields: [campaignSlug], references: [slug], onDelete: Restrict)
+
+  @@id([campaignSlug, rewardId])
+}
+
+/// Одноразовая ссылка входа. Хранится только хеш токена. Email и согласия берутся в момент запроса ссылки
+/// и применяются к участнику только после подтверждения: чужой адрес нельзя «занять» без доступа к почте.
+model LoginToken {
+  tokenHash          String      @id
+  participantId      String      @db.Uuid
+  normalizedEmail    String
+  consentAt          DateTime
+  marketingConsentAt DateTime?
+  reminderOptIn      Boolean
+  createdAt          DateTime    @default(now())
+  expiresAt          DateTime
+  usedAt             DateTime?
+  participant        Participant @relation(fields: [participantId], references: [id], onDelete: Cascade)
+
+  @@index([participantId])
+}
+
+/// Отправленное напоминание (A5). Уникальный ключ защищает от повторной отправки.
+model ReminderDelivery {
+  participantId String      @db.Uuid
+  day           Int
+  sentAt        DateTime
+  clickedAt     DateTime?
+  participant   Participant @relation(fields: [participantId], references: [id], onDelete: Cascade)
+
+  @@id([participantId, day])
+}
+
+/// Логин оператора клиента: строго в рамках одного арендатора (slug пакета `tenants/<slug>`). Пароль хранится только хешем (scrypt).
+model TenantAdmin {
+  id           String    @id @default(uuid()) @db.Uuid
+  tenantSlug   String
+  username     String
+  passwordHash String
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  /// Отключённый логин не проходит проверку; строка остаётся для аудита.
+  disabledAt   DateTime?
+
+  @@unique([tenantSlug, username])
+}

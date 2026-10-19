@@ -1,0 +1,150 @@
+{
+  "id": "retail",
+  "title": "Розница и e-commerce",
+  "toneHints": [
+    "Коротко и по делу: товар дня, подборка, выгода в рублях или процентах.",
+    "Срочность: промокод живёт 3 дня, называйте дату окончания.",
+    "Не обещайте скидку на всё: промокод привязан к категории дня."
+  ],
+  "presentation": "calendar",
+  "schedule": {
+    "timezone": "Europe/Moscow",
+    "unlockHour": 0,
+    "catchUp": {
+      "window": 2
+    },
+    "rewardOnlyOnDay": false
+  },
+  "streak": {
+    "endowedDay": true,
+    "freezes": 1,
+    "comebackBonusRewardId": "comeback-promo",
+    "goals": [
+      {
+        "openedShare": 0.4,
+        "rewardId": "goal-promo"
+      },
+      {
+        "openedShare": 0.75,
+        "rewardId": "final-entry"
+      }
+    ]
+  },
+  "rewards": [
+    {
+      "id": "daily-promo",
+      "kind": "promo",
+      "label": "Промокод на категорию дня",
+      "description": "Скидка на товары категории дня.",
+      "codes": {
+        "generated": {
+          "prefix": "NY",
+          "length": 6
+        }
+      },
+      "validDays": 3,
+      "redeem": "online"
+    },
+    {
+      "id": "comeback-promo",
+      "kind": "promo",
+      "label": "Промокод «С возвращением»",
+      "description": "Бонус тем, кто вернулся после пропуска.",
+      "codes": {
+        "generated": {
+          "prefix": "BACK",
+          "length": 6
+        }
+      },
+      "validDays": 3,
+      "redeem": "online"
+    },
+    {
+      "id": "goal-promo",
+      "kind": "promo",
+      "label": "Повышенная скидка за серию",
+      "description": "Большая скидка за пять открытых дверей.",
+      "codes": {
+        "generated": {
+          "prefix": "GOAL",
+          "length": 6
+        }
+      },
+      "validDays": 7,
+      "redeem": "online"
+    },
+    {
+      "id": "luck-a",
+      "kind": "promo",
+      "label": "Маленькая скидка",
+      "description": "Утешительный приз удачи.",
+      "codes": {
+        "generated": {
+          "prefix": "LUCK",
+          "length": 6
+        }
+      },
+      "validDays": 3,
+      "redeem": "online"
+    },
+    {
+      "id": "luck-b",
+      "kind": "promo",
+      "label": "Крупная скидка",
+      "description": "Редкий приз удачи.",
+      "codes": {
+        "generated": {
+          "prefix": "TOP",
+          "length": 6
+        }
+      },
+      "validDays": 5,
+      "stock": 20,
+      "redeem": "online"
+    },
+    {
+      "id": "final-entry",
+      "kind": "finalEntry",
+      "label": "Участие в финальном розыгрыше",
+      "description": "Главный приз за открытые двери.",
+      "redeem": "none"
+    }
+  ],
+  "luck": {
+    "skin": "boxes",
+    "fallbackRewardId": "luck-a"
+  },
+  "reminders": {
+    "channel": "email",
+    "sendAtLocal": "10:00",
+    "subject": "Дверь {day}: {teaser}",
+    "preheader": "Сегодняшний промокод ждёт"
+  },
+  "audience": {
+    "kind": "customers",
+    "leaderboard": "off"
+  },
+  "dayTemplates": [
+    {
+      "id": "product-of-day",
+      "title": "Товар дня",
+      "teaser": "Сегодня в центре внимания один товар",
+      "blocks": [
+        "story",
+        "promo"
+      ],
+      "hint": "Одна категория, одна выгода, одна кнопка перехода в каталог."
+    },
+    {
+      "id": "collection",
+      "title": "Подборка",
+      "teaser": "Собрали подборку к празднику",
+      "blocks": [
+        "story",
+        "task",
+        "promo"
+      ],
+      "hint": "Вопрос в задании про подборку: помогает выбрать, а не экзаменует."
+    }
+  ]
+}

@@ -1,0 +1,93 @@
+import type { AdventConfig } from "@/config/advent-schema";
+import { adventPhase } from "@/domain/advent";
+import { DomainError } from "@/domain/errors";
+import { createOpaqueToken, hashToken } from "@/server/crypto";
+import { normalizeEmail } from "@/server/email";
+import type { AdventRepository, IdentityRepository, ParticipantRecord } from "@/server/repositories/advent-repository";
+import { assertParticipantId } from "@/server/services/advent-service";
+
+/** Ссылка входа живёт 30 минут и срабатывает один раз. */
+export const LOGIN_TOKEN_TTL_MS = 30 * 60 * 1000;
+
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+type IdentityServiceDependencies = {
+  repository: AdventRepository & IdentityRepository;
+  advent: AdventConfig;
+  /** Отправляет письмо со ссылкой входа. Адрес и ссылка в логи не пишутся. */
+  sendLoginLink: (email: string, link: string) => Promise<void>;
+  /** Запись об ошибке доставки (без адреса и ссылки). */
+  recordDeliveryFailure?: (participantId: string) => Promise<void>;
+  /** Адрес маршрута подтверждения без query: к нему добавляется `?token=…`. */
+  verifyEndpoint: string;
+};
+
+export type RequestLinkInput = {
+  email: string;
+  /** Согласие на обработку персональных данных (152-ФЗ): без него ссылка не отправляется. */
+  consent: boolean;
+  /** Отдельное согласие на рассылку (ст. 18 38-ФЗ). */
+  marketingConsent: boolean;
+  /** Напоминания об открытии дверей. */
+  reminderOptIn: boolean;
+};
+
+export class IdentityService {
+  constructor(private readonly dependencies: IdentityServiceDependencies) {}
+
+  /**
+   * «Сохранить серию»: запрос ссылки входа. Email и согласия записываются в ссылку и применяются к участнику
+   * только после подтверждения: чужой адрес нельзя занять без доступа к почте. Ответ не зависит от того,
+   * знаем ли мы этот email (нет перебора адресов).
+   */
+  async requestLink(participantId: string, input: RequestLinkInput, now: Date): Promise<void> {
+    const { repository, advent } = this.dependencies;
+    if (adventPhase(now, advent.schedule) === "closed") throw new DomainError("conflict", "Адвент завершён.");
+    if (!input.consent) throw new DomainError("conflict", "Нужно согласие на обработку данных.");
+    const email = normalizeEmail(input.email);
+    if (email.length > 254 || !EMAIL_PATTERN.test(email)) throw new DomainError("invalid", "Проверьте email.");
+
+    assertParticipantId(participantId);
+    const participant = await repository.getParticipant(participantId);
+    if (!participant || participant.campaignSlug !== advent.slug) throw new DomainError("not_found", "Участник не найден.");
+
+    const token = createOpaqueToken();
+    await repository.createLoginToken({
+      tokenHash: hashToken(token),
+      participantId,
+      normalizedEmail: email,
+      consentAt: now,
+      marketingConsentAt: input.marketingConsent ? now : null,
+      // Напоминания возможны, только если кампания их включила.
+      reminderOptIn: input.reminderOptIn && advent.reminders.channel === "email",
+      createdAt: now,
+      expiresAt: new Date(now.getTime() + LOGIN_TOKEN_TTL_MS),
+      usedAt: null
+    });
+
+    const url = new URL(this.dependencies.verifyEndpoint);
+    url.searchParams.set("token", token);
+    try {
+      await this.dependencies.sendLoginLink(email, url.toString());
+    } catch (error) {
+      await this.dependencies.recordDeliveryFailure?.(participantId);
+      throw error;
+    }
+  }
+
+  /**
+   * Подтверждение ссылки. Привязывает устройство к участнику с этим email; если на устройстве или у запросившего
+   * был свой анонимный прогресс, он вливается (см. `IdentityRepository.completeLogin`). Возвращает новый ключ cookie.
+   */
+  async verify(token: string, currentParticipant: ParticipantRecord | null, now: Date): Promise<{ participant: ParticipantRecord; accessKey: string }> {
+    const accessKey = createOpaqueToken();
+    const { participant } = await this.dependencies.repository.completeLogin({
+      tokenHash: hashToken(token),
+      now,
+      campaignSlug: this.dependencies.advent.slug,
+      currentParticipantId: currentParticipant?.id ?? null,
+      newAccessKeyHash: hashToken(accessKey)
+    });
+    return { participant, accessKey };
+  }
+}

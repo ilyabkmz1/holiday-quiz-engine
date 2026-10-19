@@ -1,0 +1,62 @@
+/* Панель оператора: тёмная, в стиле игры. Токены заданы здесь, чтобы не зависеть от globals.css игры. */
+.admin {
+  --a-bg: var(--bg); --a-panel: var(--panel); --a-card: var(--card); --a-ink: var(--ink); --a-muted: var(--muted);
+  --a-line: color-mix(in srgb, var(--haze) 18%, transparent); --a-cyan: var(--cyan); --a-gold: var(--gold); --a-coral: var(--coral); --a-green: var(--green); --a-blue: var(--blue);
+  min-height: 100vh; min-height: 100dvh; background: var(--a-bg); color: var(--a-ink);
+  font-family: var(--font);
+}
+.admin-page { display: flex; flex-direction: column; gap: 16px; max-width: 1120px; margin: 0 auto; padding: 24px 16px 56px; }
+.admin h1 { margin: 4px 0 0; font-size: clamp(22px, 4.5vw, 32px); line-height: 1.2; }
+.admin h2 { margin: 0 0 14px; font-size: 18px; }
+.admin-header { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 8px 24px; }
+.admin-eyebrow { margin: 0; font-size: 11px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: var(--a-cyan); }
+.admin-note { margin: 12px 0 0; font-size: 13px; line-height: 1.5; color: var(--a-muted); }
+.admin-header .admin-note { margin: 0; }
+.admin-empty { margin: 0; color: var(--a-muted); }
+.admin-card { padding: 20px; border: 1px solid var(--a-line); border-radius: 18px; background: var(--a-panel); min-width: 0; }
+.admin-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; }
+
+.funnel, .levels, .tasks { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 10px; }
+.funnel li, .levels li, .tasks li { display: grid; grid-template-columns: minmax(130px, 1.1fr) 2fr minmax(88px, auto); align-items: center; gap: 6px 12px; }
+.funnel-label, .task-name { font-size: 14px; line-height: 1.3; overflow-wrap: anywhere; }
+.task-name { display: flex; flex-direction: column; }
+.task-name small { color: var(--a-muted); font-size: 12px; }
+.funnel-count { text-align: right; font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.funnel-count small { font-weight: 500; color: var(--a-muted); }
+
+.a-bar { display: flex; height: 12px; border-radius: 999px; background: color-mix(in srgb, var(--haze) 12%, transparent); overflow: hidden; }
+.a-bar.thin { height: 4px; margin-top: 6px; max-width: 120px; }
+.a-fill { display: block; height: 100%; background: var(--a-cyan); }
+.a-fill.gold { background: var(--a-gold); }
+.a-fill.coral { background: var(--a-coral); }
+.a-bar.stacked .a-fill:first-child { background: var(--a-green); }
+.a-legend { display: inline-block; padding: 0 8px; border-radius: 999px; font-weight: 700; font-size: 12px; color: var(--bg); background: var(--a-green); }
+.a-legend.gold { background: var(--a-gold); } .a-legend.coral { background: var(--a-coral); }
+
+.timing { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 12px; margin: 0; }
+.timing div { padding: 12px; border-radius: 12px; background: var(--a-card); }
+.timing dt { font-size: 12px; color: var(--a-muted); }
+.timing dd { margin: 4px 0 0; font-size: 24px; font-weight: 800; font-variant-numeric: tabular-nums; }
+
+.table-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+.admin table { width: 100%; border-collapse: collapse; font-size: 14px; font-variant-numeric: tabular-nums; }
+.admin th, .admin td { padding: 8px 10px; text-align: right; border-bottom: 1px solid var(--a-line); white-space: nowrap; }
+.admin thead th { font-size: 12px; font-weight: 600; color: var(--a-muted); white-space: normal; vertical-align: bottom; }
+.admin th[scope="row"], .admin thead th:first-child { text-align: left; }
+.admin th[scope="row"] { font-weight: 600; }
+.admin table.left th, .admin table.left td { text-align: left; }
+.claims-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; }
+.claims-head h2 { margin: 0; }
+.admin-button { display: inline-flex; border: 0; cursor: pointer; font: inherit; align-items: center; justify-content: center; min-height: 44px; padding: 0 20px; border-radius: 14px; background: var(--a-blue); color: var(--on-accent); font-weight: 700; text-decoration: none; }
+.admin-button:hover { filter: brightness(1.1); }
+.admin-button:disabled { opacity: 0.6; cursor: progress; }
+.status-chips { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0; padding: 0; list-style: none; }
+.status-chips li { padding: 4px 12px; border-radius: 999px; background: var(--a-card); font-size: 13px; color: var(--a-muted); }
+.status-chips strong { color: var(--a-ink); }
+.admin :where(a, button):focus-visible { outline: 3px solid var(--a-cyan); outline-offset: 2px; }
+
+@media (max-width: 560px) {
+  .admin-card { padding: 16px; }
+  .funnel li, .levels li, .tasks li { grid-template-columns: 1fr auto; }
+  .funnel li .a-bar, .levels li .a-bar, .tasks li .a-bar { grid-column: 1 / -1; order: 3; }
+}

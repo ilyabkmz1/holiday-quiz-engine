@@ -1,0 +1,150 @@
+{
+  "id": "horeca",
+  "title": "Кафе, рестораны, кофейни",
+  "toneHints": [
+    "Тёплый голос заведения, от лица бариста или шефа.",
+    "Награда мелкая и осязаемая: напиток или десерт дня, приходите сегодня-завтра.",
+    "Рецепт или история места вместо скидки на всё меню."
+  ],
+  "presentation": "calendar",
+  "schedule": {
+    "timezone": "Europe/Moscow",
+    "unlockHour": 0,
+    "catchUp": {
+      "window": 1
+    },
+    "rewardOnlyOnDay": true
+  },
+  "streak": {
+    "endowedDay": true,
+    "freezes": 1,
+    "comebackBonusRewardId": "comeback-gift",
+    "goals": [
+      {
+        "openedShare": 0.33,
+        "rewardId": "goal-gift"
+      },
+      {
+        "openedShare": 0.66,
+        "rewardId": "final-entry"
+      }
+    ]
+  },
+  "rewards": [
+    {
+      "id": "daily-gift",
+      "kind": "gift",
+      "label": "Напиток или десерт дня",
+      "description": "Покажите код на кассе.",
+      "codes": {
+        "generated": {
+          "prefix": "",
+          "length": 6
+        }
+      },
+      "validDays": 2,
+      "redeem": "cashier"
+    },
+    {
+      "id": "comeback-gift",
+      "kind": "gift",
+      "label": "Угощение «С возвращением»",
+      "description": "Подарок тем, кто вернулся после пропуска.",
+      "codes": {
+        "generated": {
+          "prefix": "BACK",
+          "length": 5
+        }
+      },
+      "validDays": 2,
+      "redeem": "cashier"
+    },
+    {
+      "id": "goal-gift",
+      "kind": "gift",
+      "label": "Десерт за серию",
+      "description": "Подарок за четыре открытые двери.",
+      "codes": {
+        "generated": {
+          "prefix": "SET",
+          "length": 5
+        }
+      },
+      "validDays": 3,
+      "redeem": "cashier"
+    },
+    {
+      "id": "luck-a",
+      "kind": "gift",
+      "label": "Печенье к кофе",
+      "description": "Утешительный приз удачи.",
+      "codes": {
+        "generated": {
+          "prefix": "LUCK",
+          "length": 5
+        }
+      },
+      "validDays": 2,
+      "redeem": "cashier"
+    },
+    {
+      "id": "luck-b",
+      "kind": "gift",
+      "label": "Кофе в подарок",
+      "description": "Редкий приз удачи.",
+      "codes": {
+        "generated": {
+          "prefix": "TOP",
+          "length": 5
+        }
+      },
+      "validDays": 2,
+      "stock": 30,
+      "redeem": "cashier"
+    },
+    {
+      "id": "final-entry",
+      "kind": "finalEntry",
+      "label": "Участие в финальном розыгрыше",
+      "description": "Главный приз заведения.",
+      "redeem": "none"
+    }
+  ],
+  "luck": {
+    "skin": "boxes",
+    "fallbackRewardId": "luck-a"
+  },
+  "reminders": {
+    "channel": "email",
+    "sendAtLocal": "08:30",
+    "subject": "Дверь {day} открыта: {teaser}",
+    "preheader": "Подарок дня ждёт на кассе"
+  },
+  "audience": {
+    "kind": "customers",
+    "leaderboard": "off"
+  },
+  "dayTemplates": [
+    {
+      "id": "recipe",
+      "title": "Рецепт дня",
+      "teaser": "Секрет нашей кухни",
+      "blocks": [
+        "story",
+        "promo"
+      ],
+      "hint": "Короткий рецепт или приём, подарок дня — само блюдо."
+    },
+    {
+      "id": "place-story",
+      "title": "История места",
+      "teaser": "Как появилось наше заведение",
+      "blocks": [
+        "story",
+        "task",
+        "promo"
+      ],
+      "hint": "Один факт о месте и вопрос про него."
+    }
+  ]
+}
