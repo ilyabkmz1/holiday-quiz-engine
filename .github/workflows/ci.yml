@@ -29,6 +29,11 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run lint
+      # Клиент Prisma не хранится в репозитории (src/generated), а юнит-тесты транзитивно импортируют его через src/server/db.ts.
+      - name: Prisma client
+        env:
+          DATABASE_URL: postgresql://build:build@127.0.0.1:5432/build
+        run: npm run db:generate
       - run: npm test
       - name: Build
         # Заглушка для prisma generate и next build; к базе сборка не подключается.
