@@ -1,8 +1,8 @@
 import { expect, test as base, type APIRequestContext, type BrowserContext, type Locator, type Page } from "@playwright/test";
 
 import { adventPackSchema } from "../../../src/config/pack";
-import { correctPayload } from "../../../src/domain/solve";
 import { asOfForDay } from "../../../src/tools/advent-asof";
+import { escapeRegExp, fillTask } from "../../../src/tools/advent-driver";
 import { packs } from "../../../tenants/index";
 import { localEnv, mailpitUrl } from "../../e2e/support/env";
 
@@ -58,53 +58,25 @@ export async function gotoDay(page: Page, n: number) {
   await expect(page.locator(".adv-doors")).toBeVisible();
 }
 
-export function escapeRegExp(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+export { escapeRegExp, fillTask };
+
+/** Имя элемента удачи с номером `i` (1…): коробка, сектор или карточка — по скину пакета. */
+export function luckItemName(i: number): RegExp {
+  const template = { boxes: copy.luckBoxLabel, wheel: copy.luckSectorLabel, scratch: copy.luckCardLabel }[advent.luck?.skin ?? "boxes"];
+  return new RegExp(`^${escapeRegExp(template.replace("{i}", String(i)))}`);
 }
 
-function control(page: Page, group: string, title: string, role: "button" | "switch" = "button"): Locator {
-  return page.getByRole("group", { name: group }).getByRole(role, { name: title, exact: true });
-}
-
-/** Действия игрока по заданию вместе с отправкой ответа. Варианты выбираются по тексту из пакета. */
-export async function fillTask(page: Page, task: PackTask) {
-  const payload = correctPayload(task);
-  switch (task.type) {
-    case "pick": {
-      const id = (payload as { optionId: string }).optionId;
-      await control(page, "Варианты ответа", task.options.find((option) => option.id === id)!.title).click();
-      return;
-    }
-    case "phish": {
-      const id = (payload as { optionId: string }).optionId;
-      const letter = task.letters.find((item) => item.id === id)!;
-      await page.getByRole("group", { name: "Входящие письма" }).getByRole("button", { name: new RegExp(escapeRegExp(letter.address)) }).click();
-      await page.getByRole("button", { name: "Это подделка — в карантин" }).click();
-      return;
-    }
-    case "build": {
-      for (const id of (payload as { optionIds: string[] }).optionIds) {
-        await control(page, "Карточки сценария", task.options.find((option) => option.id === id)!.title).click();
-      }
-      await page.getByRole("button", { name: "Запустить сценарий", exact: true }).click();
-      return;
-    }
-    case "access": {
-      for (const id of (payload as { enabledIds: string[] }).enabledIds) {
-        await control(page, "Настройки доступа", task.switches.find((item) => item.id === id)!.title, "switch").click();
-      }
-      await page.getByRole("button", { name: "Применить настройки" }).click();
-      return;
-    }
-    case "order": {
-      for (const id of (payload as { orderedIds: string[] }).orderedIds) {
-        await control(page, "Шаги", task.items.find((item) => item.id === id)!.title).click();
-      }
-      await page.getByRole("button", { name: "Подтвердить порядок" }).click();
-      return;
-    }
-  }
-}
+type PackReward = (typeof advent.rewards)[number];
+/** Награда по названию (в интерфейсе она показана названием). */
+export const rewardByLabel = (label: string): PackReward | undefined => advent.rewards.find((reward) => reward.label === label);
+/** Награда за закрытие первого дня или подарок первого дня. */
+export const dayOneReward: PackReward | undefined = (() => {
+  const day = advent.days[0];
+  const id = day.rewardId ?? day.blocks.flatMap((block) => (block.type === "promo" ? [block.rewardId] : []))[0];
+  return advent.rewards.find((reward) => reward.id === id);
+})();
+export const needsIdentity = (reward: PackReward | undefined): boolean =>
+  reward !== undefined && (reward.codes !== undefined || reward.stock !== undefined || reward.redeem === "cashier" || reward.redeem === "both");
 
 /** Пройти день n через интерфейс: глава → блоки по порядку → «День пройден». Дверь открывает сам. */
 export async function playDay(page: Page, n: number) {
@@ -121,17 +93,17 @@ export async function playDay(page: Page, n: number) {
       case "task":
         await fillTask(page, block.task);
         await expect(dialog.getByRole("heading", { level: 3, name: copy.outcomePerfect })).toBeVisible();
-        await dialog.getByRole("button", { name: copy.outcomeNext }).click();
+        await dialog.getByRole("button", { name: copy.outcomeNext, exact: true }).click();
         break;
       case "luck":
-        await dialog.getByRole("button", { name: new RegExp(`^${escapeRegExp(copy.luckBoxLabel.replace("{i}", "1"))}`) }).click();
+        await dialog.getByRole("button", { name: luckItemName(1) }).click();
         await expect(dialog.getByText(copy.luckWon)).toBeVisible();
-        await dialog.getByRole("button", { name: copy.outcomeNext }).click();
+        await dialog.getByRole("button", { name: copy.outcomeNext, exact: true }).click();
         break;
       case "promo":
         await dialog.getByRole("button", { name: copy.promoOpen }).click();
         await expect(dialog.getByTestId("promo-code")).toBeVisible();
-        await dialog.getByRole("button", { name: copy.outcomeNext }).click();
+        await dialog.getByRole("button", { name: copy.outcomeNext, exact: true }).click();
         break;
     }
   }

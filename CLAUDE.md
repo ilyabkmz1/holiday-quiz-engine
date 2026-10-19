@@ -50,7 +50,7 @@ E2E_SERVER=prod npm run test:e2e       # production-сборка: npm run build 
 
 ## Карта проекта
 
-- `tenants/<slug>/` — пакет арендатора. `tenants/demo-office/` — эталонный пакет квеста (вымышленный «Северный офис», мир `snow-globe`) и регрессионная база тестов: `campaign.ts` — тексты, герои, пять зон по три задания, пул финального рывка, правильные ответы и уровни наград; `legal.ts` — юридические тексты; `pack.ts` — паспорт пакета. `tenants/demo-coffee/pack.json` — демо режима карточек. `tenants/index.ts` — манифест собранных пакетов (маркеры `// quiz:new-import` и `// quiz:new-append`).
+- `tenants/<slug>/` — пакет арендатора. `tenants/demo-office/` — эталонный пакет квеста (вымышленный «Северный офис», мир `snow-globe`) и регрессионная база тестов: `campaign.ts` — тексты, герои, пять зон по три задания, пул финального рывка, правильные ответы и уровни наград; `legal.ts` — юридические тексты; `pack.ts` — паспорт пакета. `tenants/demo-coffee/pack.json` — демо режима карточек; `tenants/demo-coffee-advent/` и `tenants/demo-team-advent/` — демо адвента (`demo: true`, время двигает `?asOf=`). `tenants/index.ts` — манифест собранных пакетов (маркеры `// quiz:new-import` и `// quiz:new-append`).
 - `src/config/pack.ts` — схема пакета; `src/config/schema.ts` — валидируемый контракт кампании; `src/config/brand.ts` — бренд, история, тексты интерфейса; `src/config/legal.ts` — общие типы и маркер `LEGAL_PLACEHOLDER`; `src/config/theme.ts` — дизайн-токены; `src/config/advent-schema.ts` — адвент.
 - `src/server/tenants.ts` — реестр и выбор арендатора по `Host`/`TENANT`.
 - `src/domain/` — чистые правила: `tasks.ts` (разбор ответов), `scoring.ts` (комбо, бонусы, уровни, `maxScore`), `rush.ts` (дедлайн финального рывка), `advent/`. Описание правил — `docs/game/MECHANICS.md`.
@@ -67,7 +67,7 @@ E2E_SERVER=prod npm run test:e2e       # production-сборка: npm run build 
 - `src/worlds/` — схема, загрузчик и расчётная модель миров; `worlds/<id>/world.json` — разметка; `public/worlds/<id>/` — иллюстрации; `public/art/` — фон картинки «Поделиться».
 - `src/proxy.ts` + `src/server/staging-gate.ts` — закрытый стенд (HTTP Basic auth на весь сайт при заданных `STAGING_USERNAME`/`STAGING_PASSWORD`; в Next.js 16 middleware называется proxy), `src/server/admin-gate.ts` + `admin-auth.ts` + `admin.ts` — замок страниц и API `/admin` строго в рамках арендатора по Host (логины `TenantAdmin` с хешем scrypt, `quiz:admin`; `ADMIN_*` — только при `TENANT` или `SUPERADMIN=true`), `tls-ask.ts` — проверка домена для Caddy (on-demand TLS).
 - `prisma/schema.prisma` и `prisma/migrations/` — модель данных и миграции.
-- `scripts/` — CLI `quiz:*`, `select-packs.mjs` (образ только с нужными пакетами, build-аргумент `QUIZ_PACKS`), очистка ПДн, нагрузочный smoke.
+- `scripts/` — CLI `quiz:*` (в том числе адвент: `quiz:new --experience advent`, `quiz:rules`, `quiz:shots --day`; логика в `src/tools/advent-*.ts`), `select-packs.mjs` (образ только с нужными пакетами, build-аргумент `QUIZ_PACKS`), очистка ПДн, нагрузочный smoke.
 - `deploy/` — выкатка на облачную ВМ (Compose, Caddy, скрипты, бэкапы); runbook — `deploy/README.md`.
 - `tests/unit/`, `tests/components/`, `tests/integration/`, `tests/e2e/` — автоматические проверки.
 

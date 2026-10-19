@@ -1,6 +1,7 @@
 import { pack as demoOffice } from "./demo-office/pack";
 import demoCoffee from "./demo-coffee/pack.json" with { type: "json" };
 import demoCoffeeAdvent from "./demo-coffee-advent/pack.json" with { type: "json" };
+import demoTeamAdvent from "./demo-team-advent/pack.json" with { type: "json" };
 // quiz:new-import
 
 /**
@@ -12,5 +13,6 @@ export const packs: unknown[] = [
   demoOffice,
   demoCoffee,
   demoCoffeeAdvent,
+  demoTeamAdvent,
   // quiz:new-append
 ];

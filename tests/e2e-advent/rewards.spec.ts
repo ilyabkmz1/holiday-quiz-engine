@@ -6,6 +6,8 @@ import {
   fillTask,
   gotoDay,
   loginFromSaveCard,
+  luckItemName,
+  rewardByLabel,
   packNeedsIdentity,
   playDay,
   sheet,
@@ -29,7 +31,7 @@ async function reachBlock(page: import("@playwright/test").Page, day: NonNullabl
     if (block.type === "story") await dialog.getByRole("button", { name: copy.storyNext, exact: true }).click();
     if (block.type === "task") {
       await fillTask(page, (block as { task: PackTask }).task);
-      await dialog.getByRole("button", { name: copy.outcomeNext }).click();
+      await dialog.getByRole("button", { name: copy.outcomeNext, exact: true }).click();
     }
   }
 }
@@ -55,7 +57,7 @@ test.describe("награды", () => {
     });
     const luckBlockIndex = day.blocks.findIndex((block) => block.type === "luck");
     const pending = page.waitForResponse((response) => response.url().includes(`/blocks/${luckBlockIndex}`) && response.request().method() === "POST");
-    await dialog.getByRole("button", { name: /^Коробка 2/ }).click();
+    await dialog.getByRole("button", { name: luckItemName(2) }).click();
     await expect(dialog.locator(".adv-luck")).toHaveAttribute("data-phase", "pending");
     await expect(dialog.getByText(copy.luckWon)).toHaveCount(0);
     await expect(dialog.locator('.adv-luck-item[data-state="open"]')).toHaveCount(0);
@@ -67,20 +69,29 @@ test.describe("награды", () => {
     await expect(dialog.locator(".adv-luck")).toHaveAttribute("data-phase", "reveal");
     const prize = dialog.locator(".adv-promo");
     await expect(prize).toBeVisible();
-    await expect(prize.getByTestId("promo-code")).toHaveText(/^[A-Z0-9-]{4,}$/);
-    expect(luckLabels).toContain((await prize.getByRole("heading", { level: 3 }).textContent())!.trim());
-    await expect(prize.getByRole("img", { name: copy.promoQrLabel })).toBeVisible();
-    await expect(prize.getByText(/^Действует до /)).toBeVisible();
-    const code = (await prize.getByTestId("promo-code").textContent())!;
+    const label = (await prize.getByRole("heading", { level: 3 }).textContent())!.trim();
+    expect(luckLabels).toContain(label);
+    const reward = rewardByLabel(label)!;
+    // Код, срок и QR — только у награды, у которой они есть в пакете.
+    let code = "";
+    if (reward.codes) {
+      await expect(prize.getByTestId("promo-code")).toHaveText(/^[A-Z0-9-]{4,}$/);
+      code = (await prize.getByTestId("promo-code").textContent())!;
+      if (reward.validDays) await expect(prize.getByText(/^Действует до /)).toBeVisible();
+    } else {
+      await expect(prize.getByTestId("promo-code")).toHaveCount(0);
+    }
+    if (reward.redeem === "cashier" || reward.redeem === "both") await expect(prize.getByRole("img", { name: copy.promoQrLabel })).toBeVisible();
 
-    await dialog.getByRole("button", { name: copy.outcomeNext }).click();
+    await dialog.getByRole("button", { name: copy.outcomeNext, exact: true }).click();
     await expect(dialog.getByRole("heading", { level: 3, name: copy.dayDoneTitle })).toBeVisible();
     await page.keyboard.press("Escape");
 
-    // После перезагрузки тот же код лежит в итоге дня.
+    // После перезагрузки та же награда (и код, если он есть) лежит в итоге дня.
     await page.reload();
     await door(page, day.n).click();
-    await expect(sheet(page).getByTestId("promo-code")).toHaveText(code);
+    await expect(sheet(page).getByRole("heading", { level: 3, name: label })).toBeVisible();
+    if (code) await expect(sheet(page).getByTestId("promo-code")).toHaveText(code);
   });
 
   test("удача без входа: сервер отвечает identity_required, приз не разыгран, показывается «Сохранить прогресс»", async ({ page }) => {
@@ -89,7 +100,7 @@ test.describe("награды", () => {
     await gotoDay(page, day.n);
     await reachBlock(page, day, "luck");
     const dialog = sheet(page);
-    await dialog.getByRole("button", { name: /^Коробка 1/ }).click();
+    await dialog.getByRole("button", { name: luckItemName(1) }).click();
     await expect(dialog.getByRole("region", { name: copy.saveTitle })).toBeVisible();
     await expect(dialog.getByText(copy.saveIdentityRequired)).toBeVisible();
     await expect(dialog.getByText(copy.luckWon)).toHaveCount(0);
@@ -106,7 +117,7 @@ test.describe("награды", () => {
     await gotoDay(page, day.n);
     await reachBlock(page, day, "luck");
     const dialog = sheet(page);
-    await dialog.getByRole("button", { name: /^Коробка 3/ }).click();
+    await dialog.getByRole("button", { name: luckItemName(3) }).click();
     // Без ожидания анимации раскрытия: исход виден, как только пришёл ответ.
     await expect(dialog.getByText(copy.luckWon)).toBeVisible({ timeout: 3000 });
     await expect(dialog.locator(".adv-burst")).toHaveCount(0);

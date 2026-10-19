@@ -136,6 +136,18 @@ export const audienceSchema = z.object({
   teams: z.array(z.object({ id, title: z.string().min(1) })).optional()
 });
 
+/**
+ * Условия акции для правил (`quiz:rules`) и юридических проверок (`quiz:check`).
+ * Участие в адвенте бесплатное; если для него нужна покупка, это стимулирующее мероприятие, и по ст. 9 38-ФЗ нужны правила.
+ */
+export const rulesSchema = z.object({
+  requiresPurchase: z.boolean().default(false),
+  /** Реквизиты организатора (ИНН или ОГРН, адрес): печатаются в правилах рядом с названием оператора. */
+  organizerDetails: z.string().trim().min(1).optional(),
+  /** Контакт для вопросов об акции и о персональных данных. */
+  contact: z.string().trim().min(1).optional()
+});
+
 const storyBlockSchema = z.object({
   type: z.literal("story"),
   lines: z.array(z.string().min(1)).min(ADVENT_LIMITS.chapterLines.min).max(ADVENT_LIMITS.chapterLines.max)
@@ -279,7 +291,8 @@ const adventBaseSchema = campaignCoreSchema.extend({
   rewards: z.array(rewardSchema).min(1),
   luck: luckSchema.optional(),
   reminders: remindersSchema.prefault({}),
-  audience: audienceSchema.prefault({})
+  audience: audienceSchema.prefault({}),
+  rules: rulesSchema.prefault({})
 });
 
 /** Точка мира для дня: явный `spotId` или точка пути по кругу, если точек меньше, чем дней. */

@@ -18,6 +18,26 @@ export type BriefFields = Partial<{
   colorHighlight: string;
   font: string;
   mode: string;
+  // Адвент (раздел 12 брифа): переносит `quiz:new --experience advent --brief`.
+  adventProfile: string;
+  adventDays: string;
+  adventStart: string;
+  adventUnlockHour: string;
+  adventCatchUp: string;
+  adventRewardOnlyOnDay: string;
+  adventPresentation: string;
+  adventFinale: string;
+  adventClaimEnds: string;
+  adventFreezes: string;
+  adventEndowedDay: string;
+  adventLuck: string;
+  adventReminders: string;
+  adventReminderTime: string;
+  adventAudience: string;
+  adventLeaderboard: string;
+  adventTeams: string;
+  adventParticipants: string;
+  adventRequiresPurchase: string;
 }>;
 
 const KEYS: Record<string, keyof BriefFields> = {
@@ -35,14 +55,45 @@ const KEYS: Record<string, keyof BriefFields> = {
   "цвет акцента": "colorAccent",
   "цвет подсветки": "colorHighlight",
   "шрифт": "font",
-  "режим": "mode"
+  "режим": "mode",
+  "тип бизнеса": "adventProfile",
+  "количество дней": "adventDays",
+  "первый день": "adventStart",
+  "час открытия нового дня": "adventUnlockHour",
+  "догнать пропущенные дни": "adventCatchUp",
+  "приз дня только в свой день": "adventRewardOnlyOnDay",
+  "вид": "adventPresentation",
+  "финал": "adventFinale",
+  "выдача кодов до": "adventClaimEnds",
+  "заморозки серии": "adventFreezes",
+  "подаренный день старта": "adventEndowedDay",
+  "удача": "adventLuck",
+  "напоминания на email": "adventReminders",
+  "время напоминаний": "adventReminderTime",
+  "кто играет": "adventAudience",
+  "рейтинг": "adventLeaderboard",
+  "команды": "adventTeams",
+  "ожидаемое число участников": "adventParticipants",
+  "нужна ли покупка для участия": "adventRequiresPurchase"
 };
+
+/** Двоеточие между ключом и значением: первое вне скобок, чтобы «Время напоминаний (ЧЧ:ММ): 09:30» читалось верно. */
+function separatorIndex(line: string): number {
+  let depth = 0;
+  for (let index = 0; index < line.length; index += 1) {
+    const char = line[index];
+    if (char === "(") depth += 1;
+    else if (char === ")") depth = Math.max(0, depth - 1);
+    else if (char === ":" && depth === 0) return index;
+  }
+  return -1;
+}
 
 export function parseBrief(text: string): BriefFields {
   const result: BriefFields = {};
   for (const raw of text.split(/\r?\n/)) {
     const line = raw.replace(/^[\s>*-]+/, "").replace(/\*\*/g, "");
-    const colon = line.indexOf(":");
+    const colon = separatorIndex(line);
     if (colon < 0) continue;
     const key = KEYS[line.slice(0, colon).trim().toLowerCase().replace(/\s*\(.*\)$/, "")];
     const value = line.slice(colon + 1).trim();

@@ -4,6 +4,8 @@ import {
   asOfFinale,
   copy,
   door,
+  needsIdentity,
+  dayOneReward,
   gotoAt,
   gotoDay,
   loginFromSaveCard,
@@ -33,7 +35,7 @@ test.describe("путь участника", () => {
         const dialog = sheet(page);
         await expect(dialog.getByRole("region", { name: copy.saveTitle })).toBeVisible();
         if (packNeedsIdentity) {
-          await expect(dialog.getByText(copy.promoNeedsIdentity)).toBeVisible();
+          if (needsIdentity(dayOneReward)) await expect(dialog.getByText(copy.promoNeedsIdentity)).toBeVisible();
           await loginFromSaveCard(page, request, asOfDay(1));
           signedIn = true;
         }
@@ -85,6 +87,15 @@ test.describe("путь участника", () => {
 
     await playDay(page, 3);
     await expect(door(page, 3)).toHaveAttribute("data-status", "opened");
+  });
+
+  test("догоняние «все»: прошедший день открывается в любой момент", async ({ page }) => {
+    test.skip(schedule.catchUp !== "all", "сценарий для пакетов с догонянием «все»");
+    await gotoDay(page, 5);
+    for (const n of [1, 2, 3, 4]) await expect(door(page, n)).toHaveAttribute("data-status", "catchup");
+    await expect(door(page, 5)).toHaveAttribute("data-status", "today");
+    await playDay(page, 1);
+    await expect(door(page, 1)).toHaveAttribute("data-status", "opened");
   });
 
   test("возвращение после пропуска: баннер «С возвращением!» при открытии сегодняшней двери", async ({ page, request }) => {
