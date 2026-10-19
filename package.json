@@ -16,6 +16,7 @@
     "test:integration": "vitest run --config vitest.integration.config.ts",
     "test:e2e": "playwright test",
     "test:e2e:tenants": "node scripts/e2e-tenants.mjs",
+    "test:e2e:advent": "playwright test --config playwright.advent.config.ts",
     "test:load": "tsx scripts/load-smoke.ts",
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate deploy",
@@ -24,6 +25,7 @@
     "quiz:new": "tsx scripts/quiz-new.ts",
     "quiz:check": "tsx scripts/quiz-check.ts",
     "quiz:shots": "tsx scripts/quiz-shots.ts",
+    "advent:shots": "tsx scripts/advent-shots.ts",
     "quiz:brand": "tsx scripts/quiz-brand.ts",
     "quiz:admin": "tsx scripts/quiz-admin.ts",
     "quiz:preview": "tsx scripts/quiz-preview.ts",
@@ -37,6 +39,7 @@
     "next": "16.4.0",
     "nodemailer": "10.1.1",
     "pg": "8.23.1",
+    "qrcode-generator": "2.0.4",
     "react": "19.3.1",
     "react-dom": "19.3.1",
     "zod": "4.6.7"

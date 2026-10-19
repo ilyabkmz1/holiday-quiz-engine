@@ -3,6 +3,8 @@ import type { CampaignConfig, Task } from "@/config/schema";
 import { RUSH } from "@/domain/rush";
 import { SCORING } from "@/domain/scoring";
 import { seededShuffle } from "@/server/shuffle";
+import type { AdventConfig } from "@/config/advent-schema";
+import type { PublicAdvent } from "@/types/advent";
 import type { PublicCampaign, PublicTask } from "@/types/api";
 
 /** Кампания для клиента: без текстов разбора заданий и без пула рывка. */
@@ -97,4 +99,37 @@ export function publicTask(roomId: string, task: Task, sessionId: string): Publi
     case "order":
       return { ...base, type: "order", items: seededShuffle(task.items, seed).map(card) };
   }
+}
+
+/** Адвент для клиента: явный список полей (задания, награды и пулы удачи уходят только через состояние участника). */
+export function publicAdvent(advent: AdventConfig, tenant: string, worldId: string = DEFAULT_WORLD_ID): PublicAdvent {
+  return {
+    slug: advent.slug,
+    tenant,
+    worldId,
+    title: advent.title,
+    subtitle: advent.subtitle,
+    intro: advent.intro,
+    presentation: advent.presentation,
+    heroes: advent.heroes.map(({ id, name, role, color }) => ({ id, name, role, color })),
+    brand: {
+      name: advent.brand.name,
+      mark: advent.brand.mark,
+      wordmark: advent.brand.wordmark,
+      ...(advent.brand.logo ? { logo: advent.brand.logo } : {}),
+      tagline: advent.brand.tagline,
+      topNote: advent.brand.topNote
+    },
+    story: { placeTitle: advent.story.placeTitle, guideIntro: advent.story.guideIntro },
+    copy: advent.copy,
+    legal: { operatorName: advent.legal.operatorName, consentText: advent.legal.consentText },
+    schedule: {
+      timezone: advent.schedule.timezone,
+      days: advent.schedule.days,
+      startDate: advent.schedule.startDate,
+      finaleAt: advent.schedule.finaleAt,
+      claimEndsAt: advent.schedule.claimEndsAt
+    },
+    luckSkin: advent.luck?.skin ?? null
+  };
 }

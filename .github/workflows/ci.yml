@@ -135,6 +135,9 @@ jobs:
       - name: Run E2E (demo-office и demo-coffee)
         # Полный путь игрока на каждом пакете арендатора: селекторы берутся из пакета, сервер стартует с TENANT=<slug>.
         run: npm run test:e2e:tenants
+      - name: Run E2E адвента (demo-coffee-advent)
+        # Календарь, лист дня, удача, подарок и вход по почте: время двигает ?asOf= (демо-пакет demo: true).
+        run: npm run test:e2e:advent
       - name: Upload Playwright report
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@v4

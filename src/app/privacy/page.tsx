@@ -1,12 +1,13 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 
-import { quizTenantForPage } from "@/server/page-tenant";
+import { anyTenantForPage } from "@/server/page-tenant";
+import { tenantCore } from "@/server/tenants";
 
 import "./privacy.css";
 
 export async function generateMetadata(): Promise<Metadata> {
-  const { campaign } = (await quizTenantForPage());
+  const campaign = tenantCore(await anyTenantForPage());
   return {
     title: `Политика обработки данных · ${campaign.title}`,
     description: `Как ${campaign.legal.operatorName} обрабатывает персональные данные участников квиза.`
@@ -19,7 +20,7 @@ function paragraphs(text: string): string[] {
 }
 
 export default async function PrivacyPage() {
-  const { campaign } = (await quizTenantForPage());
+  const campaign = tenantCore(await anyTenantForPage());
   const { operatorName, policyText } = campaign.legal;
   return (
     <main className="privacy-page">

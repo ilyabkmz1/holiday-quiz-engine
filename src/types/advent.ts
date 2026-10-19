@@ -1,9 +1,9 @@
 // Контракты публичного API адвента (`/api/advent/*`). Ни правильных ответов неотвеченных заданий, ни исхода удачи
 // до фиксации ответа в этих типах нет: верные варианты приходят только в `AdventTaskOutcome` после записи ответа.
 import type { AdventPhase, DoorStatus } from "@/domain/advent";
-import type { AdventReward } from "@/config/advent-schema";
+import type { AdventCopy, AdventReward } from "@/config/advent-schema";
 import type { GrantSource, GrantStatus } from "@/server/repositories/advent-repository";
-import type { PublicTask, TaskOutcome, TaskPayloadBody } from "@/types/api";
+import type { PublicHero, PublicTask, TaskOutcome, TaskPayloadBody } from "@/types/api";
 
 export type { AdventPhase, DoorStatus, GrantSource, GrantStatus };
 
@@ -137,3 +137,25 @@ export type SubmitBlockResponse =
   /** Анонимному участнику награда с кодом или остатком не выдаётся: блок не отмечен, приз не разыгран, остаток не списан. */
   | { status: "identity_required"; block: SubmittedBlock; state: AdventState };
 export type IdentityRequestResponse = { sent: true };
+
+/**
+ * Публичный срез адвент-пакета для страницы: бренд, тексты интерфейса, герои и расписание. Ни заданий, ни наград,
+ * ни пулов удачи здесь нет (их показывает `AdventState` по мере прохождения); собирает его `publicAdvent`.
+ */
+export type PublicAdvent = {
+  slug: string;
+  tenant: string;
+  worldId: string;
+  title: string;
+  subtitle: string;
+  intro: string;
+  presentation: "world" | "calendar";
+  heroes: PublicHero[];
+  brand: { name: string; mark: string; wordmark: string; logo?: string; tagline: string; topNote: string };
+  story: { placeTitle: string; guideIntro: string };
+  copy: AdventCopy;
+  legal: { operatorName: string; consentText: string };
+  schedule: { timezone: string; days: number; startDate: string; finaleAt: string; claimEndsAt: string };
+  /** Скин блока удачи; `null`, если удачи в адвенте нет. */
+  luckSkin: "boxes" | "wheel" | "scratch" | null;
+};
