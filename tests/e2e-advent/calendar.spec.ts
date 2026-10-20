@@ -29,7 +29,14 @@ test.describe("календарь адвента", () => {
       const button = door(page, n);
       await expect(button, `дверь ${n}`).toHaveAttribute("data-status", status);
       shapes.add((await button.getAttribute("data-shape"))!);
-      icons.add((await button.locator("svg").first().getAttribute("data-icon"))!);
+      if (storefront && status === "today") {
+        // У сегодняшнего окна «Витрины» значка нет (звезда — знак финала): его отличают лента и подпись «Сегодня».
+        await expect(button.locator(".adv-ribbon")).toHaveCount(1);
+        await expect(button.locator("svg[data-icon]")).toHaveCount(0);
+        icons.add("ribbon");
+      } else {
+        icons.add((await button.locator("svg").first().getAttribute("data-icon"))!);
+      }
       await expect(button).toHaveAccessibleName(new RegExp(`^${storefront ? "Окно" : "День"} ${n}: `));
     }
     const statuses = new Set(Array.from({ length: schedule.days }, (_, index) => expectedStatus(index + 1, today)));
