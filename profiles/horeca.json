@@ -6,7 +6,10 @@
     "Награда мелкая и осязаемая: напиток или десерт дня, приходите сегодня-завтра.",
     "Рецепт или история места вместо скидки на всё меню."
   ],
-  "presentation": "calendar",
+  "presentation": "storefront",
+  "facade": {
+    "templateId": "cafe"
+  },
   "schedule": {
     "timezone": "Europe/Moscow",
     "unlockHour": 0,

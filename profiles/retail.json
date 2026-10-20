@@ -6,7 +6,10 @@
     "Срочность: промокод живёт 3 дня, называйте дату окончания.",
     "Не обещайте скидку на всё: промокод привязан к категории дня."
   ],
-  "presentation": "calendar",
+  "presentation": "storefront",
+  "facade": {
+    "templateId": "shop"
+  },
   "schedule": {
     "timezone": "Europe/Moscow",
     "unlockHour": 0,

@@ -1,0 +1,36 @@
+{
+  "id": "office",
+  "title": "Офис: плоская крыша, панорамные окна",
+  "roof": {
+    "shape": "flat",
+    "awning": false
+  },
+  "windows": {
+    "shape": "square",
+    "panes": "panorama"
+  },
+  "door": {
+    "shape": "square"
+  },
+  "decor": {
+    "garland": true,
+    "snow": true,
+    "sign": true
+  },
+  "layout": {
+    "attic": true
+  },
+  "vessel": "stack",
+  "colors": {
+    "wall": "panel",
+    "roof": "royal",
+    "trim": "haze",
+    "glass": "void",
+    "glow": "gold",
+    "glowInk": "on-gold",
+    "door": "blue",
+    "ground": "ice",
+    "sign": "cyan",
+    "signInk": "paper-ink"
+  }
+}

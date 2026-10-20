@@ -5,6 +5,7 @@ import type { PlayerPose } from "@/components/quest/sim";
 
 import type { Mood } from "@/components/game/characters";
 import { MOOD_TEXT } from "@/components/game/characters";
+import type { HeroLook } from "@/config/schema";
 import type { PublicHero } from "@/types/api";
 
 /**
@@ -116,9 +117,9 @@ function PlayerSvg({ pose, facing }: PlayerSpriteProps) {
   );
 }
 
-type Look = { color: string; skin: number; style: "short" | "long" | "bun" | "cap" };
+type Look = { color: string; skin: number; style: HeroLook["hair"] };
 
-/** Набор внешностей героев: герой получает одну из них по устойчивому хешу id (пакет не задаёт внешность явно). */
+/** Набор внешностей героев: без `look` в пакете герой получает одну из них по устойчивому хешу id. */
 const LOOKS: Look[] = [
   { color: "#7a4a2b", skin: 0, style: "bun" },
   { color: "#2b2f4a", skin: 1, style: "long" },
@@ -128,17 +129,35 @@ const LOOKS: Look[] = [
   { color: "#3a3a3a", skin: 1, style: "cap" }
 ];
 
-function lookOf(heroId: string): Look {
+const HAIR_COLOR: Record<NonNullable<HeroLook["hairColor"]>, string> = {
+  black: "#22262e",
+  brown: "#5a3d2b",
+  chestnut: "#7a4a2b",
+  auburn: "#b5532f",
+  blond: "#d9a94e",
+  gray: "#9a9ca3"
+};
+const SKIN_INDEX: Record<NonNullable<HeroLook["skin"]>, number> = { light: 0, fair: 1, tan: 2, deep: 3 };
+
+/** Внешность героя: явная из пакета (`hero.look`), иначе устойчиво по id. */
+export function lookOf(hero: Pick<PublicHero, "id" | "look">): Look {
   let hash = 0;
-  for (const char of heroId) hash = (hash * 31 + char.charCodeAt(0)) >>> 0;
-  return LOOKS[hash % LOOKS.length];
+  for (const char of hero.id) hash = (hash * 31 + char.charCodeAt(0)) >>> 0;
+  const fallback = LOOKS[hash % LOOKS.length];
+  const look = hero.look;
+  if (!look) return fallback;
+  return {
+    style: look.hair,
+    color: look.hairColor ? HAIR_COLOR[look.hairColor] : fallback.color,
+    skin: look.skin ? SKIN_INDEX[look.skin] : fallback.skin
+  };
 }
 
 /** Герой задания: стоит на месте, дышит; реагирует настроением. */
 function HeroSvg({ hero, mood, pose, facing, marker }: HeroSpriteProps) {
   const mirrored = facing === -1;
   const id = useId();
-  const look = lookOf(hero.id);
+  const look = lookOf(hero);
   const skin = SKIN[look.skin];
   const g = (name: string) => `${id}-${name}`;
   return (

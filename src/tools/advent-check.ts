@@ -10,6 +10,9 @@ import { dayUnlockAt, isOverNdflThreshold } from "@/domain/advent";
 import { simulateAdvent } from "@/tools/advent-sim";
 import type { CheckReport } from "@/tools/pack-check";
 import { MARKER, walkStrings } from "@/tools/pack-walk";
+import { facadeContrastIssues } from "@/config/facade";
+import { facadeIds, loadFacade } from "@/facades/registry";
+import { deriveTheme } from "@/config/theme";
 import { loadWorld } from "@/worlds/registry";
 import { worldIds } from "@/worlds/registry";
 import { worldIssues } from "@/worlds/world";
@@ -271,6 +274,21 @@ export async function checkAdventPack(raw: unknown, options: AdventCheckOptions 
     report.errors.push("audience: рейтинг по командам (leaderboard: teams) только для сотрудников (kind: employees): у клиентов команд нет");
   }
 
+  // Фасад «Витрины»: шаблон существует, читается на палитре бренда; хозяин у двери проверен схемой (hostHeroId).
+  if (advent.facade && advent.presentation !== "storefront") {
+    report.warnings.push(`facade задан, а presentation: ${advent.presentation}: фасад не показывается (нужен presentation: storefront)`);
+  } else if (advent.facade) {
+    const known = facadeIds();
+    if (!known.includes(advent.facade.templateId)) {
+      report.errors.push(`facade.templateId «${advent.facade.templateId}»: такого фасада нет (доступны: ${known.join(", ")})`);
+    } else {
+      const template = loadFacade(advent.facade.templateId);
+      for (const problem of facadeContrastIssues(template, deriveTheme(advent.brand.colors, advent.brand.derived))) {
+        report.errors.push(`${problem}: подберите другой фасад или цвета бренда`);
+      }
+    }
+  }
+
   // Мир и точки дней.
   const worlds = worldIds();
   if (!worlds.includes(pack.worldId)) {
@@ -299,7 +317,7 @@ export async function checkAdventPack(raw: unknown, options: AdventCheckOptions 
   }
 
   report.info.push(
-    `дней: ${advent.days.length}, наград: ${advent.rewards.length}, героев: ${advent.heroes.length}, вид: ${advent.presentation}, профиль: ${pack.profile}`
+    `дней: ${advent.days.length}, наград: ${advent.rewards.length}, героев: ${advent.heroes.length}, вид: ${advent.presentation}${advent.facade ? ` (фасад ${advent.facade.templateId})` : ""}, профиль: ${pack.profile}`
   );
 
   // Симуляция трёх игроков.

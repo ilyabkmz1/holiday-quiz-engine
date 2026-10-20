@@ -1,12 +1,13 @@
 // Контракт публичного API игры. Ни один тип здесь не содержит признаков правильности ответа
 // для задания, на которое игрок ещё не ответил: верные варианты приходят только в `TaskReveal`.
+import type { HeroLook } from "@/config/schema";
 import type { RoomSummary } from "@/domain/scoring";
 
 export type { RoomSummary };
 
 export type TaskType = "pick" | "build" | "phish" | "access" | "order";
 
-export type PublicHero = { id: string; name: string; role: string; color: string };
+export type PublicHero = { id: string; name: string; role: string; color: string; look?: HeroLook };
 export type PublicCard = { id: string; title: string; icon: string };
 export type PublicLetter = {
   id: string;

@@ -1,0 +1,36 @@
+{
+  "id": "cafe",
+  "title": "Кофейня: двускатная крыша, арочные окна",
+  "roof": {
+    "shape": "gable",
+    "awning": false
+  },
+  "windows": {
+    "shape": "arch",
+    "panes": "cross"
+  },
+  "door": {
+    "shape": "arch"
+  },
+  "decor": {
+    "garland": true,
+    "snow": true,
+    "sign": true
+  },
+  "layout": {
+    "attic": true
+  },
+  "vessel": "cup",
+  "colors": {
+    "wall": "card-2",
+    "roof": "royal",
+    "trim": "haze",
+    "glass": "deep",
+    "glow": "gold",
+    "glowInk": "on-gold",
+    "door": "patch",
+    "ground": "ice",
+    "sign": "gold",
+    "signInk": "on-gold"
+  }
+}

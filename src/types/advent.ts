@@ -1,7 +1,8 @@
 // Контракты публичного API адвента (`/api/advent/*`). Ни правильных ответов неотвеченных заданий, ни исхода удачи
 // до фиксации ответа в этих типах нет: верные варианты приходят только в `AdventTaskOutcome` после записи ответа.
 import type { AdventPhase, DoorStatus } from "@/domain/advent";
-import type { AdventCopy, AdventReward } from "@/config/advent-schema";
+import type { AdventCopy, AdventReward, RewardIcon } from "@/config/advent-schema";
+import type { Facade } from "@/config/facade";
 import type { GrantSource, GrantStatus } from "@/server/repositories/advent-repository";
 import type { PublicHero, PublicTask, TaskOutcome, TaskPayloadBody } from "@/types/api";
 
@@ -40,7 +41,8 @@ export type AdventTaskOutcome = {
 
 export type AdventBlockState =
   | { index: number; type: "story"; lines: string[]; done: boolean }
-  | { index: number; type: "task"; task: PublicTask; done: boolean; outcome: AdventTaskOutcome | null }
+  /** `cover` — обложка задания в «Витрине» из пакета (`null` — по типу задания). */
+  | { index: number; type: "task"; task: PublicTask; cover: "vessel" | "list" | null; done: boolean; outcome: AdventTaskOutcome | null }
   /**
    * Блок удачи: до выполнения исхода в состоянии нет (`reveal: null`). `ready` — доступен (остальные блоки дня
    * пройдены), `needsIdentity` — для выдачи приза нужен вход по ссылке (анонимному участнику ответ `identity_required`).
@@ -70,6 +72,8 @@ export type AdventGrantView = {
   kind: AdventReward["kind"];
   label: string;
   description: string;
+  /** Значок награды в окне «Витрины» (из пакета или по виду награды). */
+  icon: RewardIcon;
   status: GrantStatus;
   /** Срок действия; пуст, пока награда не активирована (нужен вход по ссылке) и у наград без срока. */
   expiresAt: string | null;
@@ -138,6 +142,9 @@ export type SubmitBlockResponse =
   | { status: "identity_required"; block: SubmittedBlock; state: AdventState };
 export type IdentityRequestResponse = { sent: true };
 
+/** Фасад для клиента: шаблон из `facades/`, герой-хозяин у двери и текст вывески. */
+export type PublicFacade = { template: Facade; hostHeroId: string; signText: string };
+
 /**
  * Публичный срез адвент-пакета для страницы: бренд, тексты интерфейса, герои и расписание. Ни заданий, ни наград,
  * ни пулов удачи здесь нет (их показывает `AdventState` по мере прохождения); собирает его `publicAdvent`.
@@ -149,7 +156,9 @@ export type PublicAdvent = {
   title: string;
   subtitle: string;
   intro: string;
-  presentation: "world" | "calendar";
+  presentation: "world" | "calendar" | "storefront";
+  /** Фасад «Витрины»; `null` при других видах. */
+  facade: PublicFacade | null;
   heroes: PublicHero[];
   brand: { name: string; mark: string; wordmark: string; logo?: string; tagline: string; topNote: string };
   story: { placeTitle: string; guideIntro: string };

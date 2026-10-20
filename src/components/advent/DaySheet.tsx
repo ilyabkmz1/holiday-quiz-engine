@@ -8,13 +8,17 @@ import { Burst } from "@/components/advent/Burst";
 import { LuckReveal, type LuckPhase } from "@/components/advent/LuckReveal";
 import { PromoCard } from "@/components/advent/PromoCard";
 import { SaveProgressCard, type SaveProgressInput } from "@/components/advent/SaveProgressCard";
-import { fill } from "@/components/advent/format";
+import { dayLabel, fill } from "@/components/advent/format";
+import { HeroSays } from "@/components/advent/storefront/HeroSays";
+import { daySteps, presentSteps, StepRail, type StepKey } from "@/components/advent/storefront/StepRail";
+import { STOREFRONT_SKIN, StorefrontSkinContext } from "@/components/advent/storefront/skins";
 import type { AdventApi } from "@/components/advent/api";
 import { HeroFace } from "@/components/game/characters";
 import { correctTitles } from "@/components/game/RevealPanel";
 import { RobotHint } from "@/components/game/room-ui";
 import { TaskMechanic } from "@/components/play/TaskMechanic";
 import { useSound } from "@/components/play/sound";
+import { HeroSprite } from "@/components/quest/sprites";
 import type { AdventBlockState, AdventGrantView, AdventState, AdventTaskOutcome, PublicAdvent } from "@/types/advent";
 import type { PublicHero, PublicRoom, PublicTask, TaskPayloadBody, TaskReveal } from "@/types/api";
 
@@ -88,6 +92,10 @@ export function DaySheet({ advent, state, n, reduced, nowMs, api, onClose, onSta
   const currentIndex = pinned ?? nextIndex;
   const current: AdventBlockState | null = blocks && currentIndex >= 0 ? (blocks[currentIndex] ?? null) : null;
   const hero: PublicHero = advent.heroes.find((candidate) => candidate.id === day?.heroId) ?? advent.heroes[0];
+  // «Витрина»: экран дня как история с персонажем, предметные обложки заданий и индикатор шагов; календарь остаётся прежним.
+  const store = advent.presentation === "storefront" && advent.facade !== null;
+  const cover = current?.type === "task" ? current.cover : null;
+  const skinValue = useMemo(() => ({ copy, vessel: advent.facade?.template.vessel ?? ("box" as const), cover }), [copy, advent.facade, cover]);
 
   // Каждый шаг показывается с начала листа.
   useEffect(() => {
@@ -203,7 +211,9 @@ export function DaySheet({ advent, state, n, reduced, nowMs, api, onClose, onSta
   );
 
   let content;
-  if (!chapterSeen && !done) {
+  if (!chapterSeen && !done && store) {
+    content = <HeroSays hero={hero} lines={day.chapter} copy={copy} doneLabel={copy.chapterNext} mood="happy" onDone={() => setChapterSeen(true)} />;
+  } else if (!chapterSeen && !done) {
     content = (
       <section className="adv-chapter">
         <div className="adv-hero-row">
@@ -222,6 +232,8 @@ export function DaySheet({ advent, state, n, reduced, nowMs, api, onClose, onSta
     );
   } else if (needIdentity) {
     content = saveCard("identity");
+  } else if (current?.type === "story" && store) {
+    content = <HeroSays key={current.index} hero={hero} lines={current.lines} copy={copy} doneLabel={copy.storyNext} mood="neutral" busy={busy} onDone={() => void confirmStory(current.index)} />;
   } else if (current?.type === "story") {
     content = (
       <section className="adv-chapter">
@@ -243,10 +255,14 @@ export function DaySheet({ advent, state, n, reduced, nowMs, api, onClose, onSta
     const task: PublicTask = current.task;
     const taskHero = advent.heroes.find((candidate) => candidate.id === task.heroId) ?? hero;
     const reveal = current.outcome ? outcomeToReveal(current.outcome) : null;
-    content = (
+    const mechanic = (
       <div className="room-layout" key={task.id}>
         <div className="adv-hero-row adv-task-say" role="status" aria-live="polite">
-          <HeroFace hero={taskHero} mood={reveal ? reveal.mood : "neutral"} size={44} />
+          {store ? (
+            <span className="adv-say-sprite"><HeroSprite hero={taskHero} mood={reveal ? reveal.mood : "neutral"} pose="idle" facing={1} marker={null} /></span>
+          ) : (
+            <HeroFace hero={taskHero} mood={reveal ? reveal.mood : "neutral"} size={44} />
+          )}
           <p className="adv-bubble"><b>{taskHero.name}:</b> {reveal ? reveal.line : task.say}</p>
         </div>
         <TaskMechanic
@@ -258,6 +274,7 @@ export function DaySheet({ advent, state, n, reduced, nowMs, api, onClose, onSta
           onSubmit={(payload) => void submitTask(current.index, payload)}
           shake={false}
           sceneVariant="flat"
+          skin={store ? STOREFRONT_SKIN : undefined}
           after={
             reveal && (
               <div className="adv-outcome rise" data-outcome={reveal.outcome}>
@@ -276,6 +293,7 @@ export function DaySheet({ advent, state, n, reduced, nowMs, api, onClose, onSta
         />
       </div>
     );
+    content = store ? <StorefrontSkinContext.Provider value={skinValue}>{mechanic}</StorefrontSkinContext.Provider> : mechanic;
   } else if (current?.type === "luck") {
     const run: LuckRun = luck ?? { phase: "choose", chosen: null, result: null };
     content = (
@@ -328,22 +346,35 @@ export function DaySheet({ advent, state, n, reduced, nowMs, api, onClose, onSta
           <p className="adv-muted-small">{copy.dayDoneNoReward}</p>
         )}
         {anonymous && saveCard("after-day")}
-        <button type="button" className="adv-btn adv-btn-ghost" onClick={onClose}>{copy.sheetClose}</button>
+        <button type="button" className="adv-btn adv-btn-ghost" onClick={onClose}>{store ? copy.dayBack : copy.sheetClose}</button>
       </section>
     );
   }
 
+  // Шаг дня для индикатора: история → задание → подарок; пройденный день — все шаги пройдены.
+  const stepNow: StepKey | "done" = done ? "done" : !chapterSeen ? "story" : current?.type === "story" ? "story" : current?.type === "task" ? "task" : "gift";
+  const steps = daySteps(presentSteps(blocks, state.days.find((candidate) => candidate.n === n)?.rewardId != null), stepNow);
+
+  const eyebrow = store ? fill(copy.dayEyebrow, { n, date: dayLabel(door.unlocksAt, advent.schedule.timezone) }) : fill(copy.chapterEyebrow, { n });
   return (
-    <AdventSheet label={`${fill(copy.chapterEyebrow, { n })}: ${door.title}`} closeLabel={copy.sheetClose} onClose={onClose}>
+    <AdventSheet
+      label={`${fill(copy.chapterEyebrow, { n })}: ${door.title}`}
+      closeLabel={store ? copy.dayBack : copy.sheetClose}
+      onClose={onClose}
+      back={store}
+      footer={store ? <StepRail steps={steps} copy={copy} /> : undefined}
+    >
       <div ref={bodyRef}>
         <header className="adv-sheet-head">
-          <div className="adv-eyebrow">{fill(copy.chapterEyebrow, { n })}</div>
+          <div className="adv-eyebrow">{eyebrow}</div>
           <h2 className="adv-sheet-title">{door.title}</h2>
-          <div className="adv-pips" role="img" aria-label={`${door.blocksDone} / ${door.blocksTotal}`}>
-            {blocks.map((block) => (
-              <i key={block.index} className={block.done ? "on" : block.index === currentIndex ? "now" : ""} />
-            ))}
-          </div>
+          {!store && (
+            <div className="adv-pips" role="img" aria-label={`${door.blocksDone} / ${door.blocksTotal}`}>
+              {blocks.map((block) => (
+                <i key={block.index} className={block.done ? "on" : block.index === currentIndex ? "now" : ""} />
+              ))}
+            </div>
+          )}
         </header>
         {content}
       </div>

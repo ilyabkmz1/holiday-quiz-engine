@@ -1,0 +1,36 @@
+{
+  "id": "shop",
+  "title": "Магазин: плоская крыша с маркизой, прямоугольные витрины",
+  "roof": {
+    "shape": "flat",
+    "awning": true
+  },
+  "windows": {
+    "shape": "square",
+    "panes": "single"
+  },
+  "door": {
+    "shape": "square"
+  },
+  "decor": {
+    "garland": true,
+    "snow": true,
+    "sign": true
+  },
+  "layout": {
+    "attic": true
+  },
+  "vessel": "box",
+  "colors": {
+    "wall": "card",
+    "roof": "patch",
+    "trim": "ice",
+    "glass": "deep",
+    "glow": "gold",
+    "glowInk": "on-gold",
+    "door": "royal",
+    "ground": "ice",
+    "sign": "coral",
+    "signInk": "paper-ink"
+  }
+}

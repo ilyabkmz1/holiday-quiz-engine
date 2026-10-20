@@ -6,7 +6,10 @@
     "Награда — полезный материал: чек-лист, вебинар, шаблон.",
     "Лид в выгрузку: просите контакт в обмен на материал, а не скидку."
   ],
-  "presentation": "calendar",
+  "presentation": "storefront",
+  "facade": {
+    "templateId": "office"
+  },
   "schedule": {
     "timezone": "Europe/Moscow",
     "unlockHour": 9,

@@ -12,7 +12,7 @@ import { config } from "../support/advent-ui";
 const NOW = Date.parse("2026-12-22T12:00:00+03:00");
 
 const grant: AdventGrantView = {
-  id: "g1", source: "day", day: 3, rewardId: "daily-gift", kind: "gift", label: "Напиток или десерт дня", description: "Покажите код на кассе.",
+  id: "g1", source: "day", day: 3, rewardId: "daily-gift", kind: "gift", label: "Напиток или десерт дня", description: "Покажите код на кассе.", icon: "gift",
   status: "issued", expiresAt: "2026-12-24T12:00:00.000Z", code: "ZR4F7K", grantedAt: "2026-12-22T09:00:00.000Z", redeemedAt: null, redeem: "cashier",
   url: null, needsIdentity: false, codePending: false, qr: { payload: "ADV1.g1.sig", url: "https://advent.test/redeem?code=ADV1.g1.sig" }
 };

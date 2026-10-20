@@ -1,4 +1,4 @@
-import { expect, test, advent, asOfBeforeStart, asOfClosed, asOfDay, asOfFinale, copy, door, gotoAt, gotoDay, schedule, sheet } from "./support/advent";
+import { expect, test, advent, asOfBeforeStart, asOfClosed, asOfDay, asOfFinale, copy, door, doorsOf, gotoAt, gotoDay, schedule, sheet, storefront } from "./support/advent";
 
 /** Статус двери без участия игрока (ничего не открыто) на день `today` по правилам догоняния пакета. */
 function expectedStatus(n: number, today: number): string {
@@ -15,8 +15,8 @@ test.describe("календарь адвента", () => {
     await gotoAt(page, asOfBeforeStart);
     await expect(page.getByRole("timer")).toBeVisible();
     await expect(page.getByRole("heading", { level: 2, name: /^Адвент откроется \d+ [а-я]+$/ })).toBeVisible();
-    await expect(page.locator(".adv-door")).toHaveCount(schedule.days);
-    await expect(page.locator('.adv-door[data-status="locked"]')).toHaveCount(schedule.days);
+    await expect(doorsOf(page)).toHaveCount(schedule.days);
+    await expect(doorsOf(page).and(page.locator('[data-status="locked"]'))).toHaveCount(schedule.days);
   });
 
   test("в середине адвента: статусы дверей различаются значком, формой и подписью, а не только цветом", async ({ page }) => {
@@ -29,13 +29,20 @@ test.describe("календарь адвента", () => {
       const button = door(page, n);
       await expect(button, `дверь ${n}`).toHaveAttribute("data-status", status);
       shapes.add((await button.getAttribute("data-shape"))!);
-      icons.add((await button.locator("svg").getAttribute("data-icon"))!);
-      await expect(button).toHaveAccessibleName(new RegExp(`^День ${n}: `));
+      if (storefront && status === "today") {
+        // У сегодняшнего окна «Витрины» значка нет (звезда — знак финала): его отличают лента и подпись «Сегодня».
+        await expect(button.locator(".adv-ribbon")).toHaveCount(1);
+        await expect(button.locator("svg[data-icon]")).toHaveCount(0);
+        icons.add("ribbon");
+      } else {
+        icons.add((await button.locator("svg").first().getAttribute("data-icon"))!);
+      }
+      await expect(button).toHaveAccessibleName(new RegExp(`^${storefront ? "Окно" : "День"} ${n}: `));
     }
     const statuses = new Set(Array.from({ length: schedule.days }, (_, index) => expectedStatus(index + 1, today)));
     expect(shapes.size).toBe(statuses.size);
     expect(icons.size).toBe(statuses.size);
-    await expect(door(page, today)).toContainText(copy.doorToday);
+    await expect(door(page, today)).toContainText(storefront ? copy.windowToday : copy.doorToday);
   });
 
   test("клавиатура: Tab входит в сетку, стрелки двигают фокус, Enter открывает лист, Escape возвращает фокус", async ({ page }) => {

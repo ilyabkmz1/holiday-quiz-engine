@@ -4,7 +4,8 @@ import { RUSH } from "@/domain/rush";
 import { SCORING } from "@/domain/scoring";
 import { seededShuffle } from "@/server/shuffle";
 import type { AdventConfig } from "@/config/advent-schema";
-import type { PublicAdvent } from "@/types/advent";
+import { loadFacade } from "@/facades/registry";
+import type { PublicAdvent, PublicFacade } from "@/types/advent";
 import type { PublicCampaign, PublicTask } from "@/types/api";
 
 /** Кампания для клиента: без текстов разбора заданий и без пула рывка. */
@@ -101,6 +102,16 @@ export function publicTask(roomId: string, task: Task, sessionId: string): Publi
   }
 }
 
+/** Фасад «Витрины»: шаблон проверен схемой при загрузке; хозяин по умолчанию — первый герой пакета, вывеска — название бренда. */
+function publicFacade(advent: AdventConfig): PublicFacade {
+  const choice = advent.facade!;
+  return {
+    template: loadFacade(choice.templateId),
+    hostHeroId: choice.hostHeroId ?? advent.heroes[0].id,
+    signText: choice.signText ?? advent.brand.name
+  };
+}
+
 /** Адвент для клиента: явный список полей (задания, награды и пулы удачи уходят только через состояние участника). */
 export function publicAdvent(advent: AdventConfig, tenant: string, worldId: string = DEFAULT_WORLD_ID): PublicAdvent {
   return {
@@ -111,7 +122,8 @@ export function publicAdvent(advent: AdventConfig, tenant: string, worldId: stri
     subtitle: advent.subtitle,
     intro: advent.intro,
     presentation: advent.presentation,
-    heroes: advent.heroes.map(({ id, name, role, color }) => ({ id, name, role, color })),
+    facade: advent.facade ? publicFacade(advent) : null,
+    heroes: advent.heroes.map(({ id, name, role, color, look }) => ({ id, name, role, color, ...(look ? { look } : {}) })),
     brand: {
       name: advent.brand.name,
       mark: advent.brand.mark,

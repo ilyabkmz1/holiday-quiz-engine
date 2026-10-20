@@ -5,6 +5,9 @@
 //   TENANT=<slug> npm run dev      (APP_URL по умолчанию http://127.0.0.1:3000)
 // Скрипт сам ведёт участников через API с верными ответами из пакета (время двигает asOf), открывает страницу и снимает:
 // отсчёт до старта, день 1, день с открытым листом на задании, удачу после раскрытия, подарок дня с QR и финал.
+// Для «Витрины» (presentation: storefront) вместо календаря снимаются фасад в день 1, фасад в день 6 с пропущенным днём,
+// экран дня с историей, задание «собери» (build или order), удача, подарок дня и финал; `--facade-only` — только фасад дня 6
+// (для сравнения шаблонов на временной копии пакета с другим `facade.templateId`).
 // Результат — WebP не тяжелее ~300 КБ в каталоге (по умолчанию shots/<slug>).
 import { mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
@@ -14,13 +17,14 @@ import { chromium, devices, type Browser, type BrowserContext, type Page } from 
 import { adventPackSchema, TENANT_SLUG_PATTERN } from "../src/config/pack";
 import { correctPayload } from "../src/domain/solve";
 import { asOfForDay } from "../src/tools/advent-asof";
-import { fillTask } from "../src/tools/advent-driver";
+import { fillTask, finishSpeech, storefrontNames } from "../src/tools/advent-driver";
 import { loadPacks, packSlug } from "./lib/packs";
 
 const argv = process.argv.slice(2);
 const dayFlag = argv.indexOf("--day");
 const dayArg = dayFlag >= 0 ? argv[dayFlag + 1] : undefined;
 const withDesktop = argv.includes("--desktop");
+const facadeOnly = argv.includes("--facade-only");
 const [slug, outArg] = argv.filter((arg, index) => !arg.startsWith("--") && argv[index - 1] !== "--day");
 if (!slug || !TENANT_SLUG_PATTERN.test(slug)) {
   console.error("Использование: npm run advent:shots -- <slug> [каталог] [--day 1..N] [--desktop]");
@@ -33,6 +37,11 @@ if (!raw || (raw as { experience?: string }).experience !== "advent") {
 }
 const { advent } = adventPackSchema.parse(raw);
 const { copy, schedule } = advent;
+const storefront = advent.presentation === "storefront";
+/** Названия элементов «Витрины» для драйвера (листание реплик, обложки заданий); у календаря их нет. */
+const names = storefront ? storefrontNames(copy) : undefined;
+/** Дождаться главного экрана: фасад «Витрины» или сетка дверей календаря. */
+const mainSelector = storefront ? ".adv-facade" : ".adv-doors";
 
 /** `--day`: «5», «1..5» или «1..N» (до последнего дня). */
 function parseDays(value: string): number[] | null {
@@ -152,7 +161,7 @@ async function run(name: ProfileName) {
   };
   const open = async (page: Page, asOf: string) => {
     await page.goto(`/?asOf=${encodeURIComponent(asOf)}`);
-    await page.waitForSelector(".adv-doors");
+    await page.waitForSelector(mainSelector);
   };
   const door = (page: Page, n: number) => page.locator(`[data-door="${n}"]`);
   console.log(`\n${name}:`);
@@ -165,13 +174,57 @@ async function run(name: ProfileName) {
       await shot(page, "01-upcoming");
       await context.close();
     }
-    // 02. День 1: календарь в первый день.
+    // 02. День 1: календарь (фасад) в первый день.
     {
       const { context, page } = await fresh();
       await open(page, asOfDay(1));
-      await shot(page, "02-day1");
+      await shot(page, storefront ? "02-day1-facade" : "02-day1");
       await context.close();
     }
+    if (storefront) {
+      // 03–04. День 6: первые дни пройдены, день 4 пропущен (иней), день 5 можно догнать; затем экран дня с историей.
+      const today = Math.min(6, schedule.days - 1);
+      {
+        const { context, page } = await fresh();
+        await call(context, "POST", "/api/advent/participants", asOfDay(1));
+        await signIn(context, asOfDay(1));
+        for (let n = 1; n <= Math.min(3, today - 3); n += 1) await playDayApi(context, n, asOfDay(n));
+        await open(page, asOfDay(today));
+        await shot(page, `03-day${today}-facade`);
+        if (!facadeOnly) {
+          await door(page, today).click();
+          await page.getByRole("dialog").waitFor();
+          await shot(page, "04-day-story");
+        }
+        await context.close();
+      }
+      if (facadeOnly) return;
+      // 05. Задание «собери» (build или order): экран дня на обложке с чашкой, коробкой или стопкой.
+      const buildDay = advent.days.find((day) => day.blocks.some((block) => block.type === "task" && (block.task.type === "build" || block.task.type === "order")))?.n ?? firstDayWith("task")!;
+      {
+        const { context, page } = await fresh();
+        await call(context, "POST", "/api/advent/participants", asOfDay(1));
+        await signIn(context, asOfDay(1));
+        for (let n = 1; n < buildDay; n += 1) await playDayApi(context, n, asOfDay(n));
+        await open(page, asOfDay(buildDay));
+        await door(page, buildDay).click();
+        const dialog = page.getByRole("dialog");
+        await dialog.waitFor();
+        await finishSpeech(page, copy.chapterNext, dayOf(buildDay).chapter.lines.length, names);
+        for (const block of dayOf(buildDay).blocks) {
+          if (block.type === "story") await finishSpeech(page, copy.storyNext, block.lines.length, names);
+          if (block.type === "task") break;
+        }
+        const task = (dayOf(buildDay).blocks.find((block) => block.type === "task") as Extract<Block, { type: "task" }>).task;
+        // Часть слоёв уже выбрана: на кадре видно, как наполняется ёмкость.
+        if (task.type === "build" || task.type === "order") {
+          const ids = task.type === "build" ? task.options.filter((option) => (correctPayload(task) as { optionIds: string[] }).optionIds.includes(option.id)) : task.items.filter((item) => (correctPayload(task) as { orderedIds: string[] }).orderedIds.slice(0, 2).includes(item.id));
+          for (const entry of ids.slice(0, 2)) await dialog.getByRole("list", { name: copy.skinBuildTitle }).getByRole("button", { name: entry.title, exact: true }).click();
+        }
+        await shot(page, "05-day-task-build");
+        await context.close();
+      }
+    } else {
     // 03. Лист дня на задании: день с заданием после нескольких пройденных, участник вошёл по ссылке.
     const taskDay = firstDayWith("task", 3) ?? firstDayWith("task")!;
     {
@@ -189,6 +242,7 @@ async function run(name: ProfileName) {
       await shot(page, "04-day-task");
       await context.close();
     }
+    }
     // 05. Удача после раскрытия.
     const luckDay = firstDayWith("luck");
     if (luckDay) {
@@ -199,7 +253,8 @@ async function run(name: ProfileName) {
       await open(page, asOfDay(luckDay));
       await door(page, luckDay).click();
       const dialog = page.getByRole("dialog");
-      await dialog.getByRole("button", { name: new RegExp(`^${copy.luckBoxLabel.replace("{i}", "2")}`) }).click();
+      const luckLabel = { boxes: copy.luckBoxLabel, wheel: copy.luckSectorLabel, scratch: copy.luckCardLabel }[advent.luck?.skin ?? "boxes"];
+      await dialog.getByRole("button", { name: new RegExp(`^${luckLabel.replace("{i}", "2")}`) }).click();
       await dialog.getByText(copy.luckWon).waitFor();
       await shot(page, "05-luck-revealed");
       await context.close();
@@ -271,23 +326,23 @@ async function runDays(name: ProfileName, days: number[]) {
         console.log(`  ${file} (${Math.round(webp.length / 1024)} КБ)`);
       };
       await page.goto(`/?asOf=${encodeURIComponent(asOfDay(n))}`);
-      await page.waitForSelector(".adv-doors");
+      await page.waitForSelector(mainSelector);
       await take("0-calendar", "Календарь в этот день");
       await page.locator(`[data-door="${n}"]`).click();
       const dialog = page.getByRole("dialog");
       await dialog.waitFor();
       await take("1-chapter", "Глава истории");
-      await dialog.getByRole("button", { name: copy.chapterNext, exact: true }).click();
+      await finishSpeech(page, copy.chapterNext, day.chapter.lines.length, names);
       let blocked = false;
       for (const [index, block] of day.blocks.entries()) {
         if (blocked) break;
         const step = `${index + 2}-${block.type}`;
         if (block.type === "story") {
           await take(step, "История");
-          await dialog.getByRole("button", { name: copy.storyNext, exact: true }).click();
+          await finishSpeech(page, copy.storyNext, block.lines.length, names);
         } else if (block.type === "task") {
           await take(step, "Задание");
-          await fillTask(page, block.task);
+          await fillTask(page, block.task, names);
           await dialog.getByRole("heading", { level: 3, name: copy.outcomePerfect }).waitFor();
           await take(`${step}-answer`, "Разбор после верного ответа");
           await dialog.getByRole("button", { name: copy.outcomeNext, exact: true }).click();

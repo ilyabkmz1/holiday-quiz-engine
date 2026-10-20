@@ -70,6 +70,19 @@ describe("adventSchema", () => {
       expect(messages(missing)).toContain("Дни должны идти подряд от 1 до 12 (schedule.days) без пропусков и повторов");
     });
 
+    it("обложка cover — только у build и order", () => {
+      const draft = adventFixture();
+      type Block = { type: string; task?: { type: string }; cover?: string };
+      const blocks: Block[] = (draft.days as Array<{ blocks: Block[] }>).flatMap((day) => day.blocks);
+      const tasks = blocks.filter((block) => block.type === "task");
+      const build = tasks.find((block) => block.task!.type === "build")!;
+      const pick = tasks.find((block) => block.task!.type === "pick")!;
+      build.cover = "list";
+      expect(messages(draft)).toEqual([]);
+      pick.cover = "vessel";
+      expect(messages(draft).some((message) => message.includes("cover бывает только у заданий build и order"))).toBe(true);
+    });
+
     it("дни могут идти в произвольном порядке, если номера полные", () => {
       const draft = adventFixture();
       draft.days.reverse();

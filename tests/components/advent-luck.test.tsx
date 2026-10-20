@@ -16,7 +16,7 @@ afterEach(() => {
 beforeEach(() => vi.useFakeTimers());
 
 const result: AdventGrantView = {
-  id: "g1", source: "luck", day: 4, rewardId: "luck-b", kind: "gift", label: "Кофе в подарок", description: "", status: "issued",
+  id: "g1", source: "luck", day: 4, rewardId: "luck-b", kind: "gift", label: "Кофе в подарок", description: "", icon: "cup", status: "issued",
   expiresAt: null, code: "TOP12", grantedAt: "2026-12-23T09:00:00.000Z", redeemedAt: null, redeem: "cashier", url: null, needsIdentity: false, codePending: false, qr: null
 };
 

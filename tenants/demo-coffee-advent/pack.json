@@ -10,8 +10,8 @@
   "advent": {
     "slug": "demo-coffee-advent",
     "title": "Адвент кофейни «Зерно»",
-    "subtitle": "12 дверей до Нового года",
-    "intro": "С 20 по 31 декабря каждый день открывается новая дверь: история, задание и подарок на кассе.",
+    "subtitle": "12 окон до Нового года",
+    "intro": "С 20 по 31 декабря каждый день загорается новое окно кофейни: история, задание и подарок на кассе.",
     "brand": {
       "name": "Кофейня «Зерно»",
       "mark": "ЗР",
@@ -29,8 +29,8 @@
         "success": "#8fd19e"
       },
       "topNote": "Адвент · декабрь 2026",
-      "tagline": "Двенадцать дверей до Нового года в кофейне «Зерно»",
-      "ogCall": "Откройте двенадцать дверей адвента кофейни «Зерно»",
+      "tagline": "Двенадцать окон до Нового года в кофейне «Зерно»",
+      "ogCall": "Откройте двенадцать окон адвента кофейни «Зерно»",
       "mailSubject": "Войдите в адвент кофейни «Зерно»"
     },
     "story": {
@@ -53,22 +53,40 @@
         "id": "mila",
         "name": "Мила",
         "role": "старший бариста",
-        "color": "#FFD27A"
+        "color": "#FFD27A",
+        "look": {
+          "hair": "long",
+          "hairColor": "auburn"
+        }
       },
       {
         "id": "timur",
         "name": "Тимур",
         "role": "обжарщик",
-        "color": "#62E0FF"
+        "color": "#62E0FF",
+        "look": {
+          "hair": "short",
+          "hairColor": "black",
+          "skin": "tan"
+        }
       },
       {
         "id": "lena",
         "name": "Лена",
         "role": "управляющая",
-        "color": "#FF9FB0"
+        "color": "#FF9FB0",
+        "look": {
+          "hair": "bun",
+          "hairColor": "blond"
+        }
       }
     ],
-    "presentation": "calendar",
+    "presentation": "storefront",
+    "facade": {
+      "templateId": "cafe",
+      "hostHeroId": "mila",
+      "signText": "Зерно"
+    },
     "schedule": {
       "timezone": "Europe/Moscow",
       "startDate": "2026-12-20",
@@ -105,7 +123,7 @@
         "chapter": {
           "lines": [
             "Привет! Я Мила, старший бариста «Зерна».",
-            "Двенадцать дней мы будем открывать по одной двери: история, задание и подарок на кассе."
+            "Двенадцать дней мы будем открывать по одному окну: история, задание и подарок на кассе."
           ]
         },
         "blocks": [
@@ -211,10 +229,11 @@
                 "dark",
                 "fresh-grind"
               ]
-            }
+            },
+            "cover": "list"
           }
         ],
-        "rewardId": "daily-gift"
+        "rewardId": "pastry-gift"
       },
       {
         "n": 3,
@@ -276,7 +295,7 @@
             }
           }
         ],
-        "rewardId": "daily-gift"
+        "rewardId": "recipe-gift"
       },
       {
         "n": 4,
@@ -371,7 +390,7 @@
       {
         "n": 6,
         "title": "Умная кофемашина",
-        "teaser": "Что включить, а что оставить выключенным",
+        "teaser": "Какие настройки кофемашины включить к празднику",
         "heroId": "lena",
         "chapter": {
           "lines": [
@@ -485,10 +504,11 @@
                 "steam",
                 "pour"
               ]
-            }
+            },
+            "cover": "vessel"
           }
         ],
-        "rewardId": "daily-gift"
+        "rewardId": "pastry-gift"
       },
       {
         "n": 8,
@@ -630,7 +650,7 @@
             }
           }
         ],
-        "rewardId": "daily-gift"
+        "rewardId": "recipe-gift"
       },
       {
         "n": 11,
@@ -694,7 +714,8 @@
                 "tenth",
                 "year"
               ]
-            }
+            },
+            "cover": "list"
           }
         ],
         "rewardId": "daily-gift"
@@ -740,6 +761,37 @@
         "kind": "gift",
         "label": "Напиток или десерт дня",
         "description": "Покажите код на кассе.",
+        "icon": "cup",
+        "codes": {
+          "generated": {
+            "prefix": "ZR",
+            "length": 6
+          }
+        },
+        "validDays": 2,
+        "redeem": "cashier"
+      },
+      {
+        "id": "pastry-gift",
+        "kind": "gift",
+        "label": "Круассан к кофе",
+        "description": "Покажите код на кассе.",
+        "icon": "pastry",
+        "codes": {
+          "generated": {
+            "prefix": "ZR",
+            "length": 6
+          }
+        },
+        "validDays": 2,
+        "redeem": "cashier"
+      },
+      {
+        "id": "recipe-gift",
+        "kind": "gift",
+        "label": "Карточка с рецептом и напиток дня",
+        "description": "Покажите код на кассе.",
+        "icon": "recipe",
         "codes": {
           "generated": {
             "prefix": "ZR",
@@ -754,6 +806,7 @@
         "kind": "gift",
         "label": "Угощение «С возвращением»",
         "description": "Подарок тем, кто вернулся после пропуска.",
+        "icon": "pastry",
         "codes": {
           "generated": {
             "prefix": "BACK",
@@ -767,7 +820,8 @@
         "id": "goal-gift",
         "kind": "gift",
         "label": "Десерт за серию",
-        "description": "Подарок за четыре открытые двери.",
+        "description": "Подарок за четыре открытых окна.",
+        "icon": "gift",
         "codes": {
           "generated": {
             "prefix": "SET",
@@ -782,6 +836,7 @@
         "kind": "gift",
         "label": "Печенье к кофе",
         "description": "Подарок из коробки удачи.",
+        "icon": "pastry",
         "codes": {
           "generated": {
             "prefix": "LUCK",
@@ -796,6 +851,7 @@
         "kind": "gift",
         "label": "Кофе в подарок",
         "description": "Подарок из коробки удачи.",
+        "icon": "cup",
         "codes": {
           "generated": {
             "prefix": "TOP",
@@ -811,6 +867,7 @@
         "kind": "finalEntry",
         "label": "Участие в финальном розыгрыше",
         "description": "Главный приз кофейни.",
+        "icon": "ticket",
         "redeem": "none"
       }
     ],
@@ -821,7 +878,7 @@
     "reminders": {
       "channel": "email",
       "sendAtLocal": "08:30",
-      "subject": "Дверь {day} открыта: {teaser}",
+      "subject": "Окно {day} открыто: {teaser}",
       "preheader": "Подарок дня ждёт на кассе"
     },
     "audience": {
