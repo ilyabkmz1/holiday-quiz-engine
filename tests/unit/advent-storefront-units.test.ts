@@ -48,6 +48,8 @@ describe("значок открытого окна", () => {
     expect(rewardIconFor({ kind: "promo" })).toBe("percent");
     expect(rewardIconFor({ kind: "gift" })).toBe("gift");
     expect(rewardIconFor({ kind: "finalEntry" })).toBe("ticket");
+    // Звезда — знак финального окна, поэтому баллы по умолчанию получают «искорку».
+    expect(rewardIconFor({ kind: "points" })).toBe("sparkle");
     expect(rewardIconFor({ kind: "gift", icon: "cup" })).toBe("cup");
     for (const icon of REWARD_ICONS) expect(typeof icon).toBe("string");
   });
