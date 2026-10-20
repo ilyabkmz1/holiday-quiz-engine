@@ -120,7 +120,15 @@ export function AdventGame({ advent, world, api = adventApi }: { advent: PublicA
 
   const firstUnlock = state?.doors[0]?.unlocksAt ?? null;
   const nextUnlock = state?.doors.find((door) => door.status === "locked")?.unlocksAt ?? null;
-  const refreshAt = phase === "upcoming" ? firstUnlock : nextUnlock;
+  // После последней двери следующий момент — финал, затем закрытие: иначе фаза сменится только при возврате на вкладку.
+  const refreshAt =
+    phase === "upcoming"
+      ? firstUnlock
+      : phase === "running"
+        ? (nextUnlock ?? advent.schedule.finaleAt)
+        : phase === "finale"
+          ? advent.schedule.claimEndsAt
+          : null;
   const refreshing = useRef<string | null>(null);
   useEffect(() => {
     if (!refreshAt || nowMs === 0) return;

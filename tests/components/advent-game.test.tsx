@@ -114,6 +114,22 @@ describe("AdventGame: фазы", () => {
     }
   });
 
+  it("после последнего дня в момент финала без перезагрузки подтягивает итоги", async () => {
+    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval", "Date"] });
+    try {
+      const harness = memoryAdventApi({ start: new Date("2026-12-31T23:59:57+03:00") });
+      vi.setSystemTime(harness.clock.now);
+      mount(harness.api);
+      await act(async () => void (await Promise.resolve()));
+      await vi.waitFor(() => expect(door(12)).toHaveAttribute("data-status", "today"));
+      harness.clock.now = new Date("2027-01-01T00:00:01+03:00");
+      await act(async () => void vi.advanceTimersByTime(4000));
+      await vi.waitFor(() => expect(screen.getByRole("heading", { level: 2, name: copy.finaleTitle })).toBeInTheDocument());
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("финал: итоги, цели, главный приз и «поделиться»; двери не открываются", async () => {
     const harness = memoryAdventApi({ start: new Date("2027-01-01T10:00:00+03:00") });
     mount(harness.api);
