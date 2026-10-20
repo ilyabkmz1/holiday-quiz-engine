@@ -41,7 +41,9 @@ export function SaveProgressCard({ copy, consentText, reason, onSubmit }: Props)
     setError(null);
     setState("sending");
     try {
-      await onSubmit({ email: clean, consent, marketingConsent: marketing, reminderOptIn: marketing });
+      // Чекбокс — согласие только на напоминания о днях (его текст), а не на рекламную рассылку бренда:
+      // marketingConsentAt по нему не ставится (ст. 18 38-ФЗ — согласие на то, что написано).
+      await onSubmit({ email: clean, consent, marketingConsent: false, reminderOptIn: marketing });
       setSentTo(clean);
       setState("sent");
     } catch (failure) {
