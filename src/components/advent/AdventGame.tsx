@@ -10,7 +10,9 @@ import { Countdown } from "@/components/advent/Countdown";
 import { DaySheet } from "@/components/advent/DaySheet";
 import { fill } from "@/components/advent/format";
 import { SaveProgressCard, type SaveProgressInput } from "@/components/advent/SaveProgressCard";
+import { AdventSheet } from "@/components/advent/AdventSheet";
 import { StreakHud } from "@/components/advent/StreakHud";
+import { Storefront, StoreHeader, storeSubtitle } from "@/components/advent/storefront/Storefront";
 import { BrandMark } from "@/components/game/BrandMark";
 import { Snow } from "@/components/game/ambient";
 import { usePrefersReducedMotion } from "@/components/game/hooks";
@@ -51,6 +53,10 @@ export function AdventGame({ advent, world, api = adventApi }: { advent: PublicA
   const [clock, setClock] = useState({ serverMs: 0, localMs: 0 });
   const [nowMs, setNowMs] = useState(0);
   const [openN, setOpenN] = useState<number | null>(null);
+  const [streakOpen, setStreakOpen] = useState(false);
+  const [lit, setLit] = useState<number | null>(null);
+  const preStatus = useRef<string | null>(null);
+  const litTimer = useRef<number | null>(null);
   const [busyDoor, setBusyDoor] = useState<number | null>(null);
   const [hint, setHint] = useState<string | null>(null);
   const [comebackHidden, setComebackHidden] = useState(false);
@@ -64,6 +70,7 @@ export function AdventGame({ advent, world, api = adventApi }: { advent: PublicA
   }, []);
   useEffect(() => () => {
     if (hintTimer.current !== null) window.clearTimeout(hintTimer.current);
+    if (litTimer.current !== null) window.clearTimeout(litTimer.current);
   }, []);
 
   const adopt = useCallback((state: AdventState) => {
@@ -166,6 +173,7 @@ export function AdventGame({ advent, world, api = adventApi }: { advent: PublicA
       const door = state.doors.find((candidate) => candidate.n === n);
       if (!door) return;
       sound.effect("tap");
+      preStatus.current = door.status;
       if (door.status === "opened") {
         setOpenN(n);
         return;
@@ -188,13 +196,24 @@ export function AdventGame({ advent, world, api = adventApi }: { advent: PublicA
     const n = openN;
     setOpenN(null);
     if (n !== null) window.requestAnimationFrame(() => document.querySelector<HTMLElement>(`[data-door="${n}"]`)?.focus());
+    // «Витрина»: окно, которое открыли за время листа, загорается при возврате к фасаду, на гирлянде вспыхивает огонёк.
+    const nowOpened = state?.doors.find((door) => door.n === n)?.status === "opened";
+    if (n !== null && advent.presentation === "storefront" && nowOpened && preStatus.current !== "opened") {
+      setLit(n);
+      if (litTimer.current !== null) window.clearTimeout(litTimer.current);
+      litTimer.current = window.setTimeout(() => setLit(null), 2400);
+    }
+    preStatus.current = null;
   }
 
   async function requestLink(input: SaveProgressInput) {
     await api.requestLink(input);
   }
 
-  const header = (
+  const storefront = advent.presentation === "storefront" && advent.facade !== null;
+  const header = storefront ? (
+    <StoreHeader advent={advent} subtitle={storeSubtitle(advent, state, nowMs)} />
+  ) : (
     <header className="adv-topbar">
       <div className="brand">
         <BrandMark brand={advent.brand} />
@@ -238,27 +257,40 @@ export function AdventGame({ advent, world, api = adventApi }: { advent: PublicA
     const showComeback = comebackGrant !== null && !comebackHidden && readFlag(`${COMEBACK_KEY}:${advent.slug}`) !== comebackGrant.id;
     const anyDone = current.doors.some((door) => door.completed);
     const finished = current.phase === "finale" || current.phase === "closed";
-    body = (
+    const comeback =
+      showComeback && comebackGrant ? (
+        <ComebackBanner
+          copy={copy}
+          grant={comebackGrant}
+          reduced={reduced}
+          onClose={() => {
+            writeFlag(`${COMEBACK_KEY}:${advent.slug}`, comebackGrant.id);
+            setComebackHidden(true);
+          }}
+        />
+      ) : null;
+    const lead =
+      current.phase === "upcoming" ? (
+        <Countdown advent={advent} targetIso={current.doors[0].unlocksAt} nowMs={nowMs} />
+      ) : finished ? (
+        <AdventFinale advent={advent} state={current} reduced={reduced} nowMs={nowMs} />
+      ) : (
+        comeback
+      );
+    body = storefront ? (
       <>
-        {current.phase === "upcoming" ? (
-          <Countdown advent={advent} targetIso={current.doors[0].unlocksAt} nowMs={nowMs} />
-        ) : finished ? (
-          <AdventFinale advent={advent} state={current} reduced={reduced} nowMs={nowMs} />
-        ) : (
+        {lead}
+        <Storefront advent={advent} state={current} busy={busyDoor} lit={lit} reduced={reduced} onOpen={(n) => void openDoor(n)} onHint={showHint} onStreak={() => setStreakOpen(true)} />
+      </>
+    ) : (
+      <>
+        {current.phase === "running" ? (
           <>
-            {showComeback && comebackGrant && (
-              <ComebackBanner
-                copy={copy}
-                grant={comebackGrant}
-                reduced={reduced}
-                onClose={() => {
-                  writeFlag(`${COMEBACK_KEY}:${advent.slug}`, comebackGrant.id);
-                  setComebackHidden(true);
-                }}
-              />
-            )}
+            {comeback}
             <StreakHud state={current} copy={copy} />
           </>
+        ) : (
+          lead
         )}
         <h2 className="adv-section-title">{copy.calendarTitle}</h2>
         <CalendarView doors={current.doors} copy={copy} timezone={advent.schedule.timezone} phase={current.phase} busy={busyDoor} onOpen={(n) => void openDoor(n)} onHint={showHint} />
@@ -271,25 +303,44 @@ export function AdventGame({ advent, world, api = adventApi }: { advent: PublicA
     );
   }
 
+  const anyDoorDone = state?.doors.some((door) => door.completed) ?? false;
+  const sheetOpen = openN !== null || streakOpen;
   return (
     <WorldProvider world={world} rooms={[]}>
-      <div className="adv-app" data-phase={phase ?? "loading"} data-presentation={advent.presentation}>
+      <div className="adv-app" data-phase={phase ?? "loading"} data-presentation={advent.presentation} data-sheet={sheetOpen ? "true" : "false"}>
         <div className="adv-bg" aria-hidden="true">
           <Snow count={22} className="adv-snow" />
           <span className="adv-glow adv-glow-a" />
           <span className="adv-glow adv-glow-b" />
         </div>
-        <main className="adv-main" inert={openN !== null}>
+        <main className={`adv-main${storefront ? " adv-main-store" : ""}`} inert={sheetOpen}>
           {header}
-          <section className="adv-hero">
-            <div className="adv-eyebrow">{advent.subtitle}</div>
-            <h1 className="adv-title">{advent.title}</h1>
-            <p className="adv-intro">{advent.intro}</p>
-          </section>
+          {!storefront && (
+            <section className="adv-hero">
+              <div className="adv-eyebrow">{advent.subtitle}</div>
+              <h1 className="adv-title">{advent.title}</h1>
+              <p className="adv-intro">{advent.intro}</p>
+            </section>
+          )}
           {body}
         </main>
         {state && openN !== null && (
           <DaySheet advent={advent} state={state} n={openN} reduced={reduced} nowMs={nowMs} api={api} onClose={closeSheet} onState={adopt} onError={onError} />
+        )}
+        {state && streakOpen && (
+          <AdventSheet label={copy.garlandSheetTitle} closeLabel={copy.sheetClose} onClose={() => setStreakOpen(false)}>
+            <div>
+              <header className="adv-sheet-head">
+                <h2 className="adv-sheet-title">{copy.garlandSheetTitle}</h2>
+              </header>
+              <StreakHud state={state} copy={copy} />
+              {state.participant.email ? (
+                <p className="adv-saved"><span className="adv-dot" aria-hidden="true" /> {fill(copy.saveDone, { email: state.participant.email })}</p>
+              ) : (
+                anyDoorDone && <SaveProgressCard copy={copy} consentText={advent.legal.consentText} reason="after-day" onSubmit={requestLink} />
+              )}
+            </div>
+          </AdventSheet>
         )}
         {/* Вне inert-фона и поверх листа: ошибки ответа на блок дня должны быть видны и озвучены при открытом листе. */}
         <p className="adv-hint" role="status" aria-live="polite" data-visible={hint ? "true" : "false"}>{hint ?? ""}</p>

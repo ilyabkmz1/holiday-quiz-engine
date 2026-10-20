@@ -26,6 +26,8 @@ export type BriefFields = Partial<{
   adventCatchUp: string;
   adventRewardOnlyOnDay: string;
   adventPresentation: string;
+  adventFacade: string;
+  adventSign: string;
   adventFinale: string;
   adventClaimEnds: string;
   adventFreezes: string;
@@ -63,6 +65,8 @@ const KEYS: Record<string, keyof BriefFields> = {
   "догнать пропущенные дни": "adventCatchUp",
   "приз дня только в свой день": "adventRewardOnlyOnDay",
   "вид": "adventPresentation",
+  "фасад": "adventFacade",
+  "вывеска": "adventSign",
   "финал": "adventFinale",
   "выдача кодов до": "adventClaimEnds",
   "заморозки серии": "adventFreezes",

@@ -11,6 +11,7 @@ import {
   taskSchema,
   taskVariants
 } from "@/config/schema";
+import { facadeChoiceSchema } from "@/config/facade";
 import { dayUnlockAt } from "@/domain/advent/calendar";
 
 const id = z.string().min(1).max(64);
@@ -31,7 +32,8 @@ export const ADVENT_LIMITS = {
   catchUpWindow: { min: 1, max: 7 }
 } as const;
 
-export const presentationSchema = z.enum(["world", "calendar"]);
+/** `storefront` — «Витрина»: фасад здания с окнами по дням и гирлянда-шкала; `calendar` — сетка дверей; `world` — карта. */
+export const presentationSchema = z.enum(["world", "calendar", "storefront"]);
 
 function isIanaTimezone(value: string): boolean {
   try {
@@ -76,6 +78,17 @@ export const scheduleSchema = z.object({
 export const rewardKindSchema = z.enum(["promo", "gift", "points", "finalEntry"]);
 export const redeemSchema = z.enum(["online", "cashier", "both", "none"]);
 
+/** Значки наград в открытом окне «Витрины». Закрытый список: каждый нарисован в `RewardGlyph`. */
+export const REWARD_ICONS = ["cup", "pastry", "star", "gift", "percent", "recipe", "ticket", "leaf", "sparkle", "book"] as const;
+export const rewardIconSchema = z.enum(REWARD_ICONS);
+export type RewardIcon = z.infer<typeof rewardIconSchema>;
+
+/** Значок награды, если пакет не задал `icon`: по виду награды. */
+export function rewardIconFor(reward: { kind: z.infer<typeof rewardKindSchema>; icon?: RewardIcon }): RewardIcon {
+  if (reward.icon) return reward.icon;
+  return { promo: "percent", gift: "gift", points: "star", finalEntry: "ticket" }[reward.kind] as RewardIcon;
+}
+
 const codesSchema = z.union([
   z.strictObject({ static: z.string().trim().min(1) }),
   z.strictObject({ list: z.string().regex(/^codes\/[A-Za-z0-9_-]+\.csv$/, "Список кодов: codes/<id>.csv") }),
@@ -92,6 +105,8 @@ export const rewardSchema = z.object({
   kind: rewardKindSchema,
   label: z.string().min(1),
   description: z.string().default(""),
+  /** Значок награды в открытом окне «Витрины»; без поля берётся по виду награды (`rewardIconFor`). */
+  icon: rewardIconSchema.optional(),
   valueRub: z.number().int().min(0).optional(),
   codes: codesSchema.optional(),
   /** Срок действия с момента выдачи, сутки. */
@@ -191,6 +206,52 @@ export const adventCopySchema = copySchema.extend({
   doorMissed: z.string().min(1).default("Пропущена"),
   doorOpened: z.string().min(1).default("Открыта"),
   doorAria: z.string().min(1).default("День {n}: {status}"),
+  windowLocked: z.string().min(1).default("Закрыто"),
+  windowToday: z.string().min(1).default("Сегодня"),
+  windowCatchup: z.string().min(1).default("Можно догнать"),
+  windowMissed: z.string().min(1).default("Пропущено"),
+  windowOpened: z.string().min(1).default("Открыто"),
+  windowFinale: z.string().min(1).default("Финал"),
+  windowAria: z.string().min(1).default("Окно {n}: {status}, {date}"),
+  windowsLabel: z.string().min(1).default("Окна адвента"),
+  storeSubtitle: z.string().min(1).default("{date} · окно {n} из {total}"),
+  storeSubtitleBefore: z.string().min(1).default("Окон: {total}"),
+  storeOpen: z.string().min(1).default("Открыть окно {n}"),
+  storeContinue: z.string().min(1).default("Продолжить окно {n}"),
+  storeCatchup: z.string().min(1).default("Догнать окно {n}"),
+  storeTomorrow: z.string().min(1).default("До завтра"),
+  storeTomorrowHint: z.string().min(1).default("Следующее окно откроется {date}"),
+  storeHostLine: z.string().min(1).default("Заходите, окно ждёт."),
+  garlandLeft: z.string().min(1).default("Ещё {left} {bulbs} — и {label}"),
+  garlandBulbOne: z.string().min(1).default("огонёк"),
+  garlandBulbFew: z.string().min(1).default("огонька"),
+  garlandBulbMany: z.string().min(1).default("огоньков"),
+  garlandProgress: z.string().min(1).default("Горит {k} из {n}"),
+  garlandDone: z.string().min(1).default("Все цели достигнуты"),
+  garlandAria: z.string().min(1).default("{caption}. Подробнее о серии"),
+  garlandSheetTitle: z.string().min(1).default("Серия и заморозки"),
+  dayEyebrow: z.string().min(1).default("Окно {n} · {date}"),
+  dayBack: z.string().min(1).default("Назад к фасаду"),
+  stepsLabel: z.string().min(1).default("Шаги дня"),
+  stepStory: z.string().min(1).default("История"),
+  stepTask: z.string().min(1).default("Задание"),
+  stepGift: z.string().min(1).default("Подарок"),
+  bubbleNext: z.string().min(1).default("Листать дальше"),
+  bubbleCounter: z.string().min(1).default("{i} из {n}"),
+  bubbleHint: z.string().min(1).default("Нажмите, чтобы листать"),
+  skinBuildTitle: z.string().min(1).default("Соберите"),
+  skinBuildLayers: z.string().min(1).default("{k} из {n} слоёв"),
+  skinBuildLegend: z.string().min(1).default("Слои снизу вверх"),
+  skinBuildSubmit: z.string().min(1).default("Готово"),
+  skinBuildMissing: z.string().min(1).default("Нужно ещё слоёв: {left}"),
+  skinBuildReset: z.string().min(1).default("Убрать всё"),
+  skinRight: z.string().min(1).default("Верно"),
+  skinWrong: z.string().min(1).default("Не то"),
+  skinRemove: z.string().min(1).default("Убрать «{title}»"),
+  skinEmptyLayer: z.string().min(1).default("Пустой слой {i} из {n}"),
+  skinPickTitle: z.string().min(1).default("Выберите на прилавке"),
+  skinPickHint: z.string().min(1).default("Нажмите на предмет"),
+  windowLit: z.string().min(1).default("Окно {n} загорелось"),
   doorLockedHint: z.string().min(1).default("Откроется {date}"),
   doorMissedHint: z.string().min(1).default("Этот день уже нельзя открыть"),
   doorFinaleHint: z.string().min(1).default("Двери больше не открываются"),
@@ -285,6 +346,8 @@ export type AdventCopy = z.infer<typeof adventCopySchema>;
 const adventBaseSchema = campaignCoreSchema.extend({
   copy: adventCopySchema.prefault({}),
   presentation: presentationSchema.default("calendar"),
+  /** Фасад «Витрины»: обязателен при `presentation: "storefront"`. */
+  facade: facadeChoiceSchema.optional(),
   schedule: scheduleSchema,
   streak: streakSchema.prefault({}),
   days: z.array(daySchema).min(ADVENT_LIMITS.days.min).max(ADVENT_LIMITS.days.max),
@@ -302,7 +365,29 @@ export function daySpotId(day: { n: number; spotId?: string }, worldPath: readon
   return worldPath[(day.n - 1) % worldPath.length];
 }
 
-export const adventSchema = adventBaseSchema.superRefine((advent, context) => {
+/**
+ * Тексты «Витрины» говорят об окнах, а не о дверях: при `presentation: "storefront"` они подставляются вместо общих значений
+ * по умолчанию. Что пакет задал в `copy` сам, важнее.
+ */
+export const STOREFRONT_COPY = {
+  doorMissedHint: "Это окно уже нельзя открыть",
+  doorFinaleHint: "Окна больше не открываются",
+  calendarTitle: "Окна адвента",
+  streakGoal: "До «{label}»: осталось окон — {left}",
+  sheetOpening: "Открываем окно…",
+  dayDoneText: "Возвращайтесь завтра: новое окно ждёт.",
+  finaleOpened: "Открыто окон",
+  finaleNoPrize: "Главный приз достаётся тем, кто открыл больше окон. В следующий раз!",
+  loading: "Загружаем окна…"
+} as const satisfies Partial<z.input<typeof adventCopySchema>>;
+
+function withStorefrontCopy(raw: unknown): unknown {
+  if (typeof raw !== "object" || raw === null || (raw as { presentation?: unknown }).presentation !== "storefront") return raw;
+  const copy = (raw as { copy?: unknown }).copy;
+  return { ...raw, copy: { ...STOREFRONT_COPY, ...(typeof copy === "object" && copy !== null ? copy : {}) } };
+}
+
+const adventChecked = adventBaseSchema.superRefine((advent, context) => {
   const heroIds = checkCoreHeroes(context, advent.heroes);
   const { schedule } = advent;
 
@@ -435,8 +520,17 @@ export const adventSchema = adventBaseSchema.superRefine((advent, context) => {
     issue(context, "Конец выдачи кодов (claimEndsAt) не может быть раньше финала (finaleAt)", ["schedule", "claimEndsAt"]);
   }
 
+  if (advent.presentation === "storefront" && !advent.facade) {
+    issue(context, "presentation: storefront требует секцию facade (templateId фасада из facades/)", ["facade"]);
+  }
+  if (advent.facade?.hostHeroId !== undefined && !heroIds.has(advent.facade.hostHeroId)) {
+    issue(context, `Неизвестный герой-хозяин фасада (facade.hostHeroId): ${advent.facade.hostHeroId}`, ["facade", "hostHeroId"]);
+  }
+
   checkBrandContrast(context, advent.brand);
 });
+
+export const adventSchema = z.preprocess(withStorefrontCopy, adventChecked);
 
 export type AdventConfig = z.infer<typeof adventSchema>;
 export type AdventSchedule = z.infer<typeof scheduleSchema>;

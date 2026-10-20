@@ -2,6 +2,7 @@ import "@/components/quest/quest.css";
 import { QuizGame } from "@/components/game/QuizGame";
 import { QuestGame } from "@/components/quest/QuestGame";
 import "@/components/advent/advent.css";
+import "@/components/advent/storefront/storefront.css";
 import { AdventGame } from "@/components/advent/AdventGame";
 import { anyTenantForPage } from "@/server/page-tenant";
 import { resolveMode } from "@/server/play-mode";

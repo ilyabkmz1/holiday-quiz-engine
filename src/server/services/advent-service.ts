@@ -1,4 +1,4 @@
-import type { AdventConfig, AdventDay, DayBlock } from "@/config/advent-schema";
+import { rewardIconFor, type AdventConfig, type AdventDay, type DayBlock } from "@/config/advent-schema";
 import type { Task } from "@/config/schema";
 import { adventPhase, dayIndexAt, dayRewardAvailable, dayUnlockAt, doorStatus, streakState, type OpenedDay, type StreakPolicy, type StreakState } from "@/domain/advent";
 import { DomainError } from "@/domain/errors";
@@ -378,6 +378,7 @@ export class AdventService {
         kind: reward.kind,
         label: reward.label,
         description: reward.description,
+        icon: rewardIconFor(reward),
         status: grant.status,
         expiresAt: grant.expiresAt?.toISOString() ?? null,
         code: gated ? null : grant.code,

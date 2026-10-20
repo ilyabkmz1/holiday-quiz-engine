@@ -11,7 +11,23 @@ const FOCUSABLE = 'a[href], button:not(:disabled), input:not(:disabled), select:
  * Фокус заходит внутрь и не уходит из листа по Tab, Escape и кнопка «×» закрывают, прокрутка страницы под листом отключена.
  * Классы `quest-sheet` дают механикам заданий их плоскую вёрстку внутри карточки.
  */
-export function AdventSheet({ label, closeLabel, onClose, children }: { label: string; closeLabel: string; onClose: () => void; children: ReactNode }) {
+export function AdventSheet({
+  label,
+  closeLabel,
+  onClose,
+  back = false,
+  footer,
+  children
+}: {
+  label: string;
+  closeLabel: string;
+  onClose: () => void;
+  /** Кнопка закрытия — стрелка «назад» слева (экран дня «Витрины»), а не «×» справа. */
+  back?: boolean;
+  /** Закреплённая нижняя часть вне прокрутки (индикатор шагов дня). */
+  footer?: ReactNode;
+  children: ReactNode;
+}) {
   const ref = useRef<HTMLElement>(null);
   useEffect(() => {
     const el = ref.current;
@@ -56,10 +72,11 @@ export function AdventSheet({ label, closeLabel, onClose, children }: { label: s
       <div className="adv-scrim" aria-hidden="true" onClick={onClose} />
       <aside className="adv-sheet quest-sheet" tabIndex={-1} role="dialog" aria-modal="true" aria-label={label} ref={ref} onKeyDown={onKeyDown}>
         <div className="adv-sheet-grip" aria-hidden="true" />
-        <button type="button" className="adv-sheet-close" aria-label={closeLabel} onClick={onClose}>
-          <AdventIcon name="close" size={20} />
+        <button type="button" className={`adv-sheet-close${back ? " adv-sheet-back" : ""}`} aria-label={closeLabel} onClick={onClose}>
+          <AdventIcon name={back ? "back" : "close"} size={20} />
         </button>
         <div className="adv-sheet-body">{children}</div>
+        {footer && <div className="adv-sheet-footer">{footer}</div>}
       </aside>
     </>
   );

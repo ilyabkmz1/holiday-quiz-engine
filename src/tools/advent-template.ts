@@ -32,7 +32,8 @@ const CUSTOM_PROFILE: AdventProfile = adventProfileSchema.parse({
   id: "retail",
   title: "Свой профиль",
   toneHints: ["Опишите тон и награды в брифе."],
-  presentation: "calendar",
+  presentation: "storefront",
+  facade: { templateId: "shop" },
   schedule: { timezone: "Europe/Moscow", unlockHour: 0, catchUp: { window: 1 }, rewardOnlyOnDay: false },
   streak: { endowedDay: true, freezes: 1, goals: [{ openedShare: 0.5, rewardId: "final-entry" }] },
   rewards: [
@@ -145,6 +146,8 @@ export function buildAdventTemplate({ tenant, days, profile: profileId, startDat
       policyText: "[ТЕКСТ НА СОГЛАСОВАНИИ ЮРИСТА] Политика обработки персональных данных.",
       consentText: "[ТЕКСТ НА СОГЛАСОВАНИИ ЮРИСТА] Согласие на обработку персональных данных."
     },
+    // Хозяин у двери — первый герой; шаблон фасада приходит из профиля (`facade.templateId`), вывеска по умолчанию — название бренда.
+    facade: { hostHeroId: HEROES[0] },
     heroes: HEROES.map((id, index) => ({ id, name: `TODO: имя ${index + 1}`, role: "TODO: роль", color: HERO_COLORS[index] })),
     schedule: { startDate, days, finaleAt, claimEndsAt },
     days: Array.from({ length: days }, (_, index) => dayStub(index + 1, profile, 4)),
@@ -217,7 +220,11 @@ export function applyAdventBrief(pack: AdventPackDraft, fields: BriefFields): st
   }
   const onlyOnDay = yesNo(fields.adventRewardOnlyOnDay);
   if (onlyOnDay !== null) set("schedule.rewardOnlyOnDay", () => { schedule.rewardOnlyOnDay = onlyOnDay; });
-  if (fields.adventPresentation === "calendar" || fields.adventPresentation === "world") set("presentation", () => { advent.presentation = fields.adventPresentation; });
+  if (fields.adventPresentation === "calendar" || fields.adventPresentation === "world" || fields.adventPresentation === "storefront") set("presentation", () => { advent.presentation = fields.adventPresentation; });
+  // Фасад «Витрины»: шаблон из брифа важнее шаблона профиля; вывеска — до 28 символов (длиннее схема не примет).
+  const facadeId = fields.adventFacade?.trim().toLowerCase();
+  if (facadeId && /^[a-z][a-z0-9-]{0,40}$/.test(facadeId)) set("facade.templateId", () => { advent.facade = { ...(advent.facade ?? {}), templateId: facadeId }; });
+  if (fields.adventSign?.trim()) set("facade.signText", () => { advent.facade = { ...(advent.facade ?? {}), signText: fields.adventSign!.trim() }; });
   // Финал и конец выдачи: дата из брифа (финал — в час открытия дня, конец выдачи — в конце суток по Москве).
   const finale = fields.adventFinale ? toIsoMoscow(fields.adventFinale) : null;
   if (finale) {

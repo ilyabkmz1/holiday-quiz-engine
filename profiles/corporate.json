@@ -6,7 +6,10 @@
     "Без денежных призов и промокодов: баллы, мерч и командный зачёт.",
     "Один вопрос в день занимает меньше минуты."
   ],
-  "presentation": "calendar",
+  "presentation": "storefront",
+  "facade": {
+    "templateId": "office"
+  },
   "schedule": {
     "timezone": "Europe/Moscow",
     "unlockHour": 9,

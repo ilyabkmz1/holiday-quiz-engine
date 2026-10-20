@@ -1,0 +1,36 @@
+{
+  "id": "salon",
+  "title": "Салон: купол, круглые окна",
+  "roof": {
+    "shape": "dome",
+    "awning": false
+  },
+  "windows": {
+    "shape": "round",
+    "panes": "single"
+  },
+  "door": {
+    "shape": "round"
+  },
+  "decor": {
+    "garland": true,
+    "snow": true,
+    "sign": true
+  },
+  "layout": {
+    "attic": true
+  },
+  "vessel": "box",
+  "colors": {
+    "wall": "card-2",
+    "roof": "patch",
+    "trim": "gold-soft",
+    "glass": "deep",
+    "glow": "gold",
+    "glowInk": "on-gold",
+    "door": "royal",
+    "ground": "ice",
+    "sign": "gold",
+    "signInk": "on-gold"
+  }
+}

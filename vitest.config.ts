@@ -15,6 +15,7 @@ export default defineConfig({
     alias: {
       "@worlds": fileURLToPath(new URL("./worlds", import.meta.url)),
       "@profiles": fileURLToPath(new URL("./profiles", import.meta.url)),
+      "@facades": fileURLToPath(new URL("./facades", import.meta.url)),
       "@tenants": fileURLToPath(new URL("./tenants", import.meta.url)),
       "@": fileURLToPath(new URL("./src", import.meta.url))
     }

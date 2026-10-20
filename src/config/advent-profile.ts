@@ -1,5 +1,6 @@
 import { z } from "zod";
 
+import { facadeChoiceSchema } from "@/config/facade";
 import { catchUpSchema, presentationSchema, remindersSchema, rewardSchema, timezoneSchema } from "@/config/advent-schema";
 
 /** Типы бизнеса, для которых есть заготовка в `profiles/<id>.json`. Пакет может быть и `custom` — без профиля. */
@@ -50,6 +51,8 @@ export const adventProfileSchema = z.strictObject({
   /** Подсказки по тону текстов для автора пакета и агента `quiz:new`. */
   toneHints: z.array(z.string().min(1)).min(1),
   presentation: presentationSchema.optional(),
+  /** Фасад «Витрины» по умолчанию для этого типа бизнеса: кофейни — cafe, магазины — shop, B2B и команды — office, салоны — salon. */
+  facade: z.strictObject({ templateId: facadeChoiceSchema.shape.templateId }).optional(),
   schedule: z
     .strictObject({
       timezone: timezoneSchema.optional(),
