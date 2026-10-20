@@ -43,6 +43,8 @@ export const adventPackSchema = z.object({
   profile: z.enum([...PROFILE_IDS, "custom"]),
   /** Витринный пакет для демонстрации, не боевая кампания. */
   demo: z.boolean().default(false),
+  /** Сколько участников ждём (оценка заказчика): `quiz:check` сверяет с ней запас кодов из списков. */
+  expectedParticipants: z.number().int().min(1).optional(),
   advent: adventSchema
 });
 

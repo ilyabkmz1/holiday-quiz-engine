@@ -4,7 +4,7 @@ import { correctPayload, wrongPayload } from "@/domain/solve";
 import { hashToken } from "@/server/crypto";
 import { ENDOWED_REWARD_ID } from "@/server/services/advent-service";
 
-import { adventConfig, at, newAdventService, playDay } from "../support/advent";
+import { adventConfig, at, newAdventService, playDay, verifyParticipant } from "../support/advent";
 
 const SECRET_FIELDS = /correctOptionId|correctOptionIds|correctEnabledIds|correctOrder|fakeLetterId|"thanks"|"oops"|"explanation"|"tip"|correctIds/;
 
@@ -40,9 +40,10 @@ describe("AdventService: участник", () => {
     const { participant } = await service.createParticipant(at(1, 9));
     const grants = await repository.listGrants(participant.id);
     expect(grants.map((grant) => [grant.source, grant.day, grant.rewardId])).toEqual([["endowed", 0, "daily-gift"]]);
-    expect(grants[0].expiresAt).not.toBeNull();
+    // Анонимному участнику награда с кодом записана без кода и срока: они появятся после входа по ссылке.
+    expect(grants[0]).toMatchObject({ code: null, expiresAt: null });
     const state = await service.state(participant.id, at(1, 9));
-    expect(state.grants).toMatchObject([{ source: "endowed", day: 0, rewardId: "daily-gift", code: null }]);
+    expect(state.grants).toMatchObject([{ source: "endowed", day: 0, rewardId: "daily-gift", code: null, needsIdentity: true, qr: null }]);
     // Повторные записи прогресса не дублируют подарок за старт.
     await service.openDay(participant.id, 1, at(1, 10));
     expect((await repository.listGrants(participant.id)).filter((grant) => grant.source === "endowed")).toHaveLength(1);
@@ -200,25 +201,19 @@ describe("AdventService: блоки и задания", () => {
     await expect(service.submitBlock(participant.id, 1, -1, {}, at(1))).rejects.toMatchObject({ code: "not_found" });
   });
 
-  it("блоки удачи и подарка отвечают reward_blocks_not_ready и не раскрывают исход", async () => {
+  it("блоки удачи и подарка не раскрывают исход в состоянии, пока не выполнены", async () => {
     const { service, advent } = newAdventService();
     const { participant } = await service.createParticipant(at(4));
     const state = await service.openDay(participant.id, 4, at(4));
     const luckIndex = advent.days[3].blocks.findIndex((block) => block.type === "luck");
-    expect(state.days[0].blocks[luckIndex]).toEqual({ index: luckIndex, type: "luck", choices: 3, done: false, ready: false });
+    expect(state.days[0].blocks[luckIndex]).toEqual({ index: luckIndex, type: "luck", choices: 3, done: false, ready: false, needsIdentity: true, reveal: null });
     expect(JSON.stringify(state)).not.toMatch(/luck-a|luck-b|weight/);
-    await expect(service.submitBlock(participant.id, 4, luckIndex, { choice: 1 }, at(4))).rejects.toMatchObject({
-      code: "conflict",
-      message: expect.stringContaining("reward_blocks_not_ready")
-    });
-
-    const promoDay = advent.days[0].blocks.findIndex((block) => block.type === "promo");
-    await expect(service.submitBlock(participant.id, 1, promoDay, {}, at(4))).rejects.toMatchObject({ message: expect.stringContaining("reward_blocks_not_ready") });
   });
+
 });
 
 describe("AdventService: награды", () => {
-  it("награда дня выдаётся без кода, когда день пройден, и только один раз", async () => {
+  it("награда дня выдаётся, когда день пройден, и только один раз; анонимному — без кода, после входа — с кодом", async () => {
     const { service, advent, repository } = newAdventService();
     const { participant } = await service.createParticipant(at(2));
     await service.openDay(participant.id, 2, at(2));
@@ -228,10 +223,19 @@ describe("AdventService: награды", () => {
     await playDay(service, advent, participant.id, 2, at(2, 15));
     const dayGrants = (await repository.listGrants(participant.id)).filter((grant) => grant.source === "day");
     expect(dayGrants).toHaveLength(1);
-    expect(dayGrants[0]).toMatchObject({ day: 2, rewardId: "daily-gift", code: null, status: "issued" });
-    expect(dayGrants[0].expiresAt).toEqual(new Date(at(2, 14).getTime() + 2 * 24 * 60 * 60 * 1000));
-    const state = await service.state(participant.id, at(2, 15));
-    expect(state.grants.find((grant) => grant.source === "day")).toMatchObject({ label: "Напиток или десерт дня", code: null });
+    expect(dayGrants[0]).toMatchObject({ day: 2, rewardId: "daily-gift", code: null, expiresAt: null, status: "issued" });
+    const anonymous = await service.state(participant.id, at(2, 15));
+    expect(anonymous.grants.find((grant) => grant.source === "day")).toMatchObject({ label: "Напиток или десерт дня", code: null, needsIdentity: true, qr: null });
+
+    // Вход по ссылке дозаполняет код и срок (от момента входа); повторные записи его не меняют.
+    await verifyParticipant({ service, repository, advent }, participant.id, at(2, 16));
+    const [verified] = (await repository.listGrants(participant.id)).filter((grant) => grant.source === "day");
+    expect(verified.code).toMatch(/^ZR[0-9A-Z]{6}$/);
+    expect(verified.expiresAt).toEqual(new Date(at(2, 16).getTime() + 2 * 24 * 60 * 60 * 1000));
+    await playDay(service, advent, participant.id, 2, at(2, 17));
+    expect((await repository.listGrants(participant.id)).find((grant) => grant.source === "day")!.code).toBe(verified.code);
+    const state = await service.state(participant.id, at(2, 18));
+    expect(state.grants.find((grant) => grant.source === "day")).toMatchObject({ code: verified.code, needsIdentity: false, codePending: false, redeem: "cashier" });
   });
 
   it("день без награды дня (rewardId не задан) награды не выдаёт, сколько ни проходи", async () => {
@@ -349,8 +353,11 @@ describe("AdventService: награды", () => {
 
 describe("AdventService: полный путь на 12 дней", () => {
   it("идеальный игрок: каждый день вовремя, серия 12, награды дня на 9 днях, цели и подаренный день, без дублей", async () => {
-    const { service, repository, advent } = newAdventService();
-    const { participant } = await service.createParticipant(at(1, 8));
+    const ctx = newAdventService();
+    const { service, repository, advent } = ctx;
+    const { participant: anonymous } = await service.createParticipant(at(1, 8));
+    // Награды с кодами и удача выдаются только после входа по ссылке.
+    const participant = await verifyParticipant(ctx, anonymous.id, at(1, 8, 30));
 
     for (let n = 1; n <= 12; n += 1) {
       const state = await service.openDay(participant.id, n, at(n, 9));
@@ -376,9 +383,14 @@ describe("AdventService: полный путь на 12 дней", () => {
     expect(by("goal").map((grant) => grant.day).sort((a, b) => a - b)).toEqual([4, 8]);
     expect(by("day").map((grant) => grant.day)).toEqual([1, 2, 3, 5, 6, 7, 9, 10, 11].sort((a, b) => a - b));
     expect(by("comeback")).toEqual([]);
-    expect(grants).toHaveLength(1 + 2 + 9);
-    expect(grants.every((grant) => grant.code === null)).toBe(true);
-    expect(JSON.stringify(state)).not.toMatch(/"code":"[A-Z0-9]/);
+    expect(by("luck").map((grant) => grant.day)).toEqual([4, 8, 12]);
+    expect(grants).toHaveLength(1 + 2 + 9 + 3);
+    // Код есть у каждой награды с кодами; подарок за старт (псевдо-награда) и «участие в розыгрыше» кодов не имеют.
+    for (const grant of grants) {
+      const reward = advent.rewards.find((candidate) => candidate.id === grant.rewardId);
+      expect(grant.code !== null, `${grant.source}:${grant.day}`).toBe(Boolean(reward?.codes));
+    }
+    expect(new Set(grants.filter((grant) => grant.code).map((grant) => grant.code)).size).toBe(grants.filter((grant) => grant.code).length);
   });
 
   it("игрок с пропусками и догонянием: серия рвётся, прогресс растёт, догнанный день не идёт в серию", async () => {
@@ -399,7 +411,8 @@ describe("AdventService: полный путь на 12 дней", () => {
     ]);
     // Прогресс 4 (три двери и подаренный день) достиг первой цели; возвращение после обрыва дало бонус.
     const grants = await repository.listGrants(participant.id);
-    expect(grants.map((grant) => `${grant.source}:${grant.day}`).sort()).toEqual(["comeback:0", "day:1", "endowed:0", "goal:4"]);
+    // Анонимный игрок не проходит день 1 до конца (подарок дня требует входа), поэтому награды дня 1 нет.
+    expect(grants.map((grant) => `${grant.source}:${grant.day}`).sort()).toEqual(["comeback:0", "endowed:0", "goal:4"]);
     // День 2 вне окна: открыть его позже нельзя.
     await expect(service.openDay(participant.id, 2, at(5, 9))).rejects.toMatchObject({ code: "conflict" });
   });

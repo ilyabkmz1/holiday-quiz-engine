@@ -1,8 +1,8 @@
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 
-import { adminAuthorized } from "@/server/admin";
-import { adminGate } from "@/server/admin-gate";
+import { adminAuthorized, redeemAuthorized } from "@/server/admin";
+import { adminGate, redeemGate } from "@/server/admin-gate";
 import { getRuntimeEnv } from "@/server/env";
 import { authRealm } from "@/server/realm";
 import { shareGate } from "@/server/share-gate";
@@ -14,5 +14,5 @@ import { stagingGate } from "@/server/staging-gate";
 export async function proxy(request: NextRequest) {
   const env = getRuntimeEnv();
   const host = request.headers.get("host");
-  return stagingGate(request, env, authRealm(host, "staging")) ?? (await adminGate(request, adminAuthorized, authRealm(host))) ?? shareGate(request) ?? NextResponse.next();
+  return stagingGate(request, env, authRealm(host, "staging")) ?? (await adminGate(request, adminAuthorized, authRealm(host))) ?? (await redeemGate(request, redeemAuthorized, authRealm(host))) ?? shareGate(request) ?? NextResponse.next();
 }

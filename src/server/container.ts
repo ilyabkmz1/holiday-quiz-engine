@@ -1,5 +1,6 @@
 import { getPrisma } from "@/server/db";
 import { getRuntimeEnv, isForceOpenAllowed } from "@/server/env";
+import { resolveRewardSecret } from "@/server/launch-checks";
 import { sendMail, sendVerificationEmail } from "@/server/mailer";
 import { PrismaAdventRepository } from "@/server/repositories/prisma-advent-repository";
 import { PrismaClaimRepository } from "@/server/repositories/prisma-claim-repository";
@@ -7,6 +8,7 @@ import { PrismaSessionRepository } from "@/server/repositories/prisma-session-re
 import { ClaimService } from "@/server/services/claim-service";
 import { AdventService } from "@/server/services/advent-service";
 import { IdentityService, LOGIN_TOKEN_TTL_MS } from "@/server/services/identity-service";
+import { RewardService, type RewardServiceOptions } from "@/server/services/reward-service";
 import { RushService } from "@/server/services/rush-service";
 import { SessionService } from "@/server/services/session-service";
 import { isAdventTenant, resolveTenant, tenantBaseUrl, type AdventTenant, type Tenant } from "@/server/tenants";
@@ -17,6 +19,8 @@ type ServiceOverrides = {
   /** Отправка ссылки входа адвента (email, ссылка). */
   sendLogin?: (email: string, link: string) => Promise<void>;
   now?: () => Date;
+  /** Параметры наград адвента (источник случайности кодов, секрет QR): в тестах подменяются. */
+  rewards?: Pick<RewardServiceOptions, "rng" | "qrSecret">;
   /** Источник случайности для порядка заявок рывка; в тестах подменяется детерминированным. */
   random?: () => number;
 };
@@ -98,13 +102,28 @@ export function getAdventServices(tenant: AdventTenant) {
   const prisma = getPrisma();
   const repository = new PrismaAdventRepository(prisma);
   const env = getRuntimeEnv();
+  const rewardService = new RewardService(repository, advent, {
+    qrSecret: resolveRewardSecret(env),
+    baseUrl: tenantBaseUrl(tenant, env.APP_URL),
+    audit: async (eventType, entityId, metadata) => {
+      await prisma.auditEvent.create({ data: { eventType, entityId, ...(metadata ? { metadata } : {}) } });
+    },
+    ...overrides.rewards
+  });
+  const adventService = new AdventService(repository, advent, rewardService);
   return {
     prisma,
     repository,
-    adventService: new AdventService(repository, advent),
+    adventService,
+    rewardService,
+    /** Строка кампании нужна внешним ключам кодов и остатков: оператор может загрузить коды до первого участника. */
+    ensureCampaign: async () => {
+      await prisma.campaign.upsert({ where: { slug: advent.slug }, update: {}, create: { slug: advent.slug, title: advent.title } });
+    },
     identityService: new IdentityService({
       repository,
       advent,
+      onVerified: (participantId, now) => adventService.ensureCodes(participantId, now),
       sendLoginLink:
         overrides.sendLogin ??
         ((email, link) =>

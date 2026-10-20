@@ -1,20 +1,19 @@
 import "@/components/quest/quest.css";
 import { QuizGame } from "@/components/game/QuizGame";
 import { QuestGame } from "@/components/quest/QuestGame";
-import { AdventPlaceholder } from "@/components/advent/AdventPlaceholder";
-import { getNow } from "@/server/container";
+import "@/components/advent/advent.css";
+import { AdventGame } from "@/components/advent/AdventGame";
 import { anyTenantForPage } from "@/server/page-tenant";
 import { resolveMode } from "@/server/play-mode";
-import { publicCampaign } from "@/server/presentation";
+import { publicAdvent, publicCampaign } from "@/server/presentation";
 import { isAdventTenant } from "@/server/tenants";
 import { loadWorld } from "@/worlds/registry";
 
 export default async function HomePage({ searchParams }: { searchParams: Promise<{ [key: string]: string | string[] | undefined }> }) {
   const tenant = await anyTenantForPage();
   if (isAdventTenant(tenant)) {
-    // Настоящий интерфейс адвента появится на этапе A3; пока — заглушка в бренде с датой старта.
-    const { advent } = tenant;
-    return <AdventPlaceholder advent={advent} now={getNow()} />;
+    // Публичный срез пакета без заданий и наград: они приходят в состоянии участника по мере прохождения.
+    return <AdventGame advent={publicAdvent(tenant.advent, tenant.tenant, tenant.worldId)} world={loadWorld(tenant.worldId)} />;
   }
   const { mode: requested } = await searchParams;
   // Публичный срез кампании без признаков правильности: тот же, что отдаёт API.

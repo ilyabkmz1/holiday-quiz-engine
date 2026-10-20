@@ -4,7 +4,9 @@ import { DomainError } from "@/domain/errors";
 import { createId, hashToken } from "@/server/crypto";
 import type {
   AdventRepository,
+  CodeSource,
   IdentityRepository,
+  IssueGrantResult,
   LoginTokenRecord,
   ParticipantRecord,
   RewardGrantRecord
@@ -505,6 +507,223 @@ export function describeAdventRepositoryContract(name: string, create: () => Pro
           repo.completeLogin({ tokenHash: pending.tokenHash, now: minutes(1), campaignSlug: CAMPAIGN, currentParticipantId: null, newAccessKeyHash: hashToken("k") })
         ).rejects.toMatchObject({ code: "invalid" });
         expect(await repo.anonymizeCampaignParticipants(CAMPAIGN)).toBe(0);
+      });
+    });
+    describe("награды: коды, остатки, погашение (A2)", () => {
+      const REWARD = "pool-reward";
+      const hours = (value: number) => new Date(T0.getTime() + value * 3_600_000);
+
+      /** Выдача из пула: сам вызов `issueGrant` с источником `list`. */
+      const issueFromPool = (participantId: string, overrides: Partial<RewardGrantRecord> = {}, extra: { consumeStock?: boolean; requireCode?: boolean; code?: CodeSource | null } = {}) =>
+        repo.issueGrant({
+          grant: grantRecord(participantId, { rewardId: REWARD, ...overrides }),
+          campaignSlug: CAMPAIGN,
+          consumeStock: extra.consumeStock ?? false,
+          code: extra.code === undefined ? { kind: "list" } : extra.code,
+          requireCode: extra.requireCode ?? false
+        });
+
+      const created = (result: IssueGrantResult) => {
+        if (result.status !== "created" && result.status !== "existing") throw new Error(`ожидалась выдача, получено ${result.status}`);
+        return result;
+      };
+
+      it("importCodes: дубли в кампании пропускаются (в том числе из другой награды), poolOverview считает свободные", async () => {
+        expect(await repo.importCodes(CAMPAIGN, REWARD, ["A1", "A2", "A3"])).toEqual({ added: 3, duplicates: 0 });
+        expect(await repo.importCodes(CAMPAIGN, REWARD, ["A3", "A4"])).toEqual({ added: 1, duplicates: 1 });
+        expect(await repo.importCodes(CAMPAIGN, "other-reward", ["A1", "B1"])).toEqual({ added: 1, duplicates: 1 });
+        // Та же строка в другой кампании — не дубль.
+        expect(await repo.importCodes(OTHER_CAMPAIGN, REWARD, ["A1"])).toEqual({ added: 1, duplicates: 0 });
+        expect(await repo.poolOverview(CAMPAIGN)).toEqual({ [REWARD]: { total: 4, free: 4 }, "other-reward": { total: 1, free: 1 } });
+        const { id } = await newParticipant();
+        created(await issueFromPool(id));
+        expect((await repo.poolOverview(CAMPAIGN))[REWARD]).toEqual({ total: 4, free: 3 });
+      });
+
+      it("issueGrant из пула: код берётся один раз, повтор возвращает ту же выдачу, а другой участник получает другой код", async () => {
+        await repo.importCodes(CAMPAIGN, REWARD, ["C1", "C2"]);
+        const a = await newParticipant();
+        const b = await newParticipant();
+        const first = created(await issueFromPool(a.id));
+        const again = created(await issueFromPool(a.id));
+        const other = created(await issueFromPool(b.id));
+        expect(first.status).toBe("created");
+        expect(again.status).toBe("existing");
+        expect(again.grant.id).toBe(first.grant.id);
+        expect(again.grant.code).toBe(first.grant.code);
+        expect(new Set([first.grant.code, other.grant.code])).toEqual(new Set(["C1", "C2"]));
+        expect((await repo.listGrants(a.id))[0].code).toBe(first.grant.code);
+        expect((await repo.findGrantsByCode(CAMPAIGN, first.grant.code!.toLowerCase())).map((grant) => grant.id)).toEqual([first.grant.id]);
+        expect(await repo.findGrantsByCode(OTHER_CAMPAIGN, first.grant.code!)).toEqual([]);
+      });
+
+      it("параллельные выдачи не делят код; когда пул кончился, остальные получают отказ pool_empty без выдачи", async () => {
+        await repo.importCodes(CAMPAIGN, REWARD, ["P01", "P02", "P03", "P04", "P05"]);
+        const people = await Promise.all(Array.from({ length: 14 }, () => newParticipant()));
+        const results = await Promise.all(people.map((person) => issueFromPool(person.id, {}, { requireCode: true })));
+        const issued = results.filter((result) => result.status === "created");
+        expect(issued).toHaveLength(5);
+        expect(results.filter((result) => result.status === "pool_empty")).toHaveLength(9);
+        const codes = issued.map((result) => (result as { grant: RewardGrantRecord }).grant.code);
+        expect(new Set(codes).size).toBe(5);
+        expect((await repo.poolOverview(CAMPAIGN))[REWARD]).toEqual({ total: 5, free: 0 });
+        // Отказ ничего не записал: у отказанных нет выдач.
+        const withGrants = await Promise.all(people.map(async (person) => (await repo.listGrants(person.id)).length));
+        expect(withGrants.filter((count) => count === 1)).toHaveLength(5);
+      });
+
+      it("без requireCode пустой пул даёт выдачу без кода, а assignGrantCode дозаполняет её после пополнения (и ставит срок)", async () => {
+        const { id } = await newParticipant();
+        const result = created(await issueFromPool(id));
+        expect(result).toMatchObject({ status: "created", codeMissing: true });
+        expect(result.grant.code).toBeNull();
+        const stillEmpty = await repo.assignGrantCode(result.grant.id, { kind: "list" }, hours(48));
+        expect(stillEmpty.status).toBe("pool_empty");
+        expect(stillEmpty.grant.expiresAt).toBeNull();
+
+        await repo.importCodes(CAMPAIGN, REWARD, ["LATE1"]);
+        const assigned = await repo.assignGrantCode(result.grant.id, { kind: "list" }, hours(48));
+        expect(assigned).toMatchObject({ status: "assigned", grant: { code: "LATE1" } });
+        expect(assigned.grant.expiresAt).toEqual(hours(48));
+        // Идемпотентно: код и срок не меняются, второй код не берётся.
+        await repo.importCodes(CAMPAIGN, REWARD, ["LATE2"]);
+        const repeat = await repo.assignGrantCode(result.grant.id, { kind: "list" }, hours(99));
+        expect(repeat).toMatchObject({ status: "existing", grant: { code: "LATE1" } });
+        expect(repeat.grant.expiresAt).toEqual(hours(48));
+        expect((await repo.poolOverview(CAMPAIGN))[REWARD]).toEqual({ total: 2, free: 1 });
+        await expect(repo.assignGrantCode(createId(), { kind: "list" }, null)).rejects.toMatchObject({ code: "not_found" });
+      });
+
+      it("assignGrantCode без источника кода только проставляет срок, один раз", async () => {
+        const { id } = await newParticipant();
+        const { grant } = created(await issueFromPool(id, {}, { code: null }));
+        expect((await repo.assignGrantCode(grant.id, null, hours(24))).grant.expiresAt).toEqual(hours(24));
+        expect((await repo.assignGrantCode(grant.id, null, hours(72))).grant.expiresAt).toEqual(hours(24));
+      });
+
+      it("static: один код всем; generated: код попадает в пул кампании и столкновение даёт повтор с новым кодом", async () => {
+        const a = await newParticipant();
+        const b = await newParticipant();
+        const staticA = created(await issueFromPool(a.id, { rewardId: "same" }, { code: { kind: "static", code: "HELLO" } }));
+        const staticB = created(await issueFromPool(b.id, { rewardId: "same" }, { code: { kind: "static", code: "HELLO" } }));
+        expect([staticA.grant.code, staticB.grant.code]).toEqual(["HELLO", "HELLO"]);
+        expect(await repo.findGrantsByCode(CAMPAIGN, "hello")).toHaveLength(2);
+
+        // Генератор сначала возвращает занятый код (HELLO в пуле нет, поэтому занимаем GEN1 импортом), затем свободный.
+        await repo.importCodes(CAMPAIGN, "gen", ["GEN1"]);
+        const queue = ["GEN1", "GEN1", "GEN2"];
+        const c = await newParticipant();
+        const generated = created(await issueFromPool(c.id, { rewardId: "gen" }, { code: { kind: "generated", next: () => queue.shift()! } }));
+        expect(generated.grant.code).toBe("GEN2");
+        expect(queue).toEqual([]);
+        // Две выдачи подряд не получают одинаковых кодов, даже если генератор «залип».
+        const d = await newParticipant();
+        let attempts = 0;
+        const next = () => (attempts++ < 3 ? "GEN2" : "GEN3");
+        expect(created(await issueFromPool(d.id, { rewardId: "gen" }, { code: { kind: "generated", next } })).grant.code).toBe("GEN3");
+      });
+
+      it("остатки: ensureStock не сбрасывает идущий розыгрыш, выдача списывает по одному и не уходит в минус", async () => {
+        await repo.ensureStock(CAMPAIGN, [{ rewardId: REWARD, left: 2 }]);
+        const people = await Promise.all(Array.from({ length: 3 }, () => newParticipant()));
+        created(await issueFromPool(people[0].id, {}, { consumeStock: true, code: null }));
+        await repo.ensureStock(CAMPAIGN, [{ rewardId: REWARD, left: 50 }]); // повторное заведение не меняет остаток
+        expect(await repo.stockLeft(CAMPAIGN)).toEqual({ [REWARD]: 1 });
+        created(await issueFromPool(people[1].id, {}, { consumeStock: true, code: null }));
+        expect(await issueFromPool(people[2].id, {}, { consumeStock: true, code: null })).toEqual({ status: "stock_exhausted" });
+        expect(await repo.stockLeft(CAMPAIGN)).toEqual({ [REWARD]: 0 });
+        expect(await repo.listGrants(people[2].id)).toEqual([]);
+        // Строки остатка нет (розыгрыш не заводили) — это «нечего списывать», а не бесконечный запас.
+        expect(await issueFromPool(people[2].id, { rewardId: "never-seeded" }, { consumeStock: true, code: null })).toEqual({ status: "stock_exhausted" });
+      });
+
+      it("остатки под нагрузкой: из 3 штук параллельно разбирают ровно 3, остаток не отрицателен", async () => {
+        await repo.ensureStock(CAMPAIGN, [{ rewardId: REWARD, left: 3 }]);
+        const people = await Promise.all(Array.from({ length: 12 }, () => newParticipant()));
+        const results = await Promise.all(people.map((person) => issueFromPool(person.id, { source: "luck", day: 4 }, { consumeStock: true, code: null })));
+        expect(results.filter((result) => result.status === "created")).toHaveLength(3);
+        expect(results.filter((result) => result.status === "stock_exhausted")).toHaveLength(9);
+        expect(await repo.stockLeft(CAMPAIGN)).toEqual({ [REWARD]: 0 });
+      });
+
+      it("повторные параллельные запросы одного участника списывают остаток один раз", async () => {
+        await repo.ensureStock(CAMPAIGN, [{ rewardId: REWARD, left: 5 }]);
+        const { id } = await newParticipant();
+        const results = await Promise.all(Array.from({ length: 6 }, () => issueFromPool(id, { source: "luck", day: 4 }, { consumeStock: true, code: null })));
+        expect(results.filter((result) => result.status === "created")).toHaveLength(1);
+        expect(results.filter((result) => result.status === "existing")).toHaveLength(5);
+        expect(await repo.stockLeft(CAMPAIGN)).toEqual({ [REWARD]: 4 });
+        expect(await repo.listGrants(id)).toHaveLength(1);
+      });
+
+      it("пустой пул при requireCode откатывает и списание остатка", async () => {
+        await repo.ensureStock(CAMPAIGN, [{ rewardId: REWARD, left: 2 }]);
+        const { id } = await newParticipant();
+        expect(await issueFromPool(id, {}, { consumeStock: true, requireCode: true })).toEqual({ status: "pool_empty" });
+        expect(await repo.stockLeft(CAMPAIGN)).toEqual({ [REWARD]: 2 });
+        expect(await repo.listGrants(id)).toEqual([]);
+      });
+
+      it("redeemGrant: погашение один раз, повтор, просрочка, чужая кампания, неизвестная выдача", async () => {
+        const { id } = await newParticipant();
+        const live = created(await issueFromPool(id, { day: 1, expiresAt: hours(24) }, { code: null })).grant;
+        const old = created(await issueFromPool(id, { day: 2, expiresAt: hours(1) }, { code: null })).grant;
+        const forever = created(await issueFromPool(id, { day: 3, expiresAt: null }, { code: null })).grant;
+
+        expect(await repo.redeemGrant(CAMPAIGN, live.id, hours(2))).toMatchObject({ status: "redeemed", grant: { status: "redeemed", redeemedAt: hours(2) } });
+        const again = await repo.redeemGrant(CAMPAIGN, live.id, hours(3));
+        expect(again).toMatchObject({ status: "already_redeemed", grant: { redeemedAt: hours(2) } });
+        expect(await repo.redeemGrant(CAMPAIGN, old.id, hours(2))).toMatchObject({ status: "expired", grant: { status: "issued", redeemedAt: null } });
+        // Граница срока: в момент expiresAt награда уже просрочена.
+        expect((await repo.redeemGrant(CAMPAIGN, old.id, hours(1))).status).toBe("expired");
+        expect((await repo.redeemGrant(CAMPAIGN, forever.id, hours(1000))).status).toBe("redeemed");
+        expect(await repo.redeemGrant(OTHER_CAMPAIGN, forever.id, hours(1))).toEqual({ status: "not_found" });
+        expect(await repo.redeemGrant(CAMPAIGN, createId(), hours(1))).toEqual({ status: "not_found" });
+        expect((await repo.getGrant(live.id))).toMatchObject({ id: live.id, campaignSlug: CAMPAIGN, status: "redeemed" });
+        expect(await repo.getGrant(createId())).toBeNull();
+      });
+
+      it("параллельное погашение: ровно одно успешное", async () => {
+        const { id } = await newParticipant();
+        const { grant } = created(await issueFromPool(id, { expiresAt: hours(24) }, { code: null }));
+        const results = await Promise.all(Array.from({ length: 6 }, (_, index) => repo.redeemGrant(CAMPAIGN, grant.id, hours(1 + index / 100))));
+        expect(results.filter((result) => result.status === "redeemed")).toHaveLength(1);
+        expect(results.filter((result) => result.status === "already_redeemed")).toHaveLength(5);
+      });
+
+      it("слияние: код отброшенной выдачи-дубля возвращается в пул, перенесённая выдача сохраняет свой код", async () => {
+        await repo.importCodes(CAMPAIGN, REWARD, ["M1", "M2", "M3"]);
+        const into = await newParticipant();
+        const from = await newParticipant();
+        const intoGrant = created(await issueFromPool(into.id, { day: 1 })).grant;
+        const dup = created(await issueFromPool(from.id, { day: 1 })).grant; // тот же ключ (источник, день): будет отброшен
+        const moved = created(await issueFromPool(from.id, { day: 2 })).grant;
+        expect((await repo.poolOverview(CAMPAIGN))[REWARD]).toEqual({ total: 3, free: 0 });
+
+        await repo.mergeParticipants(from.id, into.id);
+
+        const grants = await repo.listGrants(into.id);
+        expect(grants.map((grant) => [grant.day, grant.code])).toEqual([[1, intoGrant.code], [2, moved.code]]);
+        expect((await repo.poolOverview(CAMPAIGN))[REWARD]).toEqual({ total: 3, free: 1 });
+        // Освободившийся код снова выдаётся.
+        const next = await newParticipant();
+        expect(created(await issueFromPool(next.id, { day: 5 })).grant.code).toBe(dup.code);
+      });
+
+      it("выгрузка и итоги: все выдачи кампании, выдано и погашено по наградам", async () => {
+        const a = await newParticipant();
+        const b = await newParticipant();
+        const foreign = await newParticipant({ campaignSlug: OTHER_CAMPAIGN });
+        const g1 = created(await issueFromPool(a.id, { day: 1, rewardId: "r1" }, { code: null })).grant;
+        created(await issueFromPool(a.id, { day: 2, rewardId: "r2" }, { code: null }));
+        created(await issueFromPool(b.id, { day: 1, rewardId: "r1" }, { code: null }));
+        await repo.issueGrant({ grant: grantRecord(foreign.id, { rewardId: "r1" }), campaignSlug: OTHER_CAMPAIGN, consumeStock: false, code: null, requireCode: false });
+        await repo.redeemGrant(CAMPAIGN, g1.id, hours(1));
+        expect((await repo.listCampaignGrants(CAMPAIGN)).map((grant) => grant.rewardId).sort()).toEqual(["r1", "r1", "r2"]);
+        expect(await repo.grantTotals(CAMPAIGN)).toEqual([
+          { rewardId: "r1", issued: 2, redeemed: 1 },
+          { rewardId: "r2", issued: 1, redeemed: 0 }
+        ]);
       });
     });
   });

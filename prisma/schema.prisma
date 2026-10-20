@@ -26,6 +26,12 @@ enum GrantStatus {
   redeemed
 }
 
+/// Роль логина клиента: оператор видит админку и импортирует коды, кассир только гасит награды на /redeem (адвент).
+enum TenantAdminRole {
+  operator
+  cashier
+}
+
 enum ClaimStatus {
   claim_pending
   email_verified
@@ -265,6 +271,7 @@ model RewardGrant {
 
   @@unique([participantId, source, day])
   @@index([participantId])
+  @@index([code])
 }
 
 /// Код из загруженного пула (A2). Выдаётся одной транзакцией вместе с RewardGrant.
@@ -320,12 +327,14 @@ model ReminderDelivery {
 
 /// Логин оператора клиента: строго в рамках одного арендатора (slug пакета `tenants/<slug>`). Пароль хранится только хешем (scrypt).
 model TenantAdmin {
-  id           String    @id @default(uuid()) @db.Uuid
+  id           String          @id @default(uuid()) @db.Uuid
   tenantSlug   String
   username     String
   passwordHash String
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
+  /// operator по умолчанию (поведение до адвента не меняется); cashier — только погашение наград.
+  role         TenantAdminRole @default(operator)
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
   /// Отключённый логин не проходит проверку; строка остаётся для аудита.
   disabledAt   DateTime?
 

@@ -59,3 +59,7 @@ export const identityRequestEmailRateLimiter = new FixedWindowRateLimiter(5, 15 
 // 60 попыток в минуту на IP хватает оператору (страница = 2 проверки: proxy и сама страница), но не даёт перебирать пароли
 // и нагружать процессор. Исчерпанный лимит отвечает как неверный пароль (401).
 export const adminAuthRateLimiter = new FixedWindowRateLimiter(60, 60_000);
+
+// Касса адвента: проверка и погашение кода. Доступ и так за паролем кассира; лимит защищает от перебора кодов с украденным
+// паролем и от залипшей кнопки. 120 в минуту на точку (ключ арендатор + IP) хватает очереди из нескольких касс за одним NAT.
+export const redeemRateLimiter = new FixedWindowRateLimiter(120, 60_000);

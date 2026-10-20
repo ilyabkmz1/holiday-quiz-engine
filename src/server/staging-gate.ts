@@ -20,6 +20,8 @@ export function isStagingExempt(pathname: string): boolean {
   // только один заголовок Authorization, поэтому два пароля на один путь не сосуществуют.
   // Точное сравнение: варианты с другим регистром или %-кодированием остаются под staging-паролем,
   // а ADMIN_* для них требует adminGate (он нормализует путь).
+  // Касса адвента (страница и погашение) — те же логины клиента с ролью кассира.
+  if (pathname === "/redeem" || pathname === "/api/advent/redeem") return true;
   return pathname === "/api/admin" || pathname.startsWith("/api/admin/") || pathname === "/admin" || pathname.startsWith("/admin/");
 }
 

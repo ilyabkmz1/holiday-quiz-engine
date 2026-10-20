@@ -1,5 +1,6 @@
 import { z } from "zod";
 
+import { copySchema } from "@/config/brand";
 import {
   REVEALING_ID_PATTERN,
   campaignCoreSchema,
@@ -98,8 +99,11 @@ export const rewardSchema = z.object({
   /** Остаток для розыгрыша удачи; без поля приз не ограничен. */
   stock: z.number().int().min(0).optional(),
   redeem: redeemSchema.default("none"),
-  /** Куда вести для онлайн-погашения. */
-  url: z.url().optional()
+  /** Куда вести для онлайн-погашения (только http и https: ссылка попадает в `href` на странице). */
+  url: z
+    .url()
+    .refine((value) => /^https?:\/\//i.test(value), "Ссылка награды: только http или https")
+    .optional()
 });
 
 export const streakSchema = z.object({
@@ -130,6 +134,18 @@ export const audienceSchema = z.object({
   kind: z.enum(["customers", "employees"]).default("customers"),
   leaderboard: z.enum(["off", "individual", "teams"]).default("off"),
   teams: z.array(z.object({ id, title: z.string().min(1) })).optional()
+});
+
+/**
+ * Условия акции для правил (`quiz:rules`) и юридических проверок (`quiz:check`).
+ * Участие в адвенте бесплатное; если для него нужна покупка, это стимулирующее мероприятие, и по ст. 9 38-ФЗ нужны правила.
+ */
+export const rulesSchema = z.object({
+  requiresPurchase: z.boolean().default(false),
+  /** Реквизиты организатора (ИНН или ОГРН, адрес): печатаются в правилах рядом с названием оператора. */
+  organizerDetails: z.string().trim().min(1).optional(),
+  /** Контакт для вопросов об акции и о персональных данных. */
+  contact: z.string().trim().min(1).optional()
 });
 
 const storyBlockSchema = z.object({
@@ -163,7 +179,111 @@ export const daySchema = z.object({
   rewardId: id.optional()
 });
 
+/**
+ * Тексты интерфейса адвента: у каждого есть значение по умолчанию, пакет переопределяет только нужное.
+ * Плейсхолдеры в фигурных скобках (`{n}`, `{date}`, `{label}`…) подставляет клиент.
+ */
+export const adventCopySchema = copySchema.extend({
+  calendarTitle: z.string().min(1).default("Двери адвента"),
+  doorLocked: z.string().min(1).default("Закрыта"),
+  doorToday: z.string().min(1).default("Сегодня"),
+  doorCatchup: z.string().min(1).default("Догнать"),
+  doorMissed: z.string().min(1).default("Пропущена"),
+  doorOpened: z.string().min(1).default("Открыта"),
+  doorAria: z.string().min(1).default("День {n}: {status}"),
+  doorLockedHint: z.string().min(1).default("Откроется {date}"),
+  doorMissedHint: z.string().min(1).default("Этот день уже нельзя открыть"),
+  doorFinaleHint: z.string().min(1).default("Двери больше не открываются"),
+  upcomingEyebrow: z.string().min(1).default("Скоро старт"),
+  upcomingTitle: z.string().min(1).default("Адвент откроется {date}"),
+  upcomingNote: z.string().min(1).default("Загляните в первый день: мы приготовили сюрприз."),
+  countdownDays: z.string().min(1).default("дн"),
+  countdownHours: z.string().min(1).default("ч"),
+  countdownMinutes: z.string().min(1).default("мин"),
+  countdownSeconds: z.string().min(1).default("сек"),
+  streakOpened: z.string().min(1).default("Открыто {k} из {n}"),
+  streakCurrent: z.string().min(1).default("Серия"),
+  streakBest: z.string().min(1).default("Лучшая серия"),
+  streakFreezes: z.string().min(1).default("Заморозки"),
+  streakGoal: z.string().min(1).default("До «{label}»: осталось дверей — {left}"),
+  streakGoalDone: z.string().min(1).default("Все цели достигнуты"),
+  comebackTitle: z.string().min(1).default("С возвращением!"),
+  comebackText: z.string().min(1).default("Подарок за то, что вернулись."),
+  comebackClose: z.string().min(1).default("Скрыть"),
+  sheetClose: z.string().min(1).default("Закрыть день"),
+  sheetOpening: z.string().min(1).default("Открываем дверь…"),
+  chapterEyebrow: z.string().min(1).default("День {n}"),
+  chapterNext: z.string().min(1).default("Дальше"),
+  storyNext: z.string().min(1).default("Понятно, дальше"),
+  outcomePerfect: z.string().min(1).default("Верно!"),
+  outcomePartial: z.string().min(1).default("Почти получилось"),
+  outcomeMiss: z.string().min(1).default("В этот раз не вышло"),
+  outcomeCorrect: z.string().min(1).default("Правильный ответ"),
+  outcomeNext: z.string().min(1).default("Дальше"),
+  luckTitle: z.string().min(1).default("Испытайте удачу"),
+  luckPromptBoxes: z.string().min(1).default("Выберите коробку"),
+  luckPromptWheel: z.string().min(1).default("Выберите сектор колеса"),
+  luckPromptScratch: z.string().min(1).default("Выберите карточку"),
+  luckPending: z.string().min(1).default("Открываем…"),
+  luckWon: z.string().min(1).default("Ваш подарок"),
+  luckBoxLabel: z.string().min(1).default("Коробка {i}"),
+  luckSectorLabel: z.string().min(1).default("Сектор {i}"),
+  luckCardLabel: z.string().min(1).default("Карточка {i}"),
+  promoTitle: z.string().min(1).default("Подарок дня"),
+  promoOpen: z.string().min(1).default("Открыть подарок"),
+  promoOpening: z.string().min(1).default("Открываем…"),
+  promoCopy: z.string().min(1).default("Скопировать"),
+  promoCopied: z.string().min(1).default("Код скопирован"),
+  promoCopyFailed: z.string().min(1).default("Не удалось скопировать: выделите код вручную"),
+  promoCode: z.string().min(1).default("Ваш код"),
+  promoValidUntil: z.string().min(1).default("Действует до {date}"),
+  promoRedeemed: z.string().min(1).default("Использован {date}"),
+  promoExpired: z.string().min(1).default("Срок действия истёк"),
+  promoCashier: z.string().min(1).default("Покажите код или QR кассиру"),
+  promoOnline: z.string().min(1).default("Перейти на сайт"),
+  promoNeedsIdentity: z.string().min(1).default("Код появится после входа по ссылке из письма"),
+  promoCodePending: z.string().min(1).default("Код появится совсем скоро"),
+  promoQrLabel: z.string().min(1).default("QR-код для кассы"),
+  dayDoneTitle: z.string().min(1).default("День пройден"),
+  dayDoneText: z.string().min(1).default("Возвращайтесь завтра: новая дверь ждёт."),
+  dayDoneNoReward: z.string().min(1).default("Награда за этот день уже получена или не положена."),
+  saveTitle: z.string().min(1).default("Сохраните прогресс"),
+  saveText: z.string().min(1).default("Оставьте email: пришлём ссылку для входа, и серия с подарками не потеряются."),
+  saveIdentityRequired: z.string().min(1).default("Чтобы получить этот приз, нужно сохранить прогресс: пришлём ссылку для входа на email."),
+  saveEmail: z.string().min(1).default("Email"),
+  saveConsent: z.string().min(1).default("Я согласен(на) на обработку персональных данных"),
+  saveMarketing: z.string().min(1).default("Хочу получать напоминания о новых днях"),
+  savePolicy: z.string().min(1).default("Политика обработки данных"),
+  saveErrorEmail: z.string().min(1).default("Проверьте адрес email"),
+  saveErrorConsent: z.string().min(1).default("Без согласия на обработку данных мы не можем отправить ссылку"),
+  saveErrorSend: z.string().min(1).default("Не получилось отправить письмо. Попробуйте ещё раз"),
+  saveSubmit: z.string().min(1).default("Отправить ссылку"),
+  saveSending: z.string().min(1).default("Отправляем…"),
+  saveSentTitle: z.string().min(1).default("Проверьте почту"),
+  saveSentText: z.string().min(1).default("Мы отправили ссылку для входа на {email}. Откройте её на этом устройстве."),
+  saveChange: z.string().min(1).default("Указать другой адрес"),
+  saveDone: z.string().min(1).default("Прогресс сохранён: {email}"),
+  finaleEyebrow: z.string().min(1).default("Финал"),
+  finaleTitle: z.string().min(1).default("Итоги адвента"),
+  finaleOpened: z.string().min(1).default("Открыто дверей"),
+  finaleBest: z.string().min(1).default("Лучшая серия"),
+  finaleMainPrize: z.string().min(1).default("Главный приз"),
+  finaleNoPrize: z.string().min(1).default("Главный приз достаётся тем, кто открыл больше дверей. В следующий раз!"),
+  finaleGoals: z.string().min(1).default("Цели"),
+  finaleShare: z.string().min(1).default("Поделиться"),
+  finaleShareText: z.string().min(1).default("Я прошёл(ла) адвент «{title}»: открыто {k} из {n}."),
+  finaleShareCopied: z.string().min(1).default("Ссылка скопирована"),
+  closedTitle: z.string().min(1).default("Адвент завершён"),
+  closedText: z.string().min(1).default("Спасибо, что были с нами."),
+  loading: z.string().min(1).default("Загружаем двери…"),
+  retry: z.string().min(1).default("Повторить"),
+  loginError: z.string().min(1).default("Ссылка для входа не сработала или устарела. Запросите новую."),
+  errorGeneric: z.string().min(1).default("Не удалось загрузить адвент. Проверьте соединение.")
+});
+export type AdventCopy = z.infer<typeof adventCopySchema>;
+
 const adventBaseSchema = campaignCoreSchema.extend({
+  copy: adventCopySchema.prefault({}),
   presentation: presentationSchema.default("calendar"),
   schedule: scheduleSchema,
   streak: streakSchema.prefault({}),
@@ -171,7 +291,8 @@ const adventBaseSchema = campaignCoreSchema.extend({
   rewards: z.array(rewardSchema).min(1),
   luck: luckSchema.optional(),
   reminders: remindersSchema.prefault({}),
-  audience: audienceSchema.prefault({})
+  audience: audienceSchema.prefault({}),
+  rules: rulesSchema.prefault({})
 });
 
 /** Точка мира для дня: явный `spotId` или точка пути по кругу, если точек меньше, чем дней. */
@@ -221,6 +342,10 @@ export const adventSchema = adventBaseSchema.superRefine((advent, context) => {
       const blockPath = [...dayPath, "blocks", blockIndex];
       if (block.type === "promo") {
         checkReward(block.rewardId, `блоке promo дня ${day.n}`, [...blockPath, "rewardId"]);
+        // Подарок дня и награда за закрытие дня хранятся одной выдачей (ключ «участник, day, день»): два разных приза не поместились бы.
+        if (day.rewardId !== undefined && day.rewardId !== block.rewardId) {
+          issue(context, `В дне ${day.n} блок promo (${block.rewardId}) и rewardId дня (${day.rewardId}) различаются: за день выдаётся один подарок`, [...blockPath, "rewardId"]);
+        }
       }
       if (block.type === "task") {
         const { task } = block;

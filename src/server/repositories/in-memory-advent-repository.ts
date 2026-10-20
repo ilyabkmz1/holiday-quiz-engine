@@ -1,14 +1,21 @@
 import { DomainError } from "@/domain/errors";
-import type {
-  AdventRepository,
-  CompleteLoginInput,
-  CompleteLoginResult,
-  DayBlockResultRecord,
-  DayOpenRecord,
-  IdentityRepository,
-  LoginTokenRecord,
-  ParticipantRecord,
-  RewardGrantRecord
+import {
+  GENERATED_CODE_ATTEMPTS,
+  type AdventRepository,
+  type AssignCodeResult,
+  type CodeSource,
+  type GrantWithCampaign,
+  type IssueGrantInput,
+  type IssueGrantResult,
+  type RedeemOutcome,
+  type CompleteLoginInput,
+  type CompleteLoginResult,
+  type DayBlockResultRecord,
+  type DayOpenRecord,
+  type IdentityRepository,
+  type LoginTokenRecord,
+  type ParticipantRecord,
+  type RewardGrantRecord
 } from "@/server/repositories/advent-repository";
 
 /**
@@ -23,6 +30,10 @@ export class InMemoryAdventRepository implements AdventRepository, IdentityRepos
   private readonly results = new Map<string, DayBlockResultRecord>();
   private readonly grants = new Map<string, RewardGrantRecord>();
   private readonly tokens = new Map<string, LoginTokenRecord>();
+  /** Пул кодов: ключ `кампания|код` (уникальность, как `@@unique([campaignSlug, code])`). */
+  private readonly codes = new Map<string, { campaignSlug: string; rewardId: string; code: string; grantId: string | null }>();
+  /** Остатки: ключ `кампания|награда`. */
+  private readonly stock = new Map<string, number>();
 
   async createParticipant(participant: ParticipantRecord): Promise<ParticipantRecord> {
     if (this.keyOwners.has(participant.accessKeyHash)) throw new Error("Ключ доступа уже занят");
@@ -93,6 +104,160 @@ export class InMemoryAdventRepository implements AdventRepository, IdentityRepos
       .map((grant) => structuredClone(grant));
   }
 
+  private releaseCodes(grantId: string): void {
+    for (const row of this.codes.values()) if (row.grantId === grantId) row.grantId = null;
+  }
+
+  private campaignOf(participantId: string): string {
+    return this.requireParticipant(participantId).campaignSlug;
+  }
+
+  private grantById(grantId: string): RewardGrantRecord | undefined {
+    return [...this.grants.values()].find((grant) => grant.id === grantId);
+  }
+
+  /** Берёт код источника для выдачи или `null`, если свободного кода в пуле нет. */
+  private takeCode(campaignSlug: string, grant: RewardGrantRecord, source: CodeSource): string | null {
+    if (source.kind === "static") return source.code;
+    if (source.kind === "list") {
+      const free = [...this.codes.values()]
+        .filter((row) => row.campaignSlug === campaignSlug && row.rewardId === grant.rewardId && row.grantId === null)
+        .sort((a, b) => (a.code < b.code ? -1 : a.code > b.code ? 1 : 0))[0];
+      if (!free) return null;
+      free.grantId = grant.id;
+      return free.code;
+    }
+    for (let attempt = 0; attempt < GENERATED_CODE_ATTEMPTS; attempt += 1) {
+      const code = source.next();
+      const key = `${campaignSlug}|${code}`;
+      if (this.codes.has(key)) continue;
+      this.codes.set(key, { campaignSlug, rewardId: grant.rewardId, code, grantId: grant.id });
+      return code;
+    }
+    throw new Error("Не удалось подобрать уникальный код награды");
+  }
+
+  async issueGrant(input: IssueGrantInput): Promise<IssueGrantResult> {
+    const { grant, campaignSlug } = input;
+    this.requireParticipant(grant.participantId);
+    const key = `${grant.participantId}:${grant.source}:${grant.day}`;
+    const existing = this.grants.get(key);
+    if (existing) return { status: "existing", grant: structuredClone(existing), codeMissing: existing.code === null && input.code !== null };
+    const stockKey = `${campaignSlug}|${grant.rewardId}`;
+    if (input.consumeStock) {
+      const left = this.stock.get(stockKey);
+      if (left === undefined || left <= 0) return { status: "stock_exhausted" };
+    }
+    const stored: RewardGrantRecord = { ...structuredClone(grant), code: null };
+    this.grants.set(key, stored);
+    let code: string | null = null;
+    if (input.code) {
+      code = this.takeCode(campaignSlug, stored, input.code);
+      if (code === null && input.requireCode) {
+        this.grants.delete(key); // откат: ни выдачи, ни списания
+        return { status: "pool_empty" };
+      }
+      stored.code = code;
+    }
+    if (input.consumeStock) this.stock.set(stockKey, this.stock.get(stockKey)! - 1);
+    return { status: "created", grant: structuredClone(stored), codeMissing: input.code !== null && code === null };
+  }
+
+  async assignGrantCode(grantId: string, source: CodeSource | null, expiresAt: Date | null): Promise<AssignCodeResult> {
+    const grant = this.grantById(grantId);
+    if (!grant) throw new DomainError("not_found", "Выдача не найдена.");
+    if (source === null) {
+      if (grant.expiresAt !== null || expiresAt === null) return { grant: structuredClone(grant), status: "existing" };
+      grant.expiresAt = expiresAt;
+      return { grant: structuredClone(grant), status: "assigned" };
+    }
+    if (grant.code !== null) return { grant: structuredClone(grant), status: "existing" };
+    const code = this.takeCode(this.campaignOf(grant.participantId), grant, source);
+    if (code === null) return { grant: structuredClone(grant), status: "pool_empty" };
+    grant.code = code;
+    if (expiresAt !== null) grant.expiresAt = expiresAt;
+    return { grant: structuredClone(grant), status: "assigned" };
+  }
+
+  async getGrant(grantId: string): Promise<GrantWithCampaign | null> {
+    const grant = this.grantById(grantId);
+    return grant ? { ...structuredClone(grant), campaignSlug: this.campaignOf(grant.participantId) } : null;
+  }
+
+  async findGrantsByCode(campaignSlug: string, code: string): Promise<RewardGrantRecord[]> {
+    const wanted = code.toLowerCase();
+    return [...this.grants.values()]
+      .filter((grant) => grant.code?.toLowerCase() === wanted && this.campaignOf(grant.participantId) === campaignSlug)
+      .map((grant) => structuredClone(grant));
+  }
+
+  async redeemGrant(campaignSlug: string, grantId: string, now: Date): Promise<RedeemOutcome> {
+    const grant = this.grantById(grantId);
+    if (!grant || this.campaignOf(grant.participantId) !== campaignSlug) return { status: "not_found" };
+    if (grant.status === "redeemed") return { status: "already_redeemed", grant: structuredClone(grant) };
+    if (grant.expiresAt !== null && grant.expiresAt.getTime() <= now.getTime()) return { status: "expired", grant: structuredClone(grant) };
+    grant.status = "redeemed";
+    grant.redeemedAt = now;
+    return { status: "redeemed", grant: structuredClone(grant) };
+  }
+
+  async ensureStock(campaignSlug: string, items: ReadonlyArray<{ rewardId: string; left: number }>): Promise<void> {
+    for (const item of items) {
+      const key = `${campaignSlug}|${item.rewardId}`;
+      if (!this.stock.has(key)) this.stock.set(key, item.left);
+    }
+  }
+
+  async stockLeft(campaignSlug: string): Promise<Record<string, number>> {
+    const result: Record<string, number> = {};
+    for (const [key, left] of this.stock) if (key.startsWith(`${campaignSlug}|`)) result[key.slice(campaignSlug.length + 1)] = left;
+    return result;
+  }
+
+  async importCodes(campaignSlug: string, rewardId: string, codes: readonly string[]): Promise<{ added: number; duplicates: number }> {
+    let added = 0;
+    let duplicates = 0;
+    for (const code of codes) {
+      const key = `${campaignSlug}|${code}`;
+      if (this.codes.has(key)) {
+        duplicates += 1;
+        continue;
+      }
+      this.codes.set(key, { campaignSlug, rewardId, code, grantId: null });
+      added += 1;
+    }
+    return { added, duplicates };
+  }
+
+  async poolOverview(campaignSlug: string): Promise<Record<string, { total: number; free: number }>> {
+    const result: Record<string, { total: number; free: number }> = {};
+    for (const row of this.codes.values()) {
+      if (row.campaignSlug !== campaignSlug) continue;
+      const entry = (result[row.rewardId] ??= { total: 0, free: 0 });
+      entry.total += 1;
+      if (row.grantId === null) entry.free += 1;
+    }
+    return result;
+  }
+
+  async listCampaignGrants(campaignSlug: string): Promise<RewardGrantRecord[]> {
+    return [...this.grants.values()]
+      .filter((grant) => this.campaignOf(grant.participantId) === campaignSlug)
+      .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime() || a.id.localeCompare(b.id))
+      .map((grant) => structuredClone(grant));
+  }
+
+  async grantTotals(campaignSlug: string): Promise<Array<{ rewardId: string; issued: number; redeemed: number }>> {
+    const totals = new Map<string, { rewardId: string; issued: number; redeemed: number }>();
+    for (const grant of await this.listCampaignGrants(campaignSlug)) {
+      const entry = totals.get(grant.rewardId) ?? { rewardId: grant.rewardId, issued: 0, redeemed: 0 };
+      entry.issued += 1;
+      if (grant.status === "redeemed") entry.redeemed += 1;
+      totals.set(grant.rewardId, entry);
+    }
+    return [...totals.values()].sort((a, b) => a.rewardId.localeCompare(b.rewardId));
+  }
+
   async mergeParticipants(fromId: string, intoId: string): Promise<void> {
     this.merge(fromId, intoId);
   }
@@ -125,6 +290,7 @@ export class InMemoryAdventRepository implements AdventRepository, IdentityRepos
       if (grant.participantId !== fromId) continue;
       const targetKey = `${intoId}:${grant.source}:${grant.day}`;
       if (!this.grants.has(targetKey)) this.grants.set(targetKey, { ...grant, participantId: intoId });
+      else this.releaseCodes(grant.id); // дубль удаляется, его код возвращается в пул (в БД — ON DELETE SET NULL)
       this.grants.delete(key);
     }
     for (const [hash, owner] of [...this.keyOwners]) {

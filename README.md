@@ -48,6 +48,7 @@ npm run quiz:check -- --all  # все пакеты: схема, длины ст�
 TEST_DATABASE_URL=postgresql://quiz:quiz-local-only@127.0.0.1:5432/quiz_test npm run test:integration
 npm run test:e2e             # Playwright на пакете demo-office
 npm run test:e2e:tenants     # E2E по очереди на всех пакетах (так гоняет CI)
+npm run test:e2e:advent      # E2E адвента на обоих демо-пакетах (`demo-coffee-advent`, `demo-team-advent`): время двигает ?asOf=
 ```
 
 ### Интеграционные тесты (реальный PostgreSQL)
@@ -135,9 +136,12 @@ Workflow `.github/workflows/ci.yml` запускается на push в `main` �
 | Команда | Что делает |
 |---|---|
 | `npm run quiz:new -- <slug> [--brief brief.md] [--zones 3]` | Создаёт `tenants/<slug>/pack.json` (все тексты «TODO: …»), переносит поля брифа (`docs/brief-template.md`), регистрирует пакет в `tenants/index.ts` |
-| `npm run quiz:check -- <slug>` или `--all` | Схема, маркеры TODO, длины строк под вёрстку, файлы логотипа и фона, мир и режим, контраст, симуляция на настоящих сервисах (идеальный проход должен дать `maxScore` и высший уровень, нулевой — нижний). Код возврата 1 при ошибках |
+| `npm run quiz:new -- <slug> --experience advent --days 12 --profile <retail\|horeca\|beauty\|b2b\|corporate\|custom> [--start ГГГГ-ММ-ДД] [--brief brief.md]` | Каркас адвента: дни-заглушки с «TODO», награды и значения профиля бизнеса, регистрация в `tenants/index.ts`; раздел 12 брифа переносится в пакет |
+| `npm run quiz:check -- <slug>` или `--all` | Схема, маркеры TODO, длины строк под вёрстку, файлы логотипа и фона, мир и режим, контраст, симуляция на настоящих сервисах (идеальный проход должен дать `maxScore` и высший уровень, нулевой — нижний). Код возврата 1 при ошибках. Адвент: ещё юридические проверки (алкоголь и табак, стоп-слова, НДФЛ, правила при покупке, `demo` в боевом пакете), награды (промокод без `codes`, `online` без `url`), запас кодов из списков (`--participants N` или `expectedParticipants` в пакете), финал не раньше 24 ч после последнего дня, точки мира, симуляция идеального игрока, игрока с пропусками и догоняющего |
+| `npm run quiz:rules -- <slug> [--force]` | Адвент: правила акции `tenants/<slug>/rules.md` из пакета (организатор, сроки, порядок участия, призы, сроки кодов, персональные данные) с пометкой «требует утверждения юристом заказчика»; без `--force` существующий файл не перезаписывается |
 | `npm run quiz:brand -- <slug> <url> [--apply]` | Playwright снимает сайт клиента: цвета, шрифт, favicon, og:image, логотип; печатает предложение для `brand`, с `--apply` пишет `brand.colors`/`brand.font` в `pack.json`. Картинки скачивает человек или агент в `public/tenants/<slug>/` |
 | `npm run quiz:shots -- <slug> [каталог]` | Скриншоты лендинга, первого задания, карты, рывка, финала, «Поделиться», `/privacy` (mobile + desktop) в `shots/<slug>`. Нужен запущенный сервер: `TENANT=<slug> QUIZ_FORCE_OPEN=true npm run dev` |
+| `npm run quiz:shots -- <slug> --day 1..N [--desktop]` | Адвент: скриншоты каждого дня через `?asOf=` (глава, блоки, итог) и один файл `index.html` для согласования с клиентом. Нужны сервер на этом пакете, Mailpit и SMTP (вход по ссылке); без `--day` — основные экраны (`npm run advent:shots`) |
 | `npm run quiz:preview -- <slug> --base-domain D [--ssh U@H --deploy]` | Превью на общем сервере: проверка пакета и git, выкатка через `deploy/deploy.sh`, адрес `https://<slug>.D/` за staging-паролем |
 | `npm run quiz:export -- <slug> --domain D [--build]` | Папка для сервера клиента: `.env` с секретами (`TENANT`, `QUIZ_PACKS`), инструкция, с `--build` — образы только с пакетом клиента |
 | `npm run quiz:admin -- <slug> --user ops` | Логин оператора клиента (пароль печатается один раз, в БД — хеш scrypt); `--disable`, `--list` |
@@ -198,6 +202,7 @@ Workflow `.github/workflows/ci.yml` запускается на push в `main` �
 | `TENANT` | Пакет арендатора; пусто — выбор по `Host` |
 | `TENANT_BASE_DOMAIN` | Общий домен для адресов вида `<slug>.<домен>` |
 | `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURE`, `SMTP_FROM`, `SMTP_USER`/`SMTP_PASSWORD` | Почта (авторизация необязательна, обе переменные вместе) |
+| `REWARD_QR_SECRET` | Подпись личного QR для погашения наград адвента на кассе (≥ 32 символов, `openssl rand -hex 32`); в production обязательна, если есть награды `redeem: cashier/both` |
 | `ADMIN_USERNAME`, `ADMIN_PASSWORD` | Суперадминистратор (пароль ≥ 16 символов); действует при `TENANT=<slug>` или `SUPERADMIN=true` |
 | `STAGING_USERNAME`, `STAGING_PASSWORD` | Закрытый стенд: HTTP Basic auth на весь сайт |
 | `QUIZ_FORCE_OPEN`, `QUIZ_LOCAL_STACK` | Открыть кампанию вне дат (см. «Быстрый старт») |

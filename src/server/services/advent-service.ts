@@ -1,6 +1,6 @@
 import type { AdventConfig, AdventDay, DayBlock } from "@/config/advent-schema";
 import type { Task } from "@/config/schema";
-import { adventPhase, dayIndexAt, dayRewardAvailable, dayUnlockAt, doorStatus, rewardExpiresAt, streakState, type OpenedDay, type StreakPolicy, type StreakState } from "@/domain/advent";
+import { adventPhase, dayIndexAt, dayRewardAvailable, dayUnlockAt, doorStatus, streakState, type OpenedDay, type StreakPolicy, type StreakState } from "@/domain/advent";
 import { DomainError } from "@/domain/errors";
 import { correctIds, scoreTask } from "@/domain/tasks";
 import { createId, createOpaqueToken, hashToken } from "@/server/crypto";
@@ -14,6 +14,7 @@ import {
   type ParticipantRecord,
   type RewardGrantRecord
 } from "@/server/repositories/advent-repository";
+import { isVerified, rewardNeedsIdentity, RewardService } from "@/server/services/reward-service";
 import type {
   AdventBlockState,
   AdventDayContent,
@@ -39,13 +40,21 @@ export function assertParticipantId(participantId: string): void {
   if (!UUID_PATTERN.test(participantId)) throw new DomainError("not_found", "Участник не найден.");
 }
 
-/** Блоки, без которых день не считается пройденным. Блоки удачи и подарка (A2) пока не учитываются. */
-function isRequiredBlock(block: DayBlock): boolean {
-  return block.type === "story" || block.type === "task";
+/** Блоки награды: открываются после остальных блоков дня, а анонимному участнику могут ответить `identity_required`. */
+function isRewardBlock(block: DayBlock): block is Extract<DayBlock, { type: "luck" | "promo" }> {
+  return block.type === "luck" || block.type === "promo";
 }
 
-/** Сохранённый результат блока в БД: форма зависит от типа блока. */
-type StoredResult = { kind: "story" } | { kind: "task"; taskId: string; payload: TaskPayloadBody; base: number };
+/**
+ * Сохранённый результат блока в БД: форма зависит от типа блока. Для удачи `choice` — только косметика (какую коробку
+ * выбрал игрок), исход определяет сервер; `rewardId` — разыгранный приз.
+ */
+type StoredResult =
+  | { kind: "story" }
+  | { kind: "task"; taskId: string; payload: TaskPayloadBody; base: number }
+  | { kind: "luck"; choice: number; rewardId: string }
+  /** `rewardId` пуст, если награда не положена (день догнан при `rewardOnlyOnDay`). */
+  | { kind: "promo"; rewardId: string | null };
 
 type Snapshot = {
   participant: ParticipantRecord;
@@ -59,10 +68,15 @@ function outcomeOf(base: number): TaskOutcome {
 }
 
 export class AdventService {
+  private readonly rewards: RewardService;
+
   constructor(
     private readonly repository: AdventRepository,
-    private readonly advent: AdventConfig
-  ) {}
+    private readonly advent: AdventConfig,
+    rewards?: RewardService
+  ) {
+    this.rewards = rewards ?? new RewardService(repository, advent);
+  }
 
   private get policy(): StreakPolicy {
     return { endowedDay: this.advent.streak.endowedDay, freezes: this.advent.streak.freezes, goals: this.advent.streak.goals };
@@ -122,9 +136,29 @@ export class AdventService {
     return streakState(opens.map((open): OpenedDay => ({ day: open.day, onTime: open.onTime })), today, this.policy);
   }
 
-  /** Состояние для клиента: двери, содержимое открытых дней, серия, цели и награды. Ничего не пишет. */
+  /**
+   * Состояние для клиента: двери, содержимое открытых дней, серия, цели и награды. Единственная запись — дозаполнение
+   * кодов подтверждённому участнику (после входа по ссылке или пополнения пула кодов), идемпотентная.
+   */
   async state(participantId: string, now: Date): Promise<AdventState> {
-    return this.present(await this.snapshot(participantId), now);
+    const snapshot = await this.snapshot(participantId);
+    return this.present(await this.activatePending(snapshot, now), now);
+  }
+
+  /**
+   * Дозаполняет коды у выдач подтверждённого участника (`RewardService.ensureCodes`). Вызывается после входа по ссылке
+   * (`IdentityService`, связывается в `container.ts`): награды, выданные до входа без кода, получают код и срок.
+   * Идемпотентно.
+   */
+  async ensureCodes(participantId: string, now: Date): Promise<void> {
+    await this.activatePending(await this.snapshot(participantId), now, true);
+  }
+
+  private async activatePending(snapshot: Snapshot, now: Date, notify = false): Promise<Snapshot> {
+    if (!isVerified(snapshot.participant) || adventPhase(now, this.advent.schedule) === "closed") return snapshot;
+    if (!snapshot.grants.some((grant) => this.rewards.needsActivation(grant))) return snapshot;
+    await this.rewards.ensureCodes(snapshot.participant, snapshot.grants, now, notify);
+    return { ...snapshot, grants: await this.repository.listGrants(snapshot.participant.id) };
   }
 
   /**
@@ -151,20 +185,25 @@ export class AdventService {
   /**
    * Ответ на блок дня. История подтверждается, задание считается на сервере и разбирается только после записи.
    * Повторная отправка (в том числе с другим ответом) возвращает сохранённый результат.
-   * Блоки удачи и подарка появятся в A2.
+   *
+   * Блоки награды (`luck`, `promo`) открываются после остальных блоков дня. Анонимному участнику награда с кодом, остатком
+   * или погашением на кассе не выдаётся: ответ `identity_required`, блок не отмечен, ничего не разыграно и не списано;
+   * после входа по ссылке блок проходится как обычно. Исход удачи возвращается только после фиксации выдачи.
    */
   async submitBlock(participantId: string, n: number, index: number, payload: unknown, now: Date): Promise<SubmitBlockResponse> {
     const day = this.requireDay(n);
     const block = Number.isInteger(index) ? day.blocks[index] : undefined;
     if (!block) throw new DomainError("not_found", "Блок не найден.");
-    if (block.type === "luck" || block.type === "promo") {
-      throw new DomainError("conflict", "reward_blocks_not_ready: блоки удачи и подарка дня появятся в следующем обновлении.");
-    }
     const before = await this.snapshot(participantId);
     if (adventPhase(now, this.advent.schedule) === "closed") throw new DomainError("conflict", "Адвент завершён.");
-    if (!before.opens.some((open) => open.day === n)) throw new DomainError("conflict", "Сначала откройте дверь дня.");
+    const open = before.opens.find((candidate) => candidate.day === n);
+    if (!open) throw new DomainError("conflict", "Сначала откройте дверь дня.");
 
     const existing = before.results.find((result) => result.day === n && result.blockIndex === index);
+    if (isRewardBlock(block)) {
+      return this.submitRewardBlock(before, day, block, index, existing, payload, open, now);
+    }
+
     let stored = existing;
     if (!stored) {
       // Форма ответа проверяется до записи: неверное тело не оставляет следа.
@@ -183,7 +222,74 @@ export class AdventService {
     await this.reconcile(await this.snapshot(participantId), now);
     const state = await this.present(await this.snapshot(participantId), now);
     const outcome = block.type === "task" ? this.taskOutcome(block.task, stored.result as StoredResult) : null;
-    return { block: { index, type: block.type, outcome }, state };
+    return { status: "ok", block: { index, type: block.type, outcome, reward: null }, state };
+  }
+
+  private async submitRewardBlock(
+    before: Snapshot,
+    day: AdventDay,
+    block: Extract<DayBlock, { type: "luck" | "promo" }>,
+    index: number,
+    existing: DayBlockResultRecord | undefined,
+    payload: unknown,
+    open: DayOpenRecord,
+    now: Date
+  ): Promise<SubmitBlockResponse> {
+    const { participant } = before;
+    const n = day.n;
+    const respond = async (): Promise<SubmitBlockResponse> => {
+      const after = await this.snapshot(participant.id);
+      const state = this.present(await this.activatePending(after, now), now);
+      const reward = state.days.find((content) => content.n === n)?.blocks[index];
+      const reveal = reward && (reward.type === "luck" || reward.type === "promo") ? reward.reveal : null;
+      return { status: "ok", block: { index, type: block.type, outcome: null, reward: reveal }, state };
+    };
+    if (existing) return respond();
+
+    const reward = block.type === "promo" ? this.rewards.reward(block.rewardId) : undefined;
+    const needsIdentity = block.type === "luck" || rewardNeedsIdentity(reward);
+    if (!this.blocksBeforeDone(day, index, before.results)) {
+      throw new DomainError("conflict", "Сначала выполните остальные блоки дня.");
+    }
+    if (needsIdentity && !isVerified(participant)) {
+      return { status: "identity_required", block: { index, type: block.type, outcome: null, reward: null }, state: this.present(before, now) };
+    }
+
+    if (block.type === "luck") {
+      const choice = (payload as { choice?: unknown } | null)?.choice;
+      if (typeof choice !== "number" || !Number.isInteger(choice) || choice < 0 || choice >= block.choices) {
+        throw new DomainError("invalid", "Выберите один из вариантов.");
+      }
+      // Сначала выдача (идемпотентна по ключу «участник, удача, день»), потом отметка блока: сбой между ними чинится повтором.
+      const grant = await this.rewards.playLuck(participant, n, block.pool, now);
+      await this.repository.recordBlockResultOnce({
+        participantId: participant.id,
+        day: n,
+        blockIndex: index,
+        result: { kind: "luck", choice, rewardId: grant.rewardId } satisfies StoredResult,
+        points: 0,
+        createdAt: now
+      });
+    } else {
+      // Подарок дня догнанного дня не положен при rewardOnlyOnDay: блок пройден, награды нет.
+      const entitled = open.onTime || !this.advent.schedule.rewardOnlyOnDay;
+      if (entitled) await this.rewards.issue(participant, "day", n, block.rewardId, now);
+      await this.repository.recordBlockResultOnce({
+        participantId: participant.id,
+        day: n,
+        blockIndex: index,
+        result: { kind: "promo", rewardId: entitled ? block.rewardId : null } satisfies StoredResult,
+        points: 0,
+        createdAt: now
+      });
+    }
+    await this.reconcile(await this.snapshot(participant.id), now);
+    return respond();
+  }
+
+  /** Все блоки дня, кроме блоков награды, выполнены (иначе награду можно получить, не пройдя день). */
+  private blocksBeforeDone(day: AdventDay, index: number, results: readonly DayBlockResultRecord[]): boolean {
+    return day.blocks.every((block, position) => position === index || isRewardBlock(block) || results.some((result) => result.day === day.n && result.blockIndex === position));
   }
 
   private taskOutcome(task: Task, stored: StoredResult): AdventTaskOutcome | null {
@@ -204,18 +310,21 @@ export class AdventService {
   }
 
   private isDayComplete(day: AdventDay, results: readonly DayBlockResultRecord[]): boolean {
-    return day.blocks.every((block, index) => !isRequiredBlock(block) || results.some((result) => result.day === day.n && result.blockIndex === index));
+    return day.blocks.every((_block, index) => results.some((result) => result.day === day.n && result.blockIndex === index));
   }
 
   /**
-   * Выдаёт заработанные награды (без кодов: код из пула появится в A2). Каждая выдача идемпотентна по
-   * (участник, источник, день), поэтому повторный вызов ничего не дублирует и безопасно вызывается после любой записи.
+   * Выдаёт заработанные награды. Каждая выдача идемпотентна по (участник, источник, день), поэтому повторный вызов
+   * ничего не дублирует и безопасно вызывается после любой записи. Код назначает `RewardService`: общий, из пула или
+   * сгенерированный, в одной транзакции с выдачей; анонимному участнику награда с кодом записывается без кода и получает
+   * его при входе по ссылке (`ensureCodes`).
    * - подаренный день: ключ день 0, награда `streak.endowedRewardId` или псевдо-id `endowed`;
    * - цели серии: ключ — число открытых дверей цели;
    * - бонус за возвращение (только при открытии двери, `returning`): один раз за кампанию (день 0), когда серия
    *   реально прервана; право считается так, будто сегодняшняя дверь ещё не открыта, чтобы выдача пережила
    *   сбой между открытием и выдачей;
-   * - награда дня: когда день пройден и награда положена (открыт вовремя или `rewardOnlyOnDay` выключен).
+   * - награда дня: когда день пройден (все блоки, включая удачу и подарок) и награда положена (открыт вовремя или
+   *   `rewardOnlyOnDay` выключен); блок подарка дня выдаёт ту же запись раньше (ключ тот же).
    * После `claimEndsAt` награды не выдаются.
    */
   private async reconcile(snapshot: Snapshot, now: Date, options: { returning?: boolean } = {}): Promise<void> {
@@ -223,23 +332,8 @@ export class AdventService {
     const { schedule, streak: streakConfig } = this.advent;
     const phase = adventPhase(now, schedule);
     const today = dayIndexAt(now, schedule);
-    const rewards = new Map(this.advent.rewards.map((reward) => [reward.id, reward]));
 
-    const grant = async (source: RewardGrantRecord["source"], day: number, rewardId: string) => {
-      const reward = rewards.get(rewardId);
-      await this.repository.grantOnce({
-        id: createId(),
-        participantId: participant.id,
-        day,
-        source,
-        rewardId,
-        code: null,
-        expiresAt: reward ? rewardExpiresAt(now, reward) : null,
-        status: "issued",
-        redeemedAt: null,
-        createdAt: now
-      });
-    };
+    const grant = (source: RewardGrantRecord["source"], day: number, rewardId: string) => this.rewards.issue(participant, source, day, rewardId, now);
 
     if (phase === "closed") return;
     if (streakConfig.endowedDay) await grant("endowed", CAMPAIGN_GRANT_DAY, streakConfig.endowedRewardId ?? ENDOWED_REWARD_ID);
@@ -258,6 +352,8 @@ export class AdventService {
       if (!day?.rewardId || !this.isDayComplete(day, results)) continue;
       if (open.onTime || !schedule.rewardOnlyOnDay) await grant("day", day.n, day.rewardId);
     }
+    // Вошедший участник: дозаполнить код у выдач, оставшихся без него (анонимно выданных ранее, пустой пул).
+    await this.activatePending({ ...snapshot, grants: await this.repository.listGrants(participant.id) }, now);
   }
 
   private present(snapshot: Snapshot, now: Date): AdventState {
@@ -269,9 +365,33 @@ export class AdventService {
     const streak = this.streakOf(opens, today);
     const rewards = new Map(this.advent.rewards.map((reward) => [reward.id, reward]));
 
+    // Награды пакета видны владельцу целиком (с кодом и QR); псевдо-награда подаренного дня в список не входит.
+    const grantView = (grant: RewardGrantRecord): AdventGrantView => {
+      const reward = rewards.get(grant.rewardId)!;
+      const verified = isVerified(participant);
+      const gated = rewardNeedsIdentity(reward) && !verified;
+      return {
+        id: grant.id,
+        source: grant.source,
+        day: grant.day,
+        rewardId: grant.rewardId,
+        kind: reward.kind,
+        label: reward.label,
+        description: reward.description,
+        status: grant.status,
+        expiresAt: grant.expiresAt?.toISOString() ?? null,
+        code: gated ? null : grant.code,
+        grantedAt: grant.createdAt.toISOString(),
+        redeemedAt: grant.redeemedAt?.toISOString() ?? null,
+        redeem: reward.redeem,
+        url: reward.url ?? null,
+        needsIdentity: gated,
+        codePending: !gated && reward.codes !== undefined && grant.code === null,
+        qr: gated ? null : this.rewards.qr(grant)
+      };
+    };
     const doors: AdventDoor[] = this.advent.days.map((day) => {
-      const required = day.blocks.map((block, index) => ({ block, index })).filter(({ block }) => isRequiredBlock(block));
-      const done = required.filter(({ index }) => results.some((result) => result.day === day.n && result.blockIndex === index)).length;
+      const done = day.blocks.filter((_block, index) => results.some((result) => result.day === day.n && result.blockIndex === index)).length;
       return {
         n: day.n,
         title: day.title,
@@ -281,7 +401,7 @@ export class AdventService {
         status: doorStatus(day.n, today, openedDays, schedule, phase),
         completed: openedDays.has(day.n) && this.isDayComplete(day, results),
         blocksDone: done,
-        blocksTotal: required.length,
+        blocksTotal: day.blocks.length,
         rewardAvailable: dayRewardAvailable(day.n, today, openedDays, schedule, phase)
       };
     });
@@ -307,10 +427,31 @@ export class AdventService {
                 done: stored !== undefined,
                 outcome: stored ? this.taskOutcome(block.task, stored.result as StoredResult) : null
               };
-            case "luck":
-              return { index, type: "luck", choices: block.choices, done: false, ready: false };
-            case "promo":
-              return { index, type: "promo", rewardId: block.rewardId, done: false, ready: false };
+            case "luck": {
+              const grant = grants.find((candidate) => candidate.source === "luck" && candidate.day === day.n);
+              return {
+                index,
+                type: "luck",
+                choices: block.choices,
+                done: stored !== undefined,
+                ready: this.blocksBeforeDone(day, index, results),
+                needsIdentity: !isVerified(participant),
+                // Исход виден только после фиксации блока.
+                reveal: stored !== undefined && grant ? grantView(grant) : null
+              };
+            }
+            case "promo": {
+              const grant = grants.find((candidate) => candidate.source === "day" && candidate.day === day.n && candidate.rewardId === block.rewardId);
+              return {
+                index,
+                type: "promo",
+                rewardId: block.rewardId,
+                done: stored !== undefined,
+                ready: this.blocksBeforeDone(day, index, results),
+                needsIdentity: rewardNeedsIdentity(this.rewards.reward(block.rewardId)) && !isVerified(participant),
+                reveal: stored !== undefined && grant ? grantView(grant) : null
+              };
+            }
           }
         })
       }));
@@ -326,23 +467,7 @@ export class AdventService {
         granted: grantedGoals.has(goal.opened)
       }));
 
-    const grantViews: AdventGrantView[] = grants
-      .filter((grant) => rewards.has(grant.rewardId))
-      .map((grant) => {
-        const reward = rewards.get(grant.rewardId)!;
-        return {
-          source: grant.source,
-          day: grant.day,
-          rewardId: grant.rewardId,
-          label: reward.label,
-          description: reward.description,
-          status: grant.status,
-          expiresAt: grant.expiresAt?.toISOString() ?? null,
-          // Коды из пулов выдаёт A2; до этого награды без кода.
-          code: null,
-          grantedAt: grant.createdAt.toISOString()
-        };
-      });
+    const grantViews: AdventGrantView[] = grants.filter((grant) => rewards.has(grant.rewardId)).map(grantView);
 
     return {
       serverTime: now.toISOString(),

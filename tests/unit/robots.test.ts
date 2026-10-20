@@ -10,7 +10,7 @@ describe("robotsRules", () => {
     expect(rules).toEqual({
       userAgent: "*",
       allow: ["/$", "/share/"],
-      disallow: ["/admin", "/api", "/verify", "/quest", "/"]
+      disallow: ["/admin", "/api", "/verify", "/quest", "/redeem", "/"]
     });
   });
 

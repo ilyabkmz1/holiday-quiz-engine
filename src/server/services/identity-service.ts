@@ -20,6 +20,11 @@ type IdentityServiceDependencies = {
   recordDeliveryFailure?: (participantId: string) => Promise<void>;
   /** Адрес маршрута подтверждения без query: к нему добавляется `?token=…`. */
   verifyEndpoint: string;
+  /**
+   * После подтверждения ссылки (A2): дозаполнить код и срок у наград, выданных участнику до входа
+   * (`AdventService.ensureCodes`). Сбой не отменяет вход: коды дозаполнятся при следующем обращении.
+   */
+  onVerified?: (participantId: string, now: Date) => Promise<void>;
 };
 
 export type RequestLinkInput = {
@@ -88,6 +93,12 @@ export class IdentityService {
       currentParticipantId: currentParticipant?.id ?? null,
       newAccessKeyHash: hashToken(accessKey)
     });
+    try {
+      await this.dependencies.onVerified?.(participant.id, now);
+    } catch {
+      // Только событие без персональных данных: вход уже состоялся, коды дозаполнятся при следующем обращении.
+      console.error(JSON.stringify({ event: "advent_ensure_codes_failed", participantId: participant.id }));
+    }
     return { participant, accessKey };
   }
 }

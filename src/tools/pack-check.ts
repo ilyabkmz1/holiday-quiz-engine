@@ -114,6 +114,10 @@ export type CheckOptions = {
   /** Корень проекта: от него берутся `public/` и `worlds/`. */
   root?: string;
   now?: Date;
+  /** Адвент: каталог пакета (по умолчанию `<root>/tenants/<slug>`): в нём `codes/<id>.csv` и `rules.md`. */
+  tenantDir?: string;
+  /** Адвент: ожидаемое число участников (важнее поля пакета). */
+  expectedParticipants?: number;
 };
 
 /**
@@ -126,7 +130,7 @@ export async function checkPack(raw: unknown, options: CheckOptions = {}): Promi
   const report: CheckReport = { errors: [], warnings: [], info: [] };
 
   // Адвент-пакет проверяется отдельной веткой (`advent-check.ts`); квиз — как раньше, с теми же текстами ошибок.
-  if (isAdventRaw(raw)) return checkAdventPack(raw);
+  if (isAdventRaw(raw)) return checkAdventPack(raw, options);
 
   const parsed = packSchema.safeParse(raw);
   if (!parsed.success) {

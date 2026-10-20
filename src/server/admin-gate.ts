@@ -17,6 +17,11 @@ export function isAdminPagePath(pathname: string): boolean {
   return path === "/admin" || path.startsWith("/admin/");
 }
 
+/** Страница кассы адвента: `/redeem` (кассир или оператор). */
+export function isRedeemPagePath(pathname: string): boolean {
+  return normalizePath(pathname) === "/redeem";
+}
+
 /** Ответ 401 с вызовом Basic auth. Один realm и для страниц, и для API: браузер переиспользует введённый пароль. */
 export function adminChallenge(realm: string): NextResponse {
   return new NextResponse("Authentication required", {
@@ -40,5 +45,15 @@ export async function adminGate(
   realm: string
 ): Promise<NextResponse | null> {
   if (!isAdminPagePath(request.nextUrl.pathname)) return null;
+  return (await authorize(request.headers)) ? null : adminChallenge(realm);
+}
+
+/** Закрывает страницу кассы Basic auth: пускает кассира и оператора (`redeemAuthorized`). Остальное — как `adminGate`. */
+export async function redeemGate(
+  request: { headers: Headers; nextUrl: { pathname: string } },
+  authorize: (headers: Headers) => Promise<boolean>,
+  realm: string
+): Promise<NextResponse | null> {
+  if (!isRedeemPagePath(request.nextUrl.pathname)) return null;
   return (await authorize(request.headers)) ? null : adminChallenge(realm);
 }

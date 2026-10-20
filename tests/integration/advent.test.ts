@@ -109,10 +109,13 @@ describe("адвент: маршруты на PostgreSQL", () => {
     expect(await prisma.dayOpen.findMany({ where: { participantId } })).toMatchObject([{ day: 1, onTime: true }]);
     expect(await prisma.dayBlockResult.count({ where: { participantId } })).toBe(2);
     const grants = await prisma.rewardGrant.findMany({ where: { participantId }, orderBy: { source: "asc" } });
-    expect(grants.map((grant) => `${grant.source}:${grant.day}:${grant.rewardId}:${grant.code}`).sort()).toEqual(["day:1:daily-gift:null", "endowed:0:endowed:null"]);
-    // Блок подарка дня 1 пока не готов (A2).
+    // Подарок дня с кодом анонимному не выдаётся: блок отвечает identity_required, день не пройден, награды дня нет.
+    expect(grants.map((grant) => `${grant.source}:${grant.day}:${grant.rewardId}:${grant.code}`).sort()).toEqual(["endowed:0:endowed:null"]);
     const promoIndex = day.blocks.findIndex((item) => item.type === "promo");
-    expect((await block(cookie, 1, promoIndex, {})).status).toBe(409);
+    const promo = await block(cookie, 1, promoIndex, {});
+    expect(promo.status).toBe(200);
+    expect(await json(promo)).toMatchObject({ status: "identity_required", block: { type: "promo", reward: null } });
+    expect(await prisma.dayBlockResult.count({ where: { participantId } })).toBe(2);
   });
 
   it("параллельные запросы не дублируют ни дни, ни ответы, ни награды", async () => {
@@ -135,8 +138,9 @@ describe("адвент: маршруты на PostgreSQL", () => {
     const prisma = getPrisma();
     expect(await prisma.dayOpen.count({ where: { participantId } })).toBe(1);
     expect(await prisma.dayBlockResult.count({ where: { participantId, blockIndex: taskIndex } })).toBe(1);
+    // Подарок дня 1 требует входа по ссылке, поэтому анонимному день не закрывается и награды дня нет; дублей нет в любом случае.
     const dayGrants = await prisma.rewardGrant.count({ where: { participantId, source: "day", day: 1 } });
-    expect(dayGrants).toBe(1);
+    expect(dayGrants).toBe(0);
   });
 
   it("бонус за возвращение один раз за кампанию, в том числе при параллельных открытиях", async () => {

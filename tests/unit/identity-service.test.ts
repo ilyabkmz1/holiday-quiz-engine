@@ -178,7 +178,8 @@ describe("IdentityService.verify", () => {
     const grants = await repository.listGrants(a.participant.id);
     const keys = grants.map((grant) => `${grant.source}:${grant.day}`);
     expect(new Set(keys).size).toBe(keys.length);
-    expect(keys.filter((key) => key.startsWith("day:")).sort()).toEqual(["day:1", "day:2", "day:3"]);
+    // День 1 (подарок дня требует входа) A проходил анонимно и не закончил, дни 2 и 3 пройдены.
+    expect(keys.filter((key) => key.startsWith("day:")).sort()).toEqual(["day:2", "day:3"]);
     expect(keys.filter((key) => key.startsWith("endowed"))).toHaveLength(1);
     // Согласие на рассылку добавилось от второго запроса.
     expect(state.participant).toMatchObject({ marketingConsent: true });

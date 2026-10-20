@@ -48,17 +48,22 @@ async function boot(options: Options = {}) {
   const { InMemoryAdventRepository } = await import("@/server/repositories/in-memory-advent-repository");
   const { AdventService } = await import("@/server/services/advent-service");
   const { IdentityService } = await import("@/server/services/identity-service");
+  const { RewardService } = await import("@/server/services/reward-service");
   const repository = new InMemoryAdventRepository();
   world.repository = repository;
   world.build = (tenant) => {
     const { advent } = tenant as { advent: import("@/config/advent-schema").AdventConfig };
+    const rewardService = new RewardService(repository, advent, { qrSecret: "route-test-reward-qr-secret-0123456789abcdef" });
+    const adventService = new AdventService(repository, advent, rewardService);
     return {
       prisma: { campaign: { upsert: async () => undefined } },
       repository,
-      adventService: new AdventService(repository, advent),
+      adventService,
+      rewardService,
       identityService: new IdentityService({
         repository,
         advent,
+        onVerified: (participantId, now) => adventService.ensureCodes(participantId, now),
         verifyEndpoint: "https://advent.test/api/advent/identity/verify",
         sendLoginLink: async (email, link) => {
           world.sent.push({ email, link, token: new URL(link).searchParams.get("token")! });
@@ -241,15 +246,19 @@ describe("маршруты адвента", () => {
       expect(answered.state.grants.some((grant: { source: string; day: number }) => grant.source === "day" && grant.day === 3)).toBe(true);
     });
 
-    it("блок удачи — 409 reward_blocks_not_ready; битый JSON — 400; несуществующий блок — 404", async () => {
+    it("блок удачи анонимному — 200 identity_required без исхода; битый JSON — 400; несуществующий блок — 404", async () => {
       const app = await boot();
       world.now = at(4, 12);
       const { cookie } = await start(app);
       await app.open(request("/api/advent/days/4/open", { method: "POST", cookie }), ctx({ n: "4" }));
       const luckIndex = advent.days[3].blocks.findIndex((block) => block.type === "luck");
-      const luck = await app.block(request(`/api/advent/days/4/blocks/${luckIndex}`, { method: "POST", cookie, body: { payload: {} } }), ctx({ n: "4", i: String(luckIndex) }));
-      expect(luck.status).toBe(409);
-      expect((await json(luck)).error).toContain("reward_blocks_not_ready");
+      // Остальные блоки дня: сначала история.
+      await app.block(request("/api/advent/days/4/blocks/0", { method: "POST", cookie, body: { payload: {} } }), ctx({ n: "4", i: "0" }));
+      const luck = await app.block(request(`/api/advent/days/4/blocks/${luckIndex}`, { method: "POST", cookie, body: { payload: { choice: 1 } } }), ctx({ n: "4", i: String(luckIndex) }));
+      expect(luck.status).toBe(200);
+      const body = await json(luck);
+      expect(body).toMatchObject({ status: "identity_required", block: { index: luckIndex, type: "luck", outcome: null, reward: null } });
+      expect(JSON.stringify(body)).not.toMatch(/luck-a|luck-b/);
 
       const broken = new NextRequest(new URL("/api/advent/days/4/blocks/0", `https://${ADVENT_HOST}`), {
         method: "POST",

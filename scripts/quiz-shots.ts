@@ -1,9 +1,11 @@
 // Скриншоты всех состояний игры пакета (mobile + desktop): `npm run quiz:shots -- <slug> [каталог]`.
+// Адвент: `npm run quiz:shots -- <slug> --day 1..N [каталог]` снимает каждый день и собирает index.html одним файлом.
 // Нужен запущенный сервер, который показывает этот пакет и открыт вне окна кампании, например:
 //   TENANT=<slug> QUIZ_FORCE_OPEN=true npm run dev      (APP_URL по умолчанию http://127.0.0.1:3000)
 // Скрипт сам создаёт сессию через API, доводит её до нужного состояния верными ответами (ответы берёт из пакета)
 // и открывает страницу: клиент восстанавливает экран по данным сервера. Результат — PNG в каталоге
 // (по умолчанию shots/<slug>), по которым агент проверяет вёрстку.
+import { spawnSync } from "node:child_process";
 import { mkdirSync } from "node:fs";
 import path from "node:path";
 
@@ -14,7 +16,8 @@ import type { Task } from "../src/config/schema";
 import { TENANT_SLUG_PATTERN, packSchema } from "../src/config/pack";
 import { packs } from "../tenants/index";
 
-const [slug, outArg] = process.argv.slice(2).filter((arg) => !arg.startsWith("--"));
+const argv = process.argv.slice(2);
+const [slug, outArg] = argv.filter((arg, index) => !arg.startsWith("--") && argv[index - 1] !== "--day");
 if (!slug) {
   console.error("Использование: npm run quiz:shots -- <slug> [каталог]");
   process.exit(2);
@@ -27,6 +30,11 @@ const raw = (packs as Array<{ tenant?: string }>).find((item) => item.tenant ===
 if (!raw) {
   console.error(`Пакет «${slug}» не найден в tenants/index.ts`);
   process.exit(2);
+}
+// Адвент снимает отдельный сценарий (`--day 1..N` — каждый день; без флага — основные экраны).
+if ((raw as { experience?: string }).experience === "advent") {
+  const run = spawnSync("npx", ["tsx", path.join(import.meta.dirname, "advent-shots.ts"), ...argv], { stdio: "inherit" });
+  process.exit(run.status ?? 1);
 }
 const { campaign } = packSchema.parse(raw);
 const baseURL = process.env.APP_URL ?? "http://127.0.0.1:3000";

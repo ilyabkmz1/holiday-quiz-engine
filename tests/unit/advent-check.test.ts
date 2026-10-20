@@ -5,12 +5,13 @@ import demoCoffee from "@tenants/demo-coffee/pack.json" with { type: "json" };
 
 import { adventPackFixture } from "../fixtures/advent";
 
-describe("quiz:check для адвента (базовая проверка A1)", () => {
-  it("валидный пакет проходит без ошибок и предупреждений, в отчёте есть строка про полный линт в A6", async () => {
+describe("quiz:check для адвента", () => {
+  it("валидный пакет проходит без ошибок; единственное предупреждение — юридический маркер демо-текстов; в отчёте есть симуляция", async () => {
     const report = await checkPack(adventPackFixture());
     expect(report.errors).toEqual([]);
-    expect(report.warnings).toEqual([]);
-    expect(report.info.join("\n")).toContain("A6");
+    expect(report.warnings).toHaveLength(1);
+    expect(report.warnings[0]).toContain("на согласовании юриста");
+    expect(report.info.join("\n")).toContain("симуляция, идеальный игрок: открыто 12 из 12");
     expect(report.info.join("\n")).toContain("дней: 12");
   });
 
@@ -48,7 +49,7 @@ describe("quiz:check для адвента (базовая проверка A1)"
   it("слова «поставка» и «заставка» стоп-словами не считаются", async () => {
     const pack = adventPackFixture();
     pack.advent.days[2].teaser = "Поставка зёрен и заставка на экране";
-    expect((await checkPack(pack)).warnings).toEqual([]);
+    expect((await checkPack(pack)).warnings.filter((line) => line.includes("стоп-слова"))).toEqual([]);
   });
 
   it("маркер TODO — ошибка", async () => {
