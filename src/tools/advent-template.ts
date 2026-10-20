@@ -219,6 +219,9 @@ export function applyAdventBrief(pack: AdventPackDraft, fields: BriefFields): st
   if (finale) {
     const at = `${finale.slice(0, 10)}T${String(schedule.unlockHour ?? 0).padStart(2, "0")}:00:00+03:00`;
     set("schedule.finaleAt", () => { schedule.finaleAt = at; });
+  } else if (applied.includes("schedule.unlockHour")) {
+    // Финала в брифе нет, а час открытия сменился: финал по-прежнему ровно через сутки после открытия последнего дня.
+    schedule.finaleAt = asOfForDay({ startDate: schedule.startDate, timezone: schedule.timezone ?? "Europe/Moscow" }, schedule.days + 1, schedule.unlockHour);
   }
   const claimEnds = fields.adventClaimEnds ? toIsoMoscow(fields.adventClaimEnds, true) : null;
   if (claimEnds) set("schedule.claimEndsAt", () => { schedule.claimEndsAt = claimEnds; });

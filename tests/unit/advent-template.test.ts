@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 import { PROFILE_IDS } from "@/config/advent-profile";
@@ -138,6 +139,17 @@ describe("перенос брифа в заготовку адвента", () =>
     // Даты квиза и режим карточек в адвент не попадают.
     expect(advent).not.toHaveProperty("startsAt");
     expect(advent).not.toHaveProperty("mode");
+  });
+
+  it("час открытия из брифа без даты финала: финал всё равно через сутки после открытия последнего дня", () => {
+    const pack = buildAdventTemplate({ tenant: "zerno", days: 12, profile: "horeca" }) as { hosts: string[]; advent: Record<string, any> }; // eslint-disable-line @typescript-eslint/no-explicit-any
+    applyAdventBrief(pack, parseBrief("- Час открытия нового дня (0–23, по умолчанию 0): 10"));
+    expect(adventPackSchema.parse(pack).advent.schedule).toMatchObject({ unlockHour: 10, finaleAt: "2027-01-01T10:00:00+03:00" });
+  });
+
+  it("шаблон брифа: свободная строка про призы удачи не затирает скин удачи", () => {
+    const template = readFileSync("docs/brief-template.md", "utf8").replace(/^- Удача \(boxes[^\n]*$/m, (line) => `${line} wheel`);
+    expect(parseBrief(template).adventLuck?.trim()).toBe("wheel");
   });
 
   it("«Удача: нет» убирает секцию luck и блоки удачи (их заменяют задания)", () => {
