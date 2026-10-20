@@ -76,7 +76,8 @@ export function LuckReveal({ skin, choices, copy, phase, chosen, result, reduced
   const stateOf = (index: number) => (chosen === null ? "idle" : chosen === index ? (revealing ? "open" : "picked") : "dim");
 
   const step = 360 / choices;
-  const spin = revealing && chosen !== null && !reduced ? 360 * 4 - chosen * step : 0;
+  // При reduced-motion без оборотов и без перехода (transitionDuration 0s), но указатель всё равно на выбранном секторе.
+  const spin = revealing && chosen !== null ? (reduced ? -chosen * step : 360 * 4 - chosen * step) : 0;
 
   return (
     <section className={`adv-luck adv-luck-${skin}`} data-phase={phase} data-settled={settled ? "true" : "false"} aria-label={copy.luckTitle}>
