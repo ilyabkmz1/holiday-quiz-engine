@@ -218,6 +218,8 @@ model Participant {
 
   @@unique([campaignSlug, normalizedEmail])
   @@index([campaignSlug])
+  /// Рейтинг команд (A7): участники команды кампании.
+  @@index([campaignSlug, teamId])
 }
 
 /// Ключ доступа дополнительного устройства (хеш). После слияния участников сюда переезжают ключи поглощённого участника.

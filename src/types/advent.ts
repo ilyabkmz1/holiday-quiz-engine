@@ -109,6 +109,8 @@ export type AdventState = {
     /** Можно включать и выключать напоминания: кампания их рассылает, адрес подтверждён. */
     canRemind: boolean;
   };
+  /** Выбор команды для рейтинга; `null`, если у кампании нет рейтинга по командам. */
+  team: { options: Array<{ id: string; title: string }>; selected: string | null; canChange: boolean } | null;
   doors: AdventDoor[];
   days: AdventDayContent[];
   streak: {

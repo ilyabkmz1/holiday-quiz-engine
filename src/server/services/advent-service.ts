@@ -130,6 +130,20 @@ export class AdventService {
     return this.state(participantId, now);
   }
 
+  /**
+   * Выбор команды для рейтинга (`audience.leaderboard = "teams"`); `null` снимает выбор. Менять можно, пока идёт кампания
+   * (до финала). Команда должна быть в списке пакета. Идемпотентно.
+   */
+  async setTeam(participantId: string, teamId: string | null, now: Date): Promise<AdventState> {
+    if (this.advent.audience.leaderboard !== "teams") throw new DomainError("conflict", "В этой кампании нет команд.");
+    if (teamId !== null && !(this.advent.audience.teams ?? []).some((team) => team.id === teamId)) throw new DomainError("invalid", "Такой команды нет.");
+    const phase = adventPhase(now, this.advent.schedule);
+    if (phase === "finale" || phase === "closed") throw new DomainError("conflict", "Команду уже нельзя менять: кампания подходит к концу.");
+    await this.snapshot(participantId);
+    await this.repository.setParticipantTeam(participantId, teamId);
+    return this.state(participantId, now);
+  }
+
   /** Участник по ключу из cookie или `null`: ключа нет, он неизвестен или принадлежит другой кампании. */
   async identify(accessKey: string | undefined): Promise<ParticipantRecord | null> {
     if (!accessKey) return null;
@@ -505,6 +519,14 @@ export class AdventService {
         // Переключатель напоминаний доступен после подтверждения адреса, если кампания рассылает письма.
         canRemind: this.advent.reminders.channel === "email" && participant.normalizedEmail !== null && participant.consentAt !== null
       },
+      team:
+        this.advent.audience.leaderboard === "teams"
+          ? {
+              options: (this.advent.audience.teams ?? []).map((team) => ({ id: team.id, title: team.title })),
+              selected: participant.teamId,
+              canChange: phase === "upcoming" || phase === "running"
+            }
+          : null,
       doors,
       days,
       streak: {
