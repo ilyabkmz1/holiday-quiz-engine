@@ -249,7 +249,9 @@ export class ReminderService {
       ...(canCatchUp ? { catchUpText: fillPlaceholders(reminders.catchUpText, { ...placeholders, missed }) } : {}),
       buttonLabel: fillPlaceholders(reminders.button, placeholders),
       link: open.toString(),
-      progress: { opened: Math.min(streak.progress, advent.schedule.days), total: advent.schedule.days },
+      // Реально открытые дни, как «Открыто окон» в финале; подаренный день серии (`endowedDay`) сюда не входит, иначе в
+      // письме о ещё не открытом дне 5 стояло бы «Открыто 5 из 12».
+      progress: { opened: Math.min(openedDays.size, advent.schedule.days), total: advent.schedule.days },
       unsubscribeUrl: page.toString(),
       unsubscribeOneClickUrl: oneClick.toString(),
       operatorName: advent.legal.operatorName,

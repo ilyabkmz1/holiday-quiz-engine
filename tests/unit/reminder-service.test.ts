@@ -236,7 +236,7 @@ describe("письмо: содержание и варианты", () => {
     expect(vars.dayTitle).toBe("Секрет свежести");
     expect(vars.teaser).toBe("Как отличить свежий кофе от залежавшегося");
     expect(vars.buttonLabel).toBe("Открыть дверь 2");
-    expect(vars.progress).toEqual({ opened: 2, total: 12 }); // подаренный день и день 1
+    expect(vars.progress).toEqual({ opened: 1, total: 12 }); // только день 1: подаренный день серии не считается открытым
     expect(vars.comebackText).toBeUndefined();
     expect(vars.catchUpText).toBeUndefined();
     expect(vars.operatorName).toBe(advent.legal.operatorName);
