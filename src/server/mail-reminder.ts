@@ -54,7 +54,13 @@ function safeUrl(value: string): string {
   return /^https?:\/\//i.test(value) ? value : "#";
 }
 
+/** Тема — одна строка: переводы строк и табуляции из текстов пакета (например, `{teaser}`) схлопываются в пробел. */
+function oneLine(value: string): string {
+  return value.replace(/[\r\n\t\u2028\u2029]+/g, " ").replace(/ {2,}/g, " ").trim();
+}
+
 export function renderReminderMail(vars: ReminderMailVars): { subject: string; text: string; html: string; headers: Record<string, string> } {
+  const subject = oneLine(vars.subject);
   const progress = `Открыто ${vars.progress.opened} из ${vars.progress.total}`;
   const operator = [vars.operatorName, vars.operatorDetails].filter(Boolean).join(", ");
   const e = escapeHtml;
@@ -72,7 +78,7 @@ export function renderReminderMail(vars: ReminderMailVars): { subject: string; t
 
   const html =
     `<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">` +
-    `<title>${e(vars.subject)}</title></head>` +
+    `<title>${e(subject)}</title></head>` +
     `<body style="margin:0;padding:0;background:${c.bg};">` +
     `<div style="display:none;max-height:0;overflow:hidden;opacity:0;color:transparent;">${e(vars.preheader)}</div>` +
     `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:${c.bg};"><tr><td align="center" style="padding:24px 12px;">` +
@@ -111,7 +117,7 @@ export function renderReminderMail(vars: ReminderMailVars): { subject: string; t
   ].join("\n");
 
   return {
-    subject: vars.subject,
+    subject,
     text,
     html,
     headers: {

@@ -34,6 +34,12 @@ describe("письмо-напоминание", () => {
     expect(mail.html).toContain('lang="ru"');
   });
 
+  it("тема — одна строка: перевод строки из текстов пакета не попадает в заголовок письма", () => {
+    const mail = renderMail("reminder", vars({ subject: "Дверь 5\r\nBcc: evil@example.test\n\tоткрыта" }));
+    expect(mail.subject).toBe("Дверь 5 Bcc: evil@example.test открыта");
+    expect(mail.subject).not.toMatch(/[\r\n]/);
+  });
+
   it("заголовки RFC 8058: List-Unsubscribe на HTTPS-адрес и List-Unsubscribe-Post", () => {
     const mail = renderMail("reminder", vars());
     expect(mail.headers).toEqual({

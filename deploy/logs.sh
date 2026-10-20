@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Логи сервисов стека.  Использование: deploy/logs.sh [сервис ...] [-f] [-n ЧИСЛО]
-#   сервисы: app, caddy, db, backup, migrate, mailpit. Без аргументов — все сервисы, последние 100 строк.
+#   сервисы: app, caddy, db, backup, migrate, reminders, mailpit. Без аргументов — все сервисы, последние 100 строк.
 #   Примеры: deploy/logs.sh app -f      deploy/logs.sh caddy -n 300
 set -euo pipefail
 
