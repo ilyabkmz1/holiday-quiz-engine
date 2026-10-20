@@ -188,6 +188,7 @@ describe("маршруты наград адвента", () => {
       const viaJson = await app.codes(request("/api/admin/advent/codes", { body: { rewardId: "daily-gift", csv: "code\nBBB222\nCCC333" } }));
       expect(await json(viaJson)).toMatchObject({ added: 1, alreadyInPool: 1 });
       expect((await app.codes(request("/api/admin/advent/codes", { raw: "code\nAAA", contentType: "text/csv" }))).status).toBe(400);
+      expect((await app.codes(request("/api/admin/advent/codes", { raw: "{не json", contentType: "application/json" }))).status).toBe(400);
       expect((await app.codes(request("/api/admin/advent/codes?rewardId=luck-a", { raw: "code\nAAA111" }))).status).toBe(400);
       expect((await app.codes(request(url, { host: "quiz.test", raw: "code\nAAA111" }))).status).toBe(404);
     });

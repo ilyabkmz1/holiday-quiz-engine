@@ -1,5 +1,6 @@
 import { getPrisma } from "@/server/db";
 import { getRuntimeEnv, isForceOpenAllowed } from "@/server/env";
+import { resolveRewardSecret } from "@/server/launch-checks";
 import { sendMail, sendVerificationEmail } from "@/server/mailer";
 import { PrismaAdventRepository } from "@/server/repositories/prisma-advent-repository";
 import { PrismaClaimRepository } from "@/server/repositories/prisma-claim-repository";
@@ -102,7 +103,7 @@ export function getAdventServices(tenant: AdventTenant) {
   const repository = new PrismaAdventRepository(prisma);
   const env = getRuntimeEnv();
   const rewardService = new RewardService(repository, advent, {
-    qrSecret: env.REWARD_QR_SECRET,
+    qrSecret: resolveRewardSecret(env),
     baseUrl: tenantBaseUrl(tenant, env.APP_URL),
     audit: async (eventType, entityId, metadata) => {
       await prisma.auditEvent.create({ data: { eventType, entityId, ...(metadata ? { metadata } : {}) } });

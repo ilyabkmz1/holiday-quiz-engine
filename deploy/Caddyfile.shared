@@ -43,8 +43,12 @@ https:// {
 			fields {
 				request>uri query {
 					delete token
+					# Код награды и подпись личного QR (/redeem?code=…) — тоже.
+					delete code
 				}
 				request>headers>Authorization delete
+				# В Referer той же страницы — полный адрес с ?code=… (политика strict-origin-when-cross-origin).
+				request>headers>Referer delete
 				request>headers>Cookie delete
 				request>remote_ip delete
 				request>client_ip delete

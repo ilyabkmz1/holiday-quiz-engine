@@ -65,6 +65,13 @@ describe("deploy: общий сервер", () => {
     expect(caddyfile).not.toMatch(/(password|secret)\s/i);
   });
 
+  it("Caddy: в журналы не попадают токены, код награды и подпись QR (query и Referer) — в обоих режимах", () => {
+    for (const file of [caddyfile, readFileSync("deploy/Caddyfile", "utf8")]) {
+      expect(file).toMatch(/request>uri query \{[^}]*delete token[^}]*delete code[^}]*\}/);
+      expect(file).toContain("request>headers>Referer delete");
+    }
+  });
+
   it("compose: Caddyfile выбирается переменной, общий режим не прячется за TENANT по умолчанию, образ по умолчанию — один пакет", () => {
     expect(compose).toContain("${CADDYFILE:-./Caddyfile}:/etc/caddy/Caddyfile:ro");
     expect(compose).toContain("TENANT: ${TENANT-demo-office}");
