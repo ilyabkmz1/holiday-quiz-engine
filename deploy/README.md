@@ -175,6 +175,18 @@ deploy/cleanup-pii.sh --yes 2027-01-03T00:00:00+03:00
 
 Мониторинг: внешняя проверка (UptimeRobot или аналог) HTTPS-запроса `https://DOMAIN/api/health` каждые 1-5 минут, ожидается 200 и слово `ok` (работает и в staging). Метрики: `curl -u "$ADMIN_USERNAME:$ADMIN_PASSWORD" https://DOMAIN/api/admin/metrics` (старты, завершения, подтверждённые заявки, ошибки писем; рост `emailFailures` — проверить SMTP). Состояние ВМ: `deploy/status.sh`. Логи: `deploy/logs.sh app -f`, `deploy/logs.sh caddy`. В журналах Caddy нет IP, токенов и заголовков авторизации.
 
+### Напоминания адвента
+
+Сервис `reminders` в `compose.yml` (образ `migrate`, `restart: unless-stopped`) раз в `REMINDERS_INTERVAL_SECONDS` (по умолчанию 900, то есть 15 минут) запускает `npm run advent:remind`. Он поднимается вместе с остальными сервисами `deploy.sh` и ничего не делает, если среди пакетов образа нет адвента с `reminders.channel: "email"`. Что делает запуск:
+
+- для каждого такого пакета берёт участников с подтверждённым email и включёнными напоминаниями, не открывших сегодняшний день, когда фаза идёт, день открыт, а местное время кампании ≥ `reminders.sendAtLocal` (и не позже `REMINDER_MAX_LATE_HOURS` после него);
+- заявляет доставку в БД до отправки (`ReminderDelivery`, уникальный ключ участник + день), поэтому параллельные запуски не дублируют письма; сбой SMTP оставляет доставку в `failed`, повтор — в следующий запуск, но не больше `REMINDER_MAX_ATTEMPTS` раз; если процесс упал между заявкой и отправкой, доставка остаётся в `sending` и не повторяется (лучше потерять письмо, чем прислать два);
+- шлёт пачками с ограничением скорости; в журнал пишет только счётчики (`advent_reminders_run`: арендатор, день, заявлено, отправлено, ошибок), без адресов и ссылок.
+
+Настройка в `/opt/quiz/.env` (всё необязательно): `REMINDERS_INTERVAL_SECONDS` (900), `REMINDER_BATCH_SIZE` (100), `REMINDER_MAX_PER_RUN` (2000), `REMINDER_MAX_ATTEMPTS` (3), `REMINDER_RETRY_MINUTES` (10, пауза между попытками), `REMINDER_RATE_PER_SECOND` (5, 0 — без ограничения), `REMINDER_MAX_LATE_HOURS` (6). Демо-пакеты (`demo: true`) писем не шлют, пока не задан `ADVENT_REMINDERS_DEMO=true`. На staging письма идут в Mailpit.
+
+Проверка: `deploy/logs.sh reminders` (строки `advent_reminders_run`), панель оператора `/admin` (раздел «Напоминания») или `curl -u "$ADMIN_USERNAME:$ADMIN_PASSWORD" https://DOMAIN/api/admin/advent/metrics`. Разовый запуск руками: `docker compose -f deploy/compose.yml --env-file /opt/quiz/.env exec reminders npm run advent:remind`. Письма требуют рабочего SPF/DKIM на домене `SMTP_FROM`; без них напоминания уйдут в спам. Токены входа и отписки хранятся хешами, в журналах Caddy параметры `token` и `t` вырезаются.
+
 ## 13. Типовые проблемы
 
 - **Let's Encrypt не выдал сертификат** (`deploy/logs.sh caddy`: ошибки ACME/challenge; curl к домену падает на TLS): проверьте `dig +short DOMAIN` = внешний IP ВМ; в группе безопасности / файрволе облачного провайдера открыты 80 и 443 с интернета (проверка идёт по 80/443); `ufw status`; `ACME_EMAIL` реальный; лимиты Let's Encrypt (повторы в течение часа не помогут, ждите). Сертификаты хранятся в томе `caddy_data` — не удаляйте его (`down -v` запрещён на боевой ВМ).
@@ -280,5 +292,6 @@ npm run quiz:export  -- <slug> --domain quiz.client.ru --email ops@client.ru [--
 | `status.sh`, `logs.sh` | состояние и логи |
 | `Caddyfile.shared` | Caddy общего сервера: TLS по запросу + `ask` (раздел 16) |
 | `cleanup-pii.sh --yes ГРАНИЦА [--allow-late]` | удаление ПДн (граница обязательна) |
+| сервис `reminders` (`compose.yml`) | напоминания адвента каждые 15 минут (`npm run advent:remind`), см. раздел 12 |
 
 Переменные окружения скриптов (для отладки): `QUIZ_ROOT`, `QUIZ_ENV_FILE`, `QUIZ_STATE_DIR`, `BACKUP_DIR`, `COMPOSE_PROJECT_NAME`, `QUIZ_SKIP_GIT`, `QUIZ_SKIP_BACKUP`, `QUIZ_COMPOSE_OVERRIDE`.

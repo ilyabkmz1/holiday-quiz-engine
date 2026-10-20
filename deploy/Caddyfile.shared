@@ -45,6 +45,8 @@ https:// {
 					delete token
 					# Код награды и подпись личного QR (/redeem?code=…) — тоже.
 					delete code
+					# Токен отписки из письма-напоминания (/unsubscribe?t=…).
+					delete t
 				}
 				request>headers>Authorization delete
 				# В Referer той же страницы — полный адрес с ?code=… (политика strict-origin-when-cross-origin).

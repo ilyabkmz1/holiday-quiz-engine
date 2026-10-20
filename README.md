@@ -6,7 +6,7 @@ White-label движок праздничных игр для бизнеса н�
 
 - **Квиз** (`mode: "cards"`) — карта и полноэкранные комнаты с заданиями;
 - **Квест** (`mode: "quest"`, по умолчанию) — мир-иллюстрация, по которому ходит персонаж, помогает героям и зажигает зоны;
-- **Адвент-календарь** «N дней до Нового года» — в разработке: схема, домен, серверные API и вход по ссылке готовы, клиентский интерфейс пока заглушка (`docs/engine/ADVENT_PLAN.md`).
+- **Адвент-календарь** «N дней до Нового года» — схема, домен, серверные API, вход по ссылке, награды, интерфейс («Витрина» и календарь) и напоминания по email готовы (`docs/engine/ADVENT_PLAN.md`).
 
 В квизе и квесте участник проходит 3–6 зон по 2–4 задания (пять типов: `pick`, `build`, `phish`, `access`, `order`), затем 30-секундный финальный рывок и получает один из уровней наград. Очки, комбо, бонусы и дедлайны считаются только сервером по серверным отметкам времени, призовая заявка подтверждается по email. Правила — в [`docs/game/MECHANICS.md`](docs/game/MECHANICS.md).
 
@@ -206,6 +206,8 @@ Workflow `.github/workflows/ci.yml` запускается на push в `main` �
 | `ADMIN_USERNAME`, `ADMIN_PASSWORD` | Суперадминистратор (пароль ≥ 16 символов); действует при `TENANT=<slug>` или `SUPERADMIN=true` |
 | `STAGING_USERNAME`, `STAGING_PASSWORD` | Закрытый стенд: HTTP Basic auth на весь сайт |
 | `QUIZ_FORCE_OPEN`, `QUIZ_LOCAL_STACK` | Открыть кампанию вне дат (см. «Быстрый старт») |
+| `ADVENT_REMINDERS_DEMO` | Разрешить `npm run advent:remind` слать письма от демо-пакетов (`demo: true`); по умолчанию демо писем не шлют |
+| `REMINDER_BATCH_SIZE`, `REMINDER_MAX_PER_RUN`, `REMINDER_MAX_ATTEMPTS`, `REMINDER_RETRY_MINUTES`, `REMINDER_RATE_PER_SECOND`, `REMINDER_MAX_LATE_HOURS` | Пределы рассылки напоминаний адвента (по умолчанию 100, 2000, 3, 10, 5, 6) |
 | `QUEST_PROTOTYPE` | Открыть превью `/quest` в production |
 | `APP_VERSION` | Ревизия сборки для `/api/health` (build-аргумент образа) |
 | `TEST_DATABASE_URL` | Только для `npm run test:integration` |
@@ -237,7 +239,7 @@ Workflow `.github/workflows/ci.yml` запускается на push в `main` �
 
 `payload` по типу задания: `pick`, `phish` — `{ optionId }`; `build` — `{ optionIds }` ровно из `slots` карточек; `access` — `{ enabledIds }`; `order` — `{ orderedIds }` со всеми карточками. Правильные ответы, `explanation`, `tip`, `thanks` и `oops` неотвеченных заданий клиенту не отдаются: они приходят в `reveal` после ответа и затем в `session.answers`. Клиентские таймеры нужны только для показа: решения принимает сервер. Клиент хранит в `localStorage` только id сессии, cookie доступа ставит сервер; после перезагрузки экран определяется по `GET /api/sessions/:id`.
 
-API адвента — под `/api/advent/` (см. `docs/engine/ADVENT_PLAN.md`).
+API адвента — под `/api/advent/` (см. `docs/engine/ADVENT_PLAN.md`). Напоминания (A5): `POST /api/advent/reminders` (переключатель «Напоминания на почту»), `GET /api/advent/reminders/open` (кнопка письма), `POST /api/advent/unsubscribe` (кнопка страницы `/unsubscribe`), `POST /api/advent/unsubscribe/one-click` (RFC 8058), `GET /api/admin/advent/metrics`.
 
 ## Операторский доступ
 
@@ -262,6 +264,7 @@ Email, токены подтверждения и поля формы не жу�
 
 - Перед развёртыванием: `npm test`, `npm run lint`, `npm run test:integration`, `npm run quiz:check -- --all`, `npm run build`, затем `npm run db:migrate` и `npm run db:seed`.
 - Удаление персональных данных: `CONFIRM_PII_DELETION=DELETE_QUIZ_PII npm run cleanup:pii`, граница — `PII_CREATED_BEFORE`. На ВМ используйте `deploy/cleanup-pii.sh`, где граница обязательна. Тот же скрипт чистит адвент: удаляет использованные и просроченные ссылки входа, а через `ADVENT_PII_RETENTION_DAYS` суток (по умолчанию 30) после `claimEndsAt` стирает email и согласия участников; прогресс остаётся обезличенным.
+- Напоминания адвента: `npm run advent:remind` (на ВМ его раз в 15 минут запускает сервис `reminders`, `deploy/README.md`, раздел 12). Локально: `DATABASE_URL=… APP_URL=… SMTP_HOST=127.0.0.1 SMTP_PORT=1025 … TENANT=demo-coffee-advent ADVENT_REMINDERS_DEMO=true ADVENT_REMIND_AS_OF=2026-12-21T11:00:00+03:00 npm run advent:remind` положит письмо в Mailpit; `ADVENT_REMIND_AS_OF` (ISO 8601 со смещением) двигает часы запуска только вне production или для демо-пакета.
 - Rate limit: общий — 3000 запросов в минуту на ключ клиента, на создание сессии — 60 в минуту. Лимиты хранятся в памяти процесса и рассчитаны на один экземпляр; при горизонтальном масштабировании их нужно перенести в Redis или gateway.
 - Нагрузочный smoke: `npm run test:load` (по умолчанию 25 параллельных полных сессий); адрес и нагрузка — `LOAD_TEST_URL` и `LOAD_TEST_CONCURRENCY` (от 1 до 60: с одного адреса большее число упрётся в лимит создания сессий).
 
