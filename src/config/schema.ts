@@ -26,12 +26,26 @@ const sceneSchema = z.object({
  */
 export const REVEALING_ID_PATTERN = /correct|right|wrong|fake|genuine|trap|phish|spam|bad|good|true|false/i;
 
+export const HERO_HAIR = ["short", "long", "bun", "cap"] as const;
+export const HERO_HAIR_COLORS = ["black", "brown", "chestnut", "auburn", "blond", "gray"] as const;
+export const HERO_SKINS = ["light", "fair", "tan", "deep"] as const;
+
+/** Внешность героя для спрайта: задаётся пакетом, чтобы хозяйка Мила не оказалась в мужской кепке. */
+export const heroLookSchema = z.strictObject({
+  hair: z.enum(HERO_HAIR),
+  hairColor: z.enum(HERO_HAIR_COLORS).optional(),
+  skin: z.enum(HERO_SKINS).optional()
+});
+export type HeroLook = z.infer<typeof heroLookSchema>;
+
 const heroSchema = z.object({
   id,
   name: z.string().min(1),
   role: z.string().min(1),
   // Цвет плейсхолдер-аватара, пока нет иллюстраций.
-  color: z.string().regex(/^#[0-9A-Fa-f]{6}$/)
+  color: z.string().regex(/^#[0-9A-Fa-f]{6}$/),
+  // Внешность параметрического спрайта (причёска, цвет волос, тон кожи); без поля — устойчиво по id героя.
+  look: heroLookSchema.optional()
 });
 
 const taskBase = {

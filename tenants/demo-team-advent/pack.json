@@ -54,19 +54,32 @@
         "id": "anna",
         "name": "Анна",
         "role": "руководитель продукта",
-        "color": "#FFD27A"
+        "color": "#FFD27A",
+        "look": {
+          "hair": "bun",
+          "hairColor": "chestnut"
+        }
       },
       {
         "id": "igor",
         "name": "Игорь",
         "role": "инженер поддержки",
-        "color": "#62E0FF"
+        "color": "#62E0FF",
+        "look": {
+          "hair": "short",
+          "hairColor": "brown"
+        }
       },
       {
         "id": "sonya",
         "name": "Соня",
         "role": "HR-партнёр",
-        "color": "#FF9FB0"
+        "color": "#FF9FB0",
+        "look": {
+          "hair": "long",
+          "hairColor": "black",
+          "skin": "fair"
+        }
       }
     ],
     "presentation": "storefront",
@@ -802,7 +815,7 @@
     "reminders": {
       "channel": "email",
       "sendAtLocal": "09:00",
-      "subject": "Дверь {day}: {teaser}",
+      "subject": "Окно {day}: {teaser}",
       "preheader": "Один вопрос на минуту"
     },
     "audience": {

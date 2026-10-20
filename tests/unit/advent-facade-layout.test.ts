@@ -50,10 +50,10 @@ function expectSound(layout: FacadeLayout, days: number, today: number | null, a
 }
 
 describe("facadeLayout: раскладка окон фасада", () => {
-  const todays = (days: number): Array<number | null> => [null, 1, 2, Math.ceil(days / 2), days - 2, days - 1, days, days + 1];
+  const todays = (days: number): Array<number | null> => [null, 0, ...Array.from({ length: days }, (_, index) => index + 1), days + 1];
 
-  for (const days of [5, 7, 12, 24, 31]) {
-    it(`${days} дней: каждое окно один раз, без перекрытий и выхода за сетку при любом «сегодня»`, () => {
+  for (let days = 5; days <= 31; days += 1) {
+    it(`${days} дней: каждое окно один раз, без перекрытий и выхода за сетку при каждом «сегодня»`, () => {
       for (const attic of [true, false]) {
         for (const today of todays(days)) expectSound(facadeLayout(days, today, attic ? withAttic : noAttic), days, today, attic);
       }

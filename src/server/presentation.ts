@@ -123,7 +123,7 @@ export function publicAdvent(advent: AdventConfig, tenant: string, worldId: stri
     intro: advent.intro,
     presentation: advent.presentation,
     facade: advent.facade ? publicFacade(advent) : null,
-    heroes: advent.heroes.map(({ id, name, role, color }) => ({ id, name, role, color })),
+    heroes: advent.heroes.map(({ id, name, role, color, look }) => ({ id, name, role, color, ...(look ? { look } : {}) })),
     brand: {
       name: advent.brand.name,
       mark: advent.brand.mark,
