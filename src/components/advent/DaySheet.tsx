@@ -94,7 +94,8 @@ export function DaySheet({ advent, state, n, reduced, nowMs, api, onClose, onSta
   const hero: PublicHero = advent.heroes.find((candidate) => candidate.id === day?.heroId) ?? advent.heroes[0];
   // «Витрина»: экран дня как история с персонажем, предметные обложки заданий и индикатор шагов; календарь остаётся прежним.
   const store = advent.presentation === "storefront" && advent.facade !== null;
-  const skinValue = useMemo(() => ({ copy, vessel: advent.facade?.template.vessel ?? ("box" as const) }), [copy, advent.facade]);
+  const cover = current?.type === "task" ? current.cover : null;
+  const skinValue = useMemo(() => ({ copy, vessel: advent.facade?.template.vessel ?? ("box" as const), cover }), [copy, advent.facade, cover]);
 
   // Каждый шаг показывается с начала листа.
   useEffect(() => {

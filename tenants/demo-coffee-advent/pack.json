@@ -229,7 +229,8 @@
                 "dark",
                 "fresh-grind"
               ]
-            }
+            },
+            "cover": "list"
           }
         ],
         "rewardId": "pastry-gift"
@@ -503,7 +504,8 @@
                 "steam",
                 "pour"
               ]
-            }
+            },
+            "cover": "vessel"
           }
         ],
         "rewardId": "pastry-gift"
@@ -712,7 +714,8 @@
                 "tenth",
                 "year"
               ]
-            }
+            },
+            "cover": "list"
           }
         ],
         "rewardId": "daily-gift"

@@ -167,7 +167,12 @@ const storyBlockSchema = z.object({
   type: z.literal("story"),
   lines: z.array(z.string().min(1)).min(ADVENT_LIMITS.chapterLines.min).max(ADVENT_LIMITS.chapterLines.max)
 });
-const taskBlockSchema = z.object({ type: z.literal("task"), task: taskSchema });
+/**
+ * Обложка задания «собери» в «Витрине» (только вид, проверка не меняется): `vessel` — ёмкость фасада со слоями (чашка, коробка,
+ * стопка), `list` — список по порядку без рисунка (для абстрактных шагов и правил). Без поля: `order` — `list`, `build` — `vessel`.
+ */
+export const TASK_COVERS = ["vessel", "list"] as const;
+const taskBlockSchema = z.object({ type: z.literal("task"), task: taskSchema, cover: z.enum(TASK_COVERS).optional() });
 const luckBlockSchema = z.object({
   type: z.literal("luck"),
   choices: z.number().int().min(ADVENT_LIMITS.luckChoices.min).max(ADVENT_LIMITS.luckChoices.max),
@@ -250,6 +255,13 @@ export const adventCopySchema = copySchema.extend({
   skinWrong: z.string().min(1).default("Не то"),
   skinRemove: z.string().min(1).default("Убрать «{title}»"),
   skinEmptyLayer: z.string().min(1).default("Пустой слой {i} из {n}"),
+  skinOrderTitle: z.string().min(1).default("Расставьте по порядку"),
+  skinListSteps: z.string().min(1).default("{k} из {n} шагов"),
+  skinListPicked: z.string().min(1).default("Выбрано {k} из {n}"),
+  skinListLegendSteps: z.string().min(1).default("Сверху — первый шаг"),
+  skinListLegendPicked: z.string().min(1).default("Ваш выбор"),
+  skinListMissing: z.string().min(1).default("осталось {left}"),
+  skinEmptySlot: z.string().min(1).default("Пустое место {i} из {n}"),
   skinPickTitle: z.string().min(1).default("Выберите на прилавке"),
   skinPickHint: z.string().min(1).default("Нажмите на предмет"),
   windowLit: z.string().min(1).default("Окно {n} загорелось"),
@@ -426,6 +438,9 @@ const adventChecked = adventBaseSchema.superRefine((advent, context) => {
 
     day.blocks.forEach((block, blockIndex) => {
       const blockPath = [...dayPath, "blocks", blockIndex];
+      if (block.type === "task" && block.cover && block.task.type !== "build" && block.task.type !== "order") {
+        issue(context, `День ${day.n}: обложка cover бывает только у заданий build и order, а здесь ${block.task.type}`, [...blockPath, "cover"]);
+      }
       if (block.type === "promo") {
         checkReward(block.rewardId, `блоке promo дня ${day.n}`, [...blockPath, "rewardId"]);
         // Подарок дня и награда за закрытие дня хранятся одной выдачей (ключ «участник, day, день»): два разных приза не поместились бы.

@@ -425,6 +425,7 @@ export class AdventService {
                 type: "task",
                 // Перемешивание по зерну «участник + задание»: порядок в конфигурации не выдаёт ответ.
                 task: publicTask(`day-${day.n}`, block.task, participant.id),
+                cover: block.cover ?? null,
                 done: stored !== undefined,
                 outcome: stored ? this.taskOutcome(block.task, stored.result as StoredResult) : null
               };

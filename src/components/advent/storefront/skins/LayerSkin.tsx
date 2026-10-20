@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { AdventIcon } from "@/components/advent/icons";
 import { fill } from "@/components/advent/format";
@@ -25,31 +25,54 @@ type Props = {
 };
 
 /**
- * Обложка «СОБЕРИ» для заданий `build` и `order`: ёмкость (чашка со слоями и паром, коробка или стопка), слоты — слои снизу вверх
- * с легендой, варианты — чипы-ингредиенты (кнопки не ниже 44 px), счётчик «2 из 4 слоёв». Логика ответа — как у штатных механик.
+ * Обложка «СОБЕРИ» для заданий `build` и `order`. Вид `vessel`: ёмкость (чашка со слоями и паром, коробка или стопка), слоты —
+ * слои снизу вверх с легендой. Вид `list` (по умолчанию у `order`): список мест сверху вниз без рисунка — для абстрактных шагов.
+ * Варианты — чипы (кнопки не ниже 44 px); выбранный чип уходит из списка в слот и возвращается по нажатию на слот.
+ * Кнопка «Готово» закреплена внизу листа. Логика ответа — как у штатных механик.
  */
 function LayerSkin({ mode, entries, slots, reveal, disabled, after, onSubmit }: Props) {
-  const { copy, vessel } = useSkin();
+  const { copy, vessel, cover } = useSkin();
+  const list = (cover ?? (mode === "order" ? "list" : "vessel")) === "list";
   const [picked, setPicked] = useState<string[]>([]);
   const { locked, lock } = useSubmitLock(disabled, reveal !== null);
+  const chipsRef = useRef<HTMLUListElement>(null);
+  const submitRef = useRef<HTMLButtonElement>(null);
+  /** Куда вернуть фокус после того, как чип ушёл в слот или вернулся из него: место в списке чипов или id чипа. */
+  const focusNext = useRef<{ index: number } | { id: string } | null>(null);
 
   const sent = reveal ? (mode === "build" ? ("optionIds" in reveal.payload ? reveal.payload.optionIds : picked) : "orderedIds" in reveal.payload ? reveal.payload.orderedIds : picked) : picked;
   const byId = (id: string) => entries.find((entry) => entry.id === id);
+  const free = entries.filter((entry) => !picked.includes(entry.id));
 
-  function toggle(id: string) {
+  function toggle(id: string, from: "chip" | "slot" | "key") {
     if (locked) return;
-    setPicked((current) => {
-      if (current.includes(id)) return current.filter((candidate) => candidate !== id);
-      return current.length < slots ? [...current, id] : current;
-    });
+    const index = free.findIndex((entry) => entry.id === id);
+    if (picked.includes(id)) {
+      focusNext.current = from === "slot" ? { id } : null;
+      setPicked((current) => current.filter((candidate) => candidate !== id));
+    } else if (picked.length < slots) {
+      focusNext.current = from === "chip" ? { index } : null;
+      setPicked((current) => (current.includes(id) || current.length >= slots ? current : [...current, id]));
+    }
   }
+
+  // Фокус не теряется, когда нажатая кнопка исчезает: следующий чип на том же месте, а когда все места заняты — «Готово».
+  useEffect(() => {
+    const target = focusNext.current;
+    if (!target) return;
+    focusNext.current = null;
+    const chips = Array.from(chipsRef.current?.querySelectorAll<HTMLButtonElement>("button") ?? []);
+    if ("id" in target) chips.find((chip) => chip.dataset.id === target.id)?.focus();
+    else if (picked.length >= slots) submitRef.current?.focus();
+    else (chips[Math.min(target.index, chips.length - 1)] ?? submitRef.current)?.focus();
+  }, [picked, slots]);
 
   function submit() {
     if (picked.length !== slots || !lock()) return;
     onSubmit(mode === "build" ? { optionIds: picked } : { orderedIds: picked });
   }
 
-  useDigitKeys(!locked, entries.length, (index) => toggle(entries[index].id));
+  useDigitKeys(!locked, free.length, (index) => toggle(free[index].id, "key"));
 
   const verdictOf = (id: string, index: number): "right" | "wrong" | null => {
     if (!reveal) return null;
@@ -60,19 +83,23 @@ function LayerSkin({ mode, entries, slots, reveal, disabled, after, onSubmit }: 
     return { filled: id !== undefined, verdict: id !== undefined ? verdictOf(id, index) : null };
   });
   const missing = slots - picked.length;
+  const count = list ? (mode === "order" ? copy.skinListSteps : copy.skinListPicked) : copy.skinBuildLayers;
+  const legend = list ? (mode === "order" ? copy.skinListLegendSteps : copy.skinListLegendPicked) : copy.skinBuildLegend;
+  const title = mode === "order" && list ? copy.skinOrderTitle : copy.skinBuildTitle;
+  const empty = list ? copy.skinEmptySlot : copy.skinEmptyLayer;
 
   return (
-    <section className="adv-skin adv-skin-layers" aria-label={copy.skinBuildTitle} data-mode={mode} data-vessel={vessel}>
+    <section className="adv-skin adv-skin-layers" aria-label={title} data-mode={mode} data-vessel={list ? undefined : vessel} data-cover={list ? "list" : "vessel"}>
       <div className="adv-skin-top">
-        <h3 className="adv-skin-title">{copy.skinBuildTitle}</h3>
-        <p className="adv-skin-count" aria-live="polite">{fill(copy.skinBuildLayers, { k: sent.length, n: slots })}</p>
+        <h3 className="adv-skin-title">{title}</h3>
+        <p className="adv-skin-count" aria-live="polite">{fill(count, { k: sent.length, n: slots })}</p>
       </div>
       <div className="adv-skin-stage">
-        <Vessel kind={vessel} layers={layers} />
+        {!list && <Vessel kind={vessel} layers={layers} />}
         <div className="adv-legend">
-          <p className="adv-legend-title">{copy.skinBuildLegend}</p>
-          {/* Легенда читается снизу вверх: первый слой — нижний. Ряд с выбранным слоем снимает его. */}
-          <ol className="adv-legend-list" aria-label={copy.skinBuildLegend}>
+          <p className="adv-legend-title">{legend}</p>
+          {/* У ёмкости легенда читается снизу вверх (первый слой — нижний), у списка — сверху вниз. Ряд с выбором снимает его. */}
+          <ol className="adv-legend-list" aria-label={legend}>
             {Array.from({ length: slots }, (_, index) => {
               const entry = sent[index] ? byId(sent[index]) : undefined;
               const verdict = layers[index].verdict;
@@ -82,8 +109,8 @@ function LayerSkin({ mode, entries, slots, reveal, disabled, after, onSubmit }: 
                     type="button"
                     className={`adv-legend-row${entry ? " filled" : ""}`}
                     disabled={locked || !entry}
-                    aria-label={entry ? `${index + 1}. ${fill(copy.skinRemove, { title: entry.title })}${verdict ? `. ${verdict === "right" ? copy.skinRight : copy.skinWrong}` : ""}` : fill(copy.skinEmptyLayer, { i: index + 1, n: slots })}
-                    onClick={() => entry && toggle(entry.id)}
+                    aria-label={entry ? `${index + 1}. ${fill(copy.skinRemove, { title: entry.title })}${verdict ? `. ${verdict === "right" ? copy.skinRight : copy.skinWrong}` : ""}` : fill(empty, { i: index + 1, n: slots })}
+                    onClick={() => entry && toggle(entry.id, "slot")}
                   >
                     <span className="adv-legend-dot" style={entry ? { background: LAYER_COLORS[index % LAYER_COLORS.length] } : undefined} aria-hidden="true">{index + 1}</span>
                     <span className="adv-legend-text">{entry ? entry.title : "—"}</span>
@@ -97,23 +124,24 @@ function LayerSkin({ mode, entries, slots, reveal, disabled, after, onSubmit }: 
       </div>
       {!reveal && (
         <>
-          <ul className="adv-chips" aria-label={copy.skinBuildTitle}>
-            {entries.map((entry, index) => {
-              const used = picked.includes(entry.id);
-              return (
+          {free.length > 0 && (
+            <ul className="adv-chips" aria-label={copy.skinBuildTitle} ref={chipsRef}>
+              {free.map((entry, index) => (
                 <li key={entry.id}>
-                  <button type="button" className="adv-chip-item" aria-pressed={used} disabled={locked} onClick={() => toggle(entry.id)}>
+                  <button type="button" className="adv-chip-item" data-id={entry.id} disabled={locked || missing === 0} onClick={() => toggle(entry.id, "chip")}>
                     <Icon name={entry.icon} size={18} color="var(--cyan)" />
                     <span>{entry.title}</span>
                     <span className="adv-chip-key" aria-hidden="true">{index + 1}</span>
                   </button>
                 </li>
-              );
-            })}
-          </ul>
-          <button type="button" className="adv-btn adv-btn-primary" disabled={locked || missing > 0} onClick={submit}>
-            {missing > 0 ? `${copy.skinBuildSubmit}: ${fill(copy.skinBuildMissing, { left: missing })}` : copy.skinBuildSubmit}
-          </button>
+              ))}
+            </ul>
+          )}
+          <div className="adv-skin-submit">
+            <button type="button" ref={submitRef} className="adv-btn adv-btn-primary" disabled={locked || missing > 0} onClick={submit}>
+              {missing > 0 ? `${copy.skinBuildSubmit}: ${fill(list ? copy.skinListMissing : copy.skinBuildMissing, { left: missing })}` : copy.skinBuildSubmit}
+            </button>
+          </div>
         </>
       )}
       <div className="adv-skin-after" aria-live="polite">{reveal ? after : null}</div>

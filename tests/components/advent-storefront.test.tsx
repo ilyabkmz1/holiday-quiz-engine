@@ -11,6 +11,7 @@ import { Facade } from "@/components/advent/storefront/Facade";
 import { WINDOW_SHAPE } from "@/components/advent/storefront/windows";
 import { loadFacade } from "@/facades/registry";
 import type { Task } from "@/config/schema";
+import { fill } from "@/components/advent/format";
 import { publicAdvent } from "@/server/presentation";
 import type { AdventState, PublicAdvent } from "@/types/advent";
 
@@ -19,11 +20,13 @@ import { memoryAdventApi } from "../support/advent-client";
 import { mockReducedMotion } from "../support/advent-ui";
 import { renderInWorld as render } from "./world-render";
 
-const storefrontConfig = (templateId = "cafe") =>
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- черновик пакета до разбора схемой
+const storefrontConfig = (templateId = "cafe", tweak?: (draft: any) => void) =>
   adventConfig((draft) => {
     draft.presentation = "storefront";
     draft.facade = { templateId, hostHeroId: "mila", signText: "Зерно" };
     draft.rewards.find((reward: { id: string }) => reward.id === "daily-gift").icon = "cup";
+    tweak?.(draft);
   });
 const config = storefrontConfig();
 const publicConfig: PublicAdvent = publicAdvent(config, "zerno-advent", "snow-globe");
@@ -318,13 +321,14 @@ function Host({ harness, initial, n, onClose, advent = publicConfig }: { harness
   return <DaySheet advent={advent} state={state} n={n} reduced nowMs={harness.clock.now.getTime()} api={harness.api} onClose={onClose} onState={setState} onError={vi.fn()} />;
 }
 
-async function openSheet(day: number, templateId = "cafe") {
-  const advent = storefrontConfig(templateId);
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- черновик пакета до разбора схемой
+async function openSheet(day: number, templateId = "cafe", tweak?: (draft: any) => void) {
+  const advent = storefrontConfig(templateId, tweak);
   const harness = memoryAdventApi({ advent, start: at(day) });
   await harness.ensureParticipant();
   const { state } = await harness.api.openDay(day);
   const onClose = vi.fn();
-  render(<Host harness={harness} initial={state} n={day} onClose={onClose} advent={templateId === "cafe" ? publicConfig : publicAdvent(advent, "zerno-advent", "snow-globe")} />);
+  render(<Host harness={harness} initial={state} n={day} onClose={onClose} advent={templateId === "cafe" && !tweak ? publicConfig : publicAdvent(advent, "zerno-advent", "snow-globe")} />);
   return { harness, state, onClose };
 }
 const dialog = () => screen.getByRole("dialog");
@@ -440,12 +444,59 @@ describe("DaySheet «Витрины»: обложка «собери»", () => {
     expect(dialog().querySelector(".adv-chips")).toBeNull();
   });
 
-  it("order: тот же вид «собери», ответ — orderedIds в выбранном порядке", async () => {
+  it("выбранный чип уходит в слот (не дублирует легенду), фокус переходит на следующий чип, затем на «Готово»", async () => {
+    await toTask(2);
+    const build = task("beans-store") as Extract<Task, { type: "build" }>;
+    const skin = dialog().querySelector<HTMLElement>(".adv-skin-layers")!;
+    const chipTitles = () => [...skin.querySelectorAll<HTMLElement>(".adv-chip-item")].map((chip) => chip.textContent);
+    const first = skin.querySelector<HTMLButtonElement>(".adv-chip-item")!;
+    const title = build.options.find((option) => option.id === first.dataset.id)!.title;
+    first.focus();
+    fireEvent.click(first);
+    expect(chipTitles().some((text) => text?.includes(title))).toBe(false);
+    expect(chipTitles()).toHaveLength(build.options.length - 1);
+    expect(document.activeElement).toBe(skin.querySelector(".adv-chip-item"));
+    // Слот возвращает чип в список, фокус — на вернувшийся чип.
+    fireEvent.click(within(skin).getByRole("button", { name: new RegExp(`^1\\. Убрать «${title}»`) }));
+    expect(chipTitles()).toHaveLength(build.options.length);
+    expect(document.activeElement).toHaveAttribute("data-id", first.dataset.id);
+    // Заполнили все слои — фокус на «Готово», оставшиеся чипы недоступны.
+    for (let index = 0; index < build.slots; index += 1) fireEvent.click(skin.querySelector<HTMLButtonElement>(".adv-chip-item")!);
+    expect(document.activeElement).toBe(within(skin).getByRole("button", { name: copy.skinBuildSubmit }));
+    for (const chip of skin.querySelectorAll<HTMLButtonElement>(".adv-chip-item")) expect(chip).toBeDisabled();
+  });
+
+  it("обложка задаётся пакетом: build с cover «list» — список без чашки", async () => {
+    await openSheet(2, "cafe", (draft) => {
+      draft.days.find((day: { n: number }) => day.n === 2).blocks.find((block: { type: string }) => block.type === "task").cover = "list";
+    });
+    await advanceToTask();
+    const build = task("beans-store") as Extract<Task, { type: "build" }>;
+    const skin = dialog().querySelector<HTMLElement>(".adv-skin-layers")!;
+    expect(skin).toHaveAttribute("data-cover", "list");
+    expect(skin.querySelector(".adv-vessel")).toBeNull();
+    expect(within(skin).getByText(fill(copy.skinListPicked, { k: 0, n: build.slots }))).toBeInTheDocument();
+  });
+
+  it("order с cover «vessel» — слои в чашке (рецепт напитка)", async () => {
+    await openSheet(3, "cafe", (draft) => {
+      draft.days.find((day: { n: number }) => day.n === 3).blocks.find((block: { type: string }) => block.type === "task").cover = "vessel";
+    });
+    await advanceToTask();
+    const skin = dialog().querySelector<HTMLElement>(".adv-skin-layers")!;
+    expect(skin).toHaveAttribute("data-cover", "vessel");
+    expect(skin.querySelector(".adv-vessel")).toHaveAttribute("data-kind", "cup");
+  });
+
+  it("order: по умолчанию список шагов сверху вниз без ёмкости, ответ — orderedIds в выбранном порядке", async () => {
     const { harness } = await toTask(3);
     const order = task("beans-path") as Extract<Task, { type: "order" }>;
     const skin = dialog().querySelector<HTMLElement>(".adv-skin-layers")!;
     expect(skin).toHaveAttribute("data-mode", "order");
-    expect(within(skin).getByText(`0 из ${order.items.length} слоёв`)).toBeInTheDocument();
+    expect(skin).toHaveAttribute("data-cover", "list");
+    expect(skin.querySelector(".adv-vessel")).toBeNull();
+    expect(within(skin).getByRole("heading", { level: 3, name: copy.skinOrderTitle })).toBeInTheDocument();
+    expect(within(skin).getByText(fill(copy.skinListSteps, { k: 0, n: order.items.length }))).toBeInTheDocument();
     const submit = vi.spyOn(harness.api, "submitBlock");
     for (const id of order.correctOrder) {
       fireEvent.click(within(skin).getByRole("button", { name: new RegExp(order.items.find((item) => item.id === id)!.title) }));

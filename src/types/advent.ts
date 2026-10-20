@@ -41,7 +41,8 @@ export type AdventTaskOutcome = {
 
 export type AdventBlockState =
   | { index: number; type: "story"; lines: string[]; done: boolean }
-  | { index: number; type: "task"; task: PublicTask; done: boolean; outcome: AdventTaskOutcome | null }
+  /** `cover` — обложка задания в «Витрине» из пакета (`null` — по типу задания). */
+  | { index: number; type: "task"; task: PublicTask; cover: "vessel" | "list" | null; done: boolean; outcome: AdventTaskOutcome | null }
   /**
    * Блок удачи: до выполнения исхода в состоянии нет (`reveal: null`). `ready` — доступен (остальные блоки дня
    * пройдены), `needsIdentity` — для выдачи приза нужен вход по ссылке (анонимному участнику ответ `identity_required`).
