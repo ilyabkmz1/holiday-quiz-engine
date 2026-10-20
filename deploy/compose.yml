@@ -119,8 +119,30 @@ services:
       REMINDER_RATE_PER_SECOND: ${REMINDER_RATE_PER_SECOND:-5}
       REMINDER_MAX_LATE_HOURS: ${REMINDER_MAX_LATE_HOURS:-6}
       REMINDERS_INTERVAL_SECONDS: ${REMINDERS_INTERVAL_SECONDS:-900}
+    # init: tini — PID 1 и передаёт SIGTERM циклу. Цикл по сигналу не начинает новый запуск и не досыпает паузу, а идущему
+    # запуску передаёт SIGTERM: advent:remind дописывает текущее письмо и выходит, не оставляя лишних доставок в `sending`.
     # $$ -- переменные оболочки контейнера, а не подстановка Compose.
-    command: ["sh", "-c", "while true; do npm run --silent advent:remind || true; sleep $${REMINDERS_INTERVAL_SECONDS:-900}; done"]
+    init: true
+    stop_grace_period: 60s
+    command:
+      - sh
+      - -c
+      - |
+        stop=""
+        pid=""
+        trap 'stop=1; if [ -n "$$pid" ]; then kill -TERM "$$pid" 2>/dev/null || true; fi' TERM INT
+        while [ -z "$$stop" ]; do
+          npm run --silent advent:remind &
+          pid=$$!
+          # wait прерывается сигналом: ждём, пока запуск допишет текущее письмо.
+          while kill -0 "$$pid" 2>/dev/null; do wait "$$pid" || true; done
+          pid=""
+          [ -n "$$stop" ] && break
+          sleep "$${REMINDERS_INTERVAL_SECONDS:-900}" &
+          pid=$$!
+          wait "$$pid" || true
+          pid=""
+        done
     depends_on:
       migrate:
         condition: service_completed_successfully
