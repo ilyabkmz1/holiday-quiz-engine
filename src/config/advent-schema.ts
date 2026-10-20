@@ -86,7 +86,7 @@ export type RewardIcon = z.infer<typeof rewardIconSchema>;
 /** Значок награды, если пакет не задал `icon`: по виду награды. */
 export function rewardIconFor(reward: { kind: z.infer<typeof rewardKindSchema>; icon?: RewardIcon }): RewardIcon {
   if (reward.icon) return reward.icon;
-  return { promo: "percent", gift: "gift", points: "star", finalEntry: "ticket" }[reward.kind] as RewardIcon;
+  return { promo: "percent", gift: "gift", points: "sparkle", finalEntry: "ticket" }[reward.kind] as RewardIcon;
 }
 
 const codesSchema = z.union([
