@@ -188,7 +188,7 @@ export function Facade({ template, signText, host, doors, grants, today, copy, t
   };
 
   return (
-    <div className="adv-facade-scroll" ref={scrollRef} data-scroll={layout.rows > 6 ? "true" : undefined}>
+    <div className="adv-facade-scroll" ref={scrollRef} data-fit={phase === "running" || undefined} data-scroll={layout.rows > 6 ? "true" : undefined}>
       <div className="adv-facade" data-roof={template.roof.shape} data-windows={template.windows.shape} data-panes={template.windows.panes} data-door-shape={template.door.shape} data-template={template.id} data-snow={template.decor.snow ? "on" : "off"} style={{ ...facadeVars(template.colors), "--rows": layout.rows } as CSSProperties}>
         <Roof template={template} signText={signText} />
         <div className="adv-wall" ref={wallRef}>
