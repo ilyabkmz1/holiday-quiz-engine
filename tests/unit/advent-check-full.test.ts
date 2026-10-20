@@ -34,14 +34,51 @@ const errors = async (draft: any, options = {}) => (await checkPack(draft, { ten
 const warnings = async (draft: any, options = {}) => (await checkPack(draft, { tenantDir: tenantDir(), ...options })).warnings.join("\n");
 
 describe("quiz:check для адвента: юридические проверки", () => {
-  it.each(["Приз — красное вино", "Дегустация ПИВА", "кальян в подарок", "скидка на сигареты", "ТАБАЧНАЯ лавка", "водка для гостей", "алкоголь", "виски и коньяк"])("алкоголь и табак — ошибка: «%s»", async (text) => {
+  it.each(["Приз — красное вино", "Дегустация ПИВА", "кальян в подарок", "скидка на сигареты", "ТАБАЧНАЯ лавка", "водка для гостей", "алкоголь", "виски и коньяк", "Глинтвейн к вечеру", "Бокал шампанского", "Бокал вина", "Пивной вечер", "Ром и джин", "Ликёр в кофе", "Сидр в подарок", "Коньячный десерт", "IQOS в подарок"])("алкоголь и табак — ошибка: «%s»", async (text) => {
     const result = await errors(pack((draft) => (draft.advent.days[1].teaser = text)));
     expect(result).toContain("алкоголь и табак");
     expect(result).toContain("days[1].teaser");
   });
 
-  it.each(["Он не виноват", "Виноград и вина нет", "Вина не признал", "Расписание: вторник", "Тимур любит обжарку"])("слова без алкоголя — не ошибка: «%s»", async (text) => {
+  it.each(["Он не виноват", "Виноград и вина нет", "Вина не признал", "Расписание: вторник", "Тимур любит обжарку", "Табакерка с сюрпризом", "Джинсы и роман", "По моей вине"])("слова без алкоголя — не ошибка: «%s»", async (text) => {
     expect(await errors(pack((draft) => (draft.advent.days[1].teaser = text)))).not.toContain("алкоголь");
+  });
+
+  it("оговорка об алкоголе в юридических текстах — предупреждение, а не ошибка", async () => {
+    const draft = pack((value) => (value.advent.legal.consentText += " Акция не распространяется на алкогольную продукцию."));
+    expect(await errors(draft)).not.toContain("алкоголь");
+    expect(await warnings(draft)).toContain("юридические тексты упоминают алкоголь");
+  });
+
+  it("стоп-слова во всех формах: «ставок» тоже", async () => {
+    expect(await warnings(pack((draft) => (draft.advent.days[1].teaser = "Ставок больше нет")))).toContain("стоп-слова");
+  });
+
+  it("денежный приз — предупреждение (244-ФЗ)", async () => {
+    expect(await warnings(pack((draft) => (draft.advent.rewards[0].label = "500 рублей на карту")))).toContain("денежный приз");
+    expect(await warnings(pack((draft) => (draft.advent.rewards[0].label = "Кэшбэк деньгами")))).toContain("денежный приз");
+    expect(await warnings(pack())).not.toContain("денежный приз");
+  });
+
+  it("НДФЛ: порог годовой на человека — суммируются все выдачи; для сотрудников без «35%»", async () => {
+    // Каждая награда дешевле 4 000 ₽, но дневной подарок выдаётся много раз.
+    const many = pack((draft) => (draft.advent.rewards[0].valueRub = 700));
+    expect(await warnings(many)).toMatch(/НДФЛ: один участник может получить наград до \d+ ₽/);
+    expect(await warnings(pack((draft) => (draft.advent.rewards[0].valueRub = 100)))).not.toContain("НДФЛ");
+    const employees = pack((draft) => {
+      draft.advent.rewards[0].valueRub = 5000;
+      draft.advent.audience = { kind: "employees", leaderboard: "off" };
+    });
+    const text = await warnings(employees);
+    expect(text).toContain("подарки работодателя");
+    expect(text).not.toContain("35%");
+  });
+
+  it("покупка для участия вместе с удачей или финальным розыгрышем — предупреждение о стимулирующей лотерее", async () => {
+    const draft = pack((value) => (value.advent.rules = { requiresPurchase: true }));
+    const dir = tenantDir({ "rules.md": "# Правила акции\n" });
+    expect(await warnings(draft, { tenantDir: dir })).toContain("стимулирующей лотереей");
+    expect(await warnings(pack(), { tenantDir: dir })).not.toContain("стимулирующей лотереей");
   });
 
   it("demo: true на боевом адресе — предупреждение; на localhost, .test и без адреса — нет", async () => {

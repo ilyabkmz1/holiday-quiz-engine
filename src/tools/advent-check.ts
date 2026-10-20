@@ -18,13 +18,53 @@ import { worldIssues } from "@/worlds/world";
  * Стоп-слова (138-ФЗ, 244-ФЗ): «лотерея», «ставка», «азарт». Ищем с начала слова, чтобы не ловить «поставка» и «заставка»;
  * регистр не важен.
  */
-const STOP_WORDS = /(^|[^а-яё])(лотере|азарт|став[к])[а-яё]*/iu;
+const STOP_WORDS = /(^|[^а-яё])(лотере|азарт|став(?:к|ок))[а-яё]*/iu;
 
 /**
- * Алкоголь и табак (38-ФЗ «О рекламе», 15-ФЗ): их нельзя делать призом и героем рекламной акции. «Вино» и «пиво» ищем только в
- * своих формах: «вина» не ищем (это и «вина» как вина, и «виноват»), «виноград» не ловится; остальное — с начала слова.
+ * Алкоголь и табак (38-ФЗ «О рекламе», 15-ФЗ): их нельзя делать призом и героем рекламной акции. Корни ищем с начала слова.
+ * «Вино» и «пиво» — только в своих формах: «вина» и «вине» не ищем (это и «вина» как вина, и «по моей вине»), кроме
+ * «бокал/бутылка вина»; «виноград» и «табакерка» не ловятся. Короткие «ром», «джин», «сигара» — только целым словом.
  */
-const ALCOHOL_TOBACCO = /(^|[^а-яё])(алкогол|водк|виски|коньяк|сигарет|таба[кч]|вейп|кальян|пив(?:о|а|у|е|ом)(?![а-яё])|вин(?:о|ом|ный|ная|ные|ного)(?![а-яё]))[а-яё]*/iu;
+const ALCOHOL_TOBACCO = new RegExp(
+  "(^|[^а-яё])(" +
+    [
+      "алкогол",
+      "водк",
+      "виски",
+      "коньяк",
+      "коньяч",
+      "шампанск",
+      "глинтвейн",
+      "ликёр",
+      "ликер",
+      "сидр",
+      "текил",
+      "вермут",
+      "мартини",
+      "бренди",
+      "самогон",
+      "настойк",
+      "наливк",
+      "портвейн",
+      "игрист(?:ое|ого|ым|ые)\\s+вин",
+      "(?:бокал|бутылк)[а-яё]*\\s+вин",
+      "ром(?:а|у|ом)?(?![а-яё])",
+      "джин(?:а|у|ом)?(?![а-яё])",
+      "сигар(?:а|ы|у|ой|ам)?(?![а-яё])",
+      "сигарет",
+      "таба(?:к|ч)(?!ерк)",
+      "вейп",
+      "кальян",
+      "пив(?:о|а|у|е|ом)(?![а-яё])",
+      "пивн(?:ой|ая|ое|ые|ого|ую|ым|ых)(?![а-яё])",
+      "вин(?:о|ом|ный|ная|ное|ные|ного|ной|ным|ную|ных)(?![а-яё])"
+    ].join("|") +
+    ")[а-яё]*|(^|[^a-z])(iqos|vape|wine|beer|vodka|whisky|whiskey|tequila)(?![a-z])",
+  "iu"
+);
+
+/** Денежные призы (244-ФЗ): деньги на карту, наличные, кэшбэк деньгами — уже не промоакция, а риск азартной игры. */
+const MONEY_PRIZE = /(^|[^а-яё])(наличн[а-яё]*|денежн[а-яё]* приз[а-яё]*|деньг[а-яё]*|кэшбэк[а-яё]*|кешбэк[а-яё]*|(?:рубл[а-яё]*|₽) на (?:карту|счёт|счет|телефон))/iu;
 
 /** Локальные адреса и тестовые зоны: демо-пакет с таким `hosts` на боевой адрес не похож. */
 const LOCAL_HOST = /(^|\.)(localhost|test|example|invalid)(:\d+)?$/;
@@ -115,12 +155,17 @@ export async function checkAdventPack(raw: unknown, options: AdventCheckOptions 
   const markers: string[] = [];
   const stopWords: string[] = [];
   const restricted: string[] = [];
+  const restrictedInLegal: string[] = [];
+  const moneyPrizes: string[] = [];
   walkStrings(raw, "", (where, text) => {
     if (MARKER.test(text)) markers.push(where);
     const stop = STOP_WORDS.exec(text);
     if (stop) stopWords.push(`${where} («${stop[2]}…»)`);
     const forbidden = ALCOHOL_TOBACCO.exec(text);
-    if (forbidden) restricted.push(`${where} («${forbidden[2]}…»)`);
+    // В юридических текстах алкоголь обычно упоминают оговоркой («акция не распространяется на алкогольную продукцию»).
+    if (forbidden) (/(^|\.)legal\./.test(where) ? restrictedInLegal : restricted).push(`${where} («${forbidden[2] ?? forbidden[4]}…»)`);
+    const money = MONEY_PRIZE.exec(text);
+    if (money && !/(^|\.)legal\./.test(where)) moneyPrizes.push(`${where} («${money[2]}»)`);
   });
   if (markers.length > 0) {
     report.errors.push(`незаполненные места (TODO/FIXME): ${markers.length}, например ${markers.slice(0, 5).join(", ")}`);
@@ -131,11 +176,32 @@ export async function checkAdventPack(raw: unknown, options: AdventCheckOptions 
   if (restricted.length > 0) {
     report.errors.push(`алкоголь и табак нельзя делать призом и темой акции (38-ФЗ, 15-ФЗ): ${restricted.length}, например ${restricted.slice(0, 5).join(", ")}`);
   }
+  if (restrictedInLegal.length > 0) {
+    report.warnings.push(`юридические тексты упоминают алкоголь или табак: ${restrictedInLegal.slice(0, 5).join(", ")} — допустимо только как оговорка-исключение, проверьте`);
+  }
+  if (moneyPrizes.length > 0) {
+    report.warnings.push(`похоже на денежный приз (244-ФЗ: призы только не денежные): ${moneyPrizes.slice(0, 5).join(", ")}`);
+  }
   textLimits(advent, (message) => report.warnings.push(message));
 
   // Юридическое.
+  // НДФЛ: 4 000 ₽ — необлагаемый порог за год на человека (п. 28 ст. 217 НК), поэтому считаем и сумму всех наград участника.
+  const ndfl = advent.audience.kind === "employees"
+    ? "подарки работодателя сверх 4 000 ₽ в год облагаются НДФЛ"
+    : "с призов рекламной акции сверх 4 000 ₽ в год на человека удерживается НДФЛ (35%)";
   for (const reward of advent.rewards.filter(isOverNdflThreshold)) {
-    report.warnings.push(`награда ${reward.id}: ${reward.valueRub} ₽ дороже 4 000 ₽ — с приза удерживается НДФЛ 35%, предупредите заказчика`);
+    report.warnings.push(`награда ${reward.id}: ${reward.valueRub} ₽ дороже 4 000 ₽ — ${ndfl}, предупредите заказчика`);
+  }
+  const perParticipantRub = advent.rewards.reduce((sum, reward) => sum + (reward.valueRub ?? 0) * maxIssuancesPerParticipant(advent, reward.id), 0);
+  if (perParticipantRub > 4000 && !advent.rewards.some(isOverNdflThreshold)) {
+    report.warnings.push(`НДФЛ: один участник может получить наград до ${perParticipantRub} ₽ (сумма valueRub × число выдач) — ${ndfl}, предупредите заказчика`);
+  }
+  const unpriced = advent.rewards.filter((reward) => (reward.kind === "gift" || reward.kind === "promo") && reward.valueRub === undefined);
+  if (unpriced.length > 0) {
+    report.info.push(`НДФЛ: у наград ${unpriced.map((reward) => reward.id).join(", ")} не задана стоимость (valueRub) — порог 4 000 ₽ не проверить`);
+  }
+  if (advent.rules.requiresPurchase && (advent.days.some((day) => day.blocks.some((block) => block.type === "luck")) || advent.rewards.some((reward) => reward.kind === "finalEntry"))) {
+    report.warnings.push("rules.requiresPurchase вместе с удачей или финальным розыгрышем: случайный приз за покупку может считаться стимулирующей лотереей (138-ФЗ, уведомление ФНС) — нужна оценка юриста");
   }
   if (hasLegalPlaceholder(advent.legal)) {
     report.warnings.push("legal: в юридических текстах маркер «на согласовании юриста» — в production запуск запрещён");
