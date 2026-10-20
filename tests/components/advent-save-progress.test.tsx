@@ -64,13 +64,13 @@ describe("SaveProgressCard", () => {
     expect(onSubmit).toHaveBeenCalledWith({ email: "guest@example.test", consent: true, marketingConsent: false, reminderOptIn: false });
   });
 
-  it("с согласием на рассылку уходят оба признака", async () => {
+  it("чекбокс напоминаний включает только напоминания, а не согласие на рекламную рассылку", async () => {
     const onSubmit = mount();
     fireEvent.change(email(), { target: { value: "guest@example.test" } });
     fireEvent.click(consent());
     fireEvent.click(marketing());
     await act(async () => void fireEvent.click(submit()));
-    expect(onSubmit).toHaveBeenCalledWith({ email: "guest@example.test", consent: true, marketingConsent: true, reminderOptIn: true });
+    expect(onSubmit).toHaveBeenCalledWith({ email: "guest@example.test", consent: true, marketingConsent: false, reminderOptIn: true });
   });
 
   it("после отправки — «проверьте почту» с адресом; можно указать другой", async () => {

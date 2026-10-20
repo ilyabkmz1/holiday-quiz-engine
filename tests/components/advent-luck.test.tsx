@@ -109,11 +109,21 @@ describe("LuckReveal: число вариантов и колесо", () => {
     expect(wheel.style.transform).toBe(`rotate(${360 * 4 - 2 * 90}deg)`);
   });
 
-  it("колесо при reduced-motion не вращается, результат сразу", () => {
+  it("колесо при reduced-motion не вращается (без оборотов и перехода), но стоит на выбранном секторе; результат сразу", () => {
     const view = mount("wheel", "pending", { chosen: 2, choices: 4, reduced: true });
     view.rerenderWith({ phase: "reveal", chosen: 2, result });
-    expect(document.querySelector<SVGElement>(".adv-wheel")!.style.transform).toBe("rotate(0deg)");
+    const wheel = document.querySelector<SVGElement>(".adv-wheel")!;
+    expect(wheel.style.transform).toBe(`rotate(${-2 * 90}deg)`);
+    expect(wheel.style.transitionDuration).toBe("0s");
     expect(screen.getAllByText(result.label).length).toBeGreaterThan(0);
+  });
+
+  it("после выбора фокус не теряется: переходит на блок удачи", () => {
+    const view = mount("boxes", "choose", { chosen: null });
+    const box = screen.getAllByRole("button")[1];
+    box.focus();
+    view.rerenderWith({ phase: "pending", chosen: 1, result: null });
+    expect(document.activeElement).toBe(document.querySelector(".adv-luck"));
   });
 
   it("новый исход (другая выдача) снова проходит раскрытие", () => {

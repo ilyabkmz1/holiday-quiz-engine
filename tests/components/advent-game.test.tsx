@@ -114,6 +114,22 @@ describe("AdventGame: фазы", () => {
     }
   });
 
+  it("после последнего дня в момент финала без перезагрузки подтягивает итоги", async () => {
+    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval", "Date"] });
+    try {
+      const harness = memoryAdventApi({ start: new Date("2026-12-31T23:59:57+03:00") });
+      vi.setSystemTime(harness.clock.now);
+      mount(harness.api);
+      await act(async () => void (await Promise.resolve()));
+      await vi.waitFor(() => expect(door(12)).toHaveAttribute("data-status", "today"));
+      harness.clock.now = new Date("2027-01-01T00:00:01+03:00");
+      await act(async () => void vi.advanceTimersByTime(4000));
+      await vi.waitFor(() => expect(screen.getByRole("heading", { level: 2, name: copy.finaleTitle })).toBeInTheDocument());
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("финал: итоги, цели, главный приз и «поделиться»; двери не открываются", async () => {
     const harness = memoryAdventApi({ start: new Date("2027-01-01T10:00:00+03:00") });
     mount(harness.api);
@@ -181,6 +197,21 @@ describe("AdventGame: двери и лист", () => {
     fireEvent.click(door(3));
     expect(await screen.findByText("Этот день уже нельзя открыть.")).toBeInTheDocument();
     await waitFor(() => expect(getState).toHaveBeenCalled());
+  });
+
+  it("ошибка ответа на блок при открытом листе видна и озвучивается: подсказка вне inert-фона", async () => {
+    const harness = memoryAdventApi({ start: at(3) });
+    mount(harness.api);
+    await waitFor(() => expect(door(3)).toBeTruthy());
+    fireEvent.click(door(3));
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.click(within(dialog).getByRole("button", { name: copy.chapterNext }));
+    vi.spyOn(harness.api, "submitBlock").mockRejectedValueOnce(new ApiError(409, "Слишком много попыток."));
+    fireEvent.click(within(dialog).getByRole("button", { name: copy.storyNext }));
+    const hint = await screen.findByText("Слишком много попыток.");
+    expect(hint).toHaveAttribute("role", "status");
+    expect(hint.closest("[inert]")).toBeNull();
+    expect(document.querySelector("main")).toHaveAttribute("inert");
   });
 
   it("401 посреди игры (cookie пропала): участник создаётся заново, страница не падает", async () => {

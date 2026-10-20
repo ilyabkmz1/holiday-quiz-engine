@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest";
 
 import { grantsToCsv } from "@/server/csv";
-import { assertRewardSecrets } from "@/server/launch-checks";
-import { RewardService } from "@/server/services/reward-service";
+import { assertRewardSecrets, resolveRewardSecret } from "@/server/launch-checks";
+import { DEV_QR_SECRET, RewardService, secretLuckSeed } from "@/server/services/reward-service";
+import { luckSeed } from "@/domain/advent/draw";
 import { authenticateAdminRole } from "@/server/admin-auth";
 import { hashPassword } from "@/server/password";
 import { isAdminPagePath, isRedeemPagePath } from "@/server/admin-gate";
@@ -119,6 +120,24 @@ describe("удача", () => {
       await expect(ctx.service.submitBlock(p.id, 4, idx, { choice }, at(4, 10))).rejects.toMatchObject({ code: "invalid" });
     }
     expect((await ctx.repository.listGrants(p.id)).some((grant) => grant.source === "luck")).toBe(false);
+  });
+});
+
+describe("зерно удачи", () => {
+  it("секретное: без секрета исход по id участника не посчитать заранее", () => {
+    const a = secretLuckSeed("secret-a".repeat(4), "zerno", "p1", 4);
+    expect(secretLuckSeed("secret-a".repeat(4), "zerno", "p1", 4)).toBe(a);
+    expect(secretLuckSeed("secret-b".repeat(4), "zerno", "p1", 4)).not.toBe(a);
+    expect(a).not.toBe(luckSeed("zerno", "p1", 4));
+    expect(secretLuckSeed("secret-a".repeat(4), "zerno", "p1", 5)).not.toBe(a);
+    // С разными секретами исходы расходятся на заметной доле участников.
+    const pool = [{ rewardId: "big", weight: 1 }, { rewardId: "small", weight: 1 }];
+    const ids = Array.from({ length: 200 }, (_, index) => `p${index}`);
+    const differ = ids.filter((id) => {
+      const draw = (secret: string) => (secretLuckSeed(secret, "zerno", id, 4) / 2 ** 32 < 0.5 ? pool[0] : pool[1]).rewardId;
+      return draw("secret-a".repeat(4)) !== draw("secret-b".repeat(4));
+    });
+    expect(differ.length).toBeGreaterThan(50);
   });
 });
 
@@ -331,6 +350,14 @@ describe("касса", () => {
     expect(() => assertRewardSecrets({ ...production, REWARD_QR_SECRET: "x".repeat(32) }, advent.rewards)).not.toThrow();
     expect(() => assertRewardSecrets(production, [{ redeem: "online" }, { redeem: "none" }])).not.toThrow();
     expect(() => assertRewardSecrets({ ...production, NODE_ENV: "development" }, advent.rewards)).not.toThrow();
+  });
+
+  it("секрет для сервиса: на закрытом стенде и в локальном контуре — ключ разработки, в боевом production — только REWARD_QR_SECRET", () => {
+    const production = { APP_URL: "https://quiz.example.com", NODE_ENV: "production" as const, QUIZ_LOCAL_STACK: false };
+    expect(resolveRewardSecret(production)).toBeUndefined();
+    expect(resolveRewardSecret({ ...production, REWARD_QR_SECRET: "s".repeat(32) })).toBe("s".repeat(32));
+    expect(resolveRewardSecret({ ...production, STAGING_USERNAME: "demo", STAGING_PASSWORD: "demo-password" })).toBe(DEV_QR_SECRET);
+    expect(resolveRewardSecret({ APP_URL: "http://localhost:3000", NODE_ENV: "production", QUIZ_LOCAL_STACK: true })).toBe(DEV_QR_SECRET);
   });
 });
 

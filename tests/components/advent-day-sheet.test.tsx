@@ -131,6 +131,27 @@ describe("DaySheet: награды и вход", () => {
     expect(state.grants.filter((grant) => grant.day === 5)).toEqual([]);
   });
 
+  it("подарок догнанного дня при rewardOnlyOnDay: блок пройден, подарка нет — итог дня, а не снова «Открыть подарок»", async () => {
+    const harness = memoryAdventApi({ start: at(6) });
+    await harness.ensureParticipant();
+    await harness.api.requestLink({ email: "guest@example.test", consent: true, marketingConsent: false, reminderOptIn: false });
+    await harness.confirmLogin();
+    const { state } = await harness.api.openDay(5);
+    render(<Host harness={harness} initial={state} n={5} onClose={vi.fn()} onError={vi.fn()} />);
+    const pick = task("brew-shot") as Extract<Task, { type: "pick" }>;
+    next(copy.chapterNext);
+    next(await screen.findByRole("button", { name: copy.storyNext }).then(() => copy.storyNext));
+    fireEvent.click(await within(dialog()).findByRole("button", { name: pick.options.find((option) => option.id === pick.correctOptionId)!.title }));
+    next(await within(dialog()).findByRole("button", { name: copy.outcomeNext }).then(() => copy.outcomeNext));
+    fireEvent.click(await within(dialog()).findByRole("button", { name: copy.promoOpen }));
+    expect(await within(dialog()).findByRole("heading", { level: 3, name: copy.dayDoneTitle })).toBeInTheDocument();
+    expect(within(dialog()).getByText(copy.dayDoneNoReward)).toBeInTheDocument();
+    expect(within(dialog()).queryByRole("button", { name: copy.promoOpen })).not.toBeInTheDocument();
+    const fresh = await harness.api.getState();
+    expect(dayOf(fresh, 5).blocks[2]).toMatchObject({ type: "promo", done: true });
+    expect(fresh.grants.filter((grant) => grant.day === 5 && grant.source === "day")).toEqual([]);
+  });
+
   it("удача анонимному: identity_required, анимации раскрытия нет, приз не разыгран, остаток не списан", async () => {
     const harness = memoryAdventApi({ start: at(4) });
     await harness.ensureParticipant();

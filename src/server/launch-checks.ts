@@ -1,5 +1,6 @@
 import { hasLegalPlaceholder, type LegalConfig } from "@/config/legal";
 import { isPreviewEnvironment, type RuntimeEnv } from "@/server/env";
+import { DEV_QR_SECRET } from "@/server/services/reward-service";
 
 type LaunchEnv = Pick<RuntimeEnv, "APP_URL" | "NODE_ENV" | "QUIZ_LOCAL_STACK"> &
   Partial<Pick<RuntimeEnv, "STAGING_USERNAME" | "STAGING_PASSWORD">>;
@@ -33,4 +34,13 @@ export function assertRewardSecrets(env: RewardSecretEnv, rewards: ReadonlyArray
       `Адвент${tenant ? ` «${tenant}»` : ""} гасит награды на кассе по личному QR: задайте REWARD_QR_SECRET (не короче 32 символов, openssl rand -hex 32)`
     );
   }
+}
+
+/**
+ * Секрет подписи QR и зерна удачи для RewardService: `REWARD_QR_SECRET`, а на закрытом стенде и в локальном контуре
+ * (там образ собран с NODE_ENV=production) — ключ разработки, как обещает assertRewardSecrets. В боевом запуске без
+ * секрета — `undefined`: QR не выдаётся, зерно удачи случайное.
+ */
+export function resolveRewardSecret(env: RewardSecretEnv): string | undefined {
+  return env.REWARD_QR_SECRET || (isPreviewEnvironment(env) ? DEV_QR_SECRET : undefined);
 }

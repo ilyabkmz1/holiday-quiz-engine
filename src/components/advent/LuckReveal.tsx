@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 
 import { AdventIcon } from "@/components/advent/icons";
 import { Burst } from "@/components/advent/Burst";
@@ -66,6 +66,16 @@ export function LuckReveal({ skin, choices, copy, phase, chosen, result, reduced
     const timer = window.setTimeout(() => setDoneKey(revealKey), LUCK_REVEAL_MS[skin]);
     return () => window.clearTimeout(timer);
   }, [revealKey, reduced, skin]);
+  // После выбора кнопки блокируются (у колеса — исчезают), и фокус ушёл бы на body: Escape и Tab в листе перестали бы работать.
+  const sectionRef = useRef<HTMLElement>(null);
+  useEffect(() => {
+    const section = sectionRef.current;
+    if (phase === "choose" || !section) return;
+    const active = document.activeElement;
+    if (active === null || active === document.body || (section.contains(active) && (active as HTMLButtonElement).disabled)) {
+      section.focus({ preventScroll: true });
+    }
+  }, [phase]);
   const revealing = revealKey !== null;
   const settled = revealing && (reduced || doneKey === revealKey);
   const locked = disabled || phase !== "choose";
@@ -76,10 +86,11 @@ export function LuckReveal({ skin, choices, copy, phase, chosen, result, reduced
   const stateOf = (index: number) => (chosen === null ? "idle" : chosen === index ? (revealing ? "open" : "picked") : "dim");
 
   const step = 360 / choices;
-  const spin = revealing && chosen !== null && !reduced ? 360 * 4 - chosen * step : 0;
+  // При reduced-motion без оборотов и без перехода (transitionDuration 0s), но указатель всё равно на выбранном секторе.
+  const spin = revealing && chosen !== null ? (reduced ? -chosen * step : 360 * 4 - chosen * step) : 0;
 
   return (
-    <section className={`adv-luck adv-luck-${skin}`} data-phase={phase} data-settled={settled ? "true" : "false"} aria-label={copy.luckTitle}>
+    <section ref={sectionRef} tabIndex={-1} className={`adv-luck adv-luck-${skin}`} data-phase={phase} data-settled={settled ? "true" : "false"} aria-label={copy.luckTitle}>
       <h3 className="adv-luck-title">{copy.luckTitle}</h3>
       <p className="adv-luck-prompt">{phase === "choose" ? copy[PROMPTS[skin]] : phase === "pending" ? copy.luckPending : ""}</p>
 

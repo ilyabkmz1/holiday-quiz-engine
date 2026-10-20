@@ -1,7 +1,7 @@
 import { createHmac, randomInt, timingSafeEqual } from "node:crypto";
 
 import type { AdventConfig, AdventReward } from "@/config/advent-schema";
-import { drawLuck, generateRewardCode, luckSeed, rewardExpiresAt, type LuckPoolItem } from "@/domain/advent";
+import { drawLuck, generateRewardCode, rewardExpiresAt, type LuckPoolItem } from "@/domain/advent";
 import { DomainError } from "@/domain/errors";
 import { createId } from "@/server/crypto";
 import type { AdventRepository, CodeSource, GrantSource, IssueGrantResult, ParticipantRecord, RewardGrantRecord } from "@/server/repositories/advent-repository";
@@ -14,13 +14,24 @@ const QR_MAC_LENGTH = 22;
 export const CODE_IMPORT_LIMITS = { bytes: 2_000_000, rows: 50_000 } as const;
 /** Допустимый вид кода из CSV: буквы, цифры, дефис и подчёркивание; регистр не различается (хранится в верхнем). */
 export const IMPORTED_CODE_PATTERN = /^[A-Z0-9][A-Z0-9_-]{2,63}$/;
-/** Секрет подписи, если `REWARD_QR_SECRET` не задан вне production (в production запуск без него не проходит проверку). */
-const DEV_QR_SECRET = "dev-only-reward-qr-secret-do-not-use-in-production";
+/**
+ * Секрет подписи, если `REWARD_QR_SECRET` не задан вне production или на закрытом стенде (container.ts);
+ * в боевом production запуск без него не проходит проверку.
+ */
+export const DEV_QR_SECRET = "dev-only-reward-qr-secret-do-not-use-in-production";
 
 export type RewardAudit = (event: string, entityId: string | null, metadata?: Record<string, string | number | boolean | null>) => Promise<void>;
 
+/**
+ * Зерно розыгрыша удачи с секретом: HMAC от (кампания, участник, день). Id участника клиент знает, поэтому зерно
+ * без секрета позволило бы заранее посчитать исход и войти по ссылке только в «выигрышного» анонима.
+ */
+export function secretLuckSeed(secret: string, campaignSlug: string, participantId: string, day: number): number {
+  return createHmac("sha256", secret).update(`advent-luck:v1:${campaignSlug}:${participantId}:${day}`).digest().readUInt32BE(0);
+}
+
 export type RewardServiceOptions = {
-  /** Секрет подписи личного QR (`REWARD_QR_SECRET`). Без него QR не выдаётся. */
+  /** Секрет подписи личного QR и зерна удачи (`REWARD_QR_SECRET`). Без него QR не выдаётся, а зерно удачи случайное. */
   qrSecret?: string;
   /** Публичный адрес арендатора: из него строится ссылка `/redeem?code=…` для QR. */
   baseUrl?: string;
@@ -229,7 +240,8 @@ export class RewardService {
   }
 
   /**
-   * Розыгрыш удачи для дня `day`. Детерминирован (`luckSeed`) и идемпотентен: повтор возвращает ту же выдачу.
+   * Розыгрыш удачи для дня `day`. Зерно секретное (`secretLuckSeed`; без секрета — случайное), повтор возвращает
+   * ту же выдачу по ключу (участник, luck, день).
    * Остатки призов создаются лениво (`ensureStock`, `ON CONFLICT DO NOTHING`) при первом розыгрыше кампании.
    * Приз без остатка или без свободного кода исключается и разыгрывается заново; гарантирует исход `luck.fallbackRewardId`.
    */
@@ -242,7 +254,8 @@ export class RewardService {
       this.advent.rewards.filter((reward) => reward.stock !== undefined).map((reward) => ({ rewardId: reward.id, left: reward.stock! }))
     );
     const fallbackRewardId = this.advent.luck?.fallbackRewardId;
-    const seed = luckSeed(this.advent.slug, participant.id, day);
+    const secret = this.secret();
+    const seed = secret ? secretLuckSeed(secret, this.advent.slug, participant.id, day) : randomInt(0, 2 ** 32);
     const excluded = new Set<string>();
 
     for (let attempt = 0; attempt <= pool.length; attempt += 1) {
@@ -276,8 +289,12 @@ export class RewardService {
 
   // ---------------------------------------------------------------- Личный QR
 
+  private secret(): string | undefined {
+    return this.options.qrSecret ?? (process.env.NODE_ENV === "production" ? undefined : DEV_QR_SECRET);
+  }
+
   private macOf(grantId: string): string | null {
-    const secret = this.options.qrSecret ?? (process.env.NODE_ENV === "production" ? undefined : DEV_QR_SECRET);
+    const secret = this.secret();
     if (!secret) return null;
     return createHmac("sha256", secret).update(`advent-redeem:v1:${this.advent.slug}:${grantId}`).digest("base64url").slice(0, QR_MAC_LENGTH);
   }

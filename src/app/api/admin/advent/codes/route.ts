@@ -33,7 +33,13 @@ export async function POST(request: NextRequest) {
     let rewardId: string;
     let csv: string;
     if (request.headers.get("content-type")?.includes("application/json")) {
-      const body = jsonBodySchema.parse(JSON.parse(text));
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(text);
+      } catch {
+        throw new DomainError("invalid", "Тело запроса — не JSON.");
+      }
+      const body = jsonBodySchema.parse(parsed);
       ({ rewardId, csv } = body);
     } else {
       rewardId = z.string().min(1).max(64).parse(request.nextUrl.searchParams.get("rewardId"));
