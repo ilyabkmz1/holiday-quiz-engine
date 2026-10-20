@@ -62,7 +62,27 @@ describe("quiz:rules: правила акции из пакета", () => {
     const filled = rules((draft) => (draft.advent.rules = { organizerDetails: "ИНН 7700000000, г. Москва", contact: "privacy@zerno.example" }));
     expect(filled).toContain("Реквизиты: ИНН 7700000000, г. Москва.");
     expect(filled).toContain("Вопросы по акции и по персональным данным: privacy@zerno.example.");
-    expect(filled).not.toContain("*заполнить");
+    // Остаются только пометки о главном призе и вручении — не о реквизитах и контакте.
+    expect(filled).not.toContain("*заполнить (ИНН");
+    expect(filled).not.toContain("rules.contact");
+  });
+
+  it("главный приз и подарок без погашения — места для заполнения, а не «начисляется автоматически»", () => {
+    expect(text).toContain("Главный приз (Участие в финальном розыгрыше): *заполнить");
+    expect(text).toContain("количество призов");
+    expect(text).not.toContain("начисляется автоматически");
+  });
+
+  it("покупка для участия: про бесплатность «удачи» не пишем; название действия удачи по скину", () => {
+    const purchase = rules((draft) => (draft.advent.rules = { requiresPurchase: true }));
+    expect(purchase).not.toMatch(/бесплатн/);
+    expect(text).toContain("выбор коробки (удача)");
+    expect(rules((draft) => (draft.advent.luck = { ...draft.advent.luck, skin: "wheel" }))).toContain("вращение колеса (удача)");
+  });
+
+  it("символ | в названии награды не ломает таблицу призов", () => {
+    const piped = rules((draft) => (draft.advent.rewards[0].label = "Кофе | десерт"));
+    expect(piped).toContain("| Кофе \\| десерт |");
   });
 
   it("покупка для участия: вместо «бесплатное» — условие и ст. 9 38-ФЗ", () => {

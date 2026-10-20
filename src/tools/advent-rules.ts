@@ -31,9 +31,17 @@ function redeemText(reward: AdventReward): string {
     case "both":
       return `на сайте${reward.url ? ` (${reward.url})` : ""} или на кассе по коду или личному QR-коду`;
     default:
-      return "отдельных действий для получения не требуется: награда начисляется автоматически";
+      // Баллы начисляются сами; подарок или участие в розыгрыше без погашения вручают как-то иначе — это решает заказчик.
+      return reward.kind === "points" ? "отдельных действий для получения не требуется: баллы начисляются автоматически" : "порядок вручения: *заполнить (где, когда и как участник получает приз)*";
   }
 }
+
+/** Ячейка таблицы Markdown: `|` и перевод строки ломают таблицу. */
+function cell(text: string): string {
+  return text.replace(/\|/g, "\\|").replace(/\s*\n\s*/g, " ");
+}
+
+const LUCK_ACTION: Record<string, string> = { boxes: "выбор коробки", wheel: "вращение колеса", scratch: "стирание карточки" };
 
 function validityText(reward: AdventReward): string {
   if (reward.codes === undefined) return "срок не применяется";
@@ -87,7 +95,7 @@ export function buildRules(pack: AdventPack): string {
     out("- Участие **бесплатное**: покупка товаров и услуг, взнос и иные платежи не требуются.");
   }
   out(
-    `- Участник заходит на сайт акции, ежедневно открывает дверь текущего дня и проходит блоки дня: ${advent.days.some((day) => day.blocks.some((block) => block.type === "task")) ? "история, вопрос" : "история"}${advent.days.some((day) => day.blocks.some((block) => block.type === "luck")) ? ", выбор коробки (удача)" : ""}${advent.days.some((day) => day.blocks.some((block) => block.type === "promo")) ? ", подарок дня" : ""}.`,
+    `- Участник заходит на сайт акции, ежедневно открывает дверь текущего дня и проходит блоки дня: ${advent.days.some((day) => day.blocks.some((block) => block.type === "task")) ? "история, вопрос" : "история"}${advent.days.some((day) => day.blocks.some((block) => block.type === "luck")) ? `, ${LUCK_ACTION[advent.luck?.skin ?? "boxes"]} (удача)` : ""}${advent.days.some((day) => day.blocks.some((block) => block.type === "promo")) ? ", подарок дня" : ""}.`,
     `- ${catchUpText(pack)}`,
     `- Серия считается по дням, открытым в свой день.${advent.streak.freezes > 0 ? ` Допускается пропустить до ${advent.streak.freezes} ${plural(advent.streak.freezes, ["дня", "дней", "дней"])} без потери серии (заморозки).` : ""}${advent.streak.endowedDay ? " За участие в акции участнику засчитывается один подаренный день." : ""}`,
     "- Награды с кодом, остатком или погашением на кассе выдаются участникам, подтвердившим email по ссылке из письма; ссылка действует 30 минут и срабатывает один раз.",
@@ -95,7 +103,7 @@ export function buildRules(pack: AdventPack): string {
   );
   if (advent.days.some((day) => day.blocks.some((block) => block.type === "luck"))) {
     out(
-      "- «Удача»: выбор коробки, сектора или карточки носит игровой характер и на результат не влияет. Исход определяет сервер случайным образом среди призов, которые ещё остались, по заранее заданным весам; число призов с ограниченным остатком указано в разделе 4. Участие в «удаче» бесплатное.",
+      `- «Удача»: выбор коробки, сектора или карточки носит игровой характер и на результат не влияет. Исход определяет сервер случайным образом среди призов, которые ещё остались, по заранее заданным весам; число призов с ограниченным остатком указано в разделе 4.${rules.requiresPurchase ? "" : " Участие в «удаче» бесплатное."}`,
       ""
     );
   }
@@ -110,9 +118,16 @@ export function buildRules(pack: AdventPack): string {
 
   out("## 4. Призы и порядок выдачи", "", "| Награда | Вид | Стоимость | Остаток | Как получить |", "|---|---|---|---|---|");
   for (const reward of advent.rewards) {
-    out(`| ${reward.label} | ${KIND[reward.kind]} | ${reward.valueRub !== undefined ? `${reward.valueRub} ₽` : "—"} | ${reward.stock !== undefined ? `${reward.stock} шт.` : "без ограничения"} | ${redeemText(reward)} |`);
+    out(`| ${cell(reward.label)} | ${KIND[reward.kind]} | ${reward.valueRub !== undefined ? `${reward.valueRub} ₽` : "—"} | ${reward.stock !== undefined ? `${reward.stock} шт.` : "без ограничения"} | ${cell(redeemText(reward))} |`);
   }
   out("");
+  const finals = advent.rewards.filter((reward) => reward.kind === "finalEntry");
+  if (finals.length > 0) {
+    out(
+      `Главный приз (${finals.map((reward) => reward.label).join(", ")}): *заполнить — что именно разыгрывается, количество призов, как и когда определяется победитель (дата, способ, кто проводит), как победителя уведомят и как он получит приз (ст. 9 38-ФЗ требует указать количество призов, сроки и порядок их получения).*`,
+      ""
+    );
+  }
   const rich = advent.rewards.filter((reward) => (reward.valueRub ?? 0) > NDFL_THRESHOLD_RUB);
   if (rich.length > 0) {
     out(`Стоимость призов (${rich.map((reward) => reward.label).join(", ")}) превышает ${String(NDFL_THRESHOLD_RUB).replace(/\B(?=(\d{3})+(?!\d))/g, " ")} ₽: с превышающей части удерживается налог на доходы физических лиц; порядок удержания и уведомления победителей — *согласовать с юристом и бухгалтерией заказчика*.`, "");
@@ -139,7 +154,7 @@ export function buildRules(pack: AdventPack): string {
     "",
     "## 7. Прочее",
     "",
-    "- Организатор вправе изменить правила и сроки, опубликовав новую редакцию на сайте акции.",
+    "- Об изменении условий или досрочном прекращении акции организатор сообщает на сайте акции тем же способом, каким объявил её (ч. 2 ст. 9 38-ФЗ); *порядок изменения условий согласовать с юристом заказчика*.",
     "- Организатор вправе отказать в выдаче награды при злоупотреблениях (многократная регистрация, подделка кодов).",
     ""
   );
