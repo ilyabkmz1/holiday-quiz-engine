@@ -22,8 +22,9 @@ export function garlandModel(totalDays: number, progress: number, nextGoalOpened
   const perBulb = total <= GARLAND_MAX_BULBS ? 1 : Math.ceil(total / GARLAND_MAX_BULBS);
   const bulbs = Math.ceil(total / perBulb);
   const opened = Math.min(total, Math.max(0, Math.floor(progress)));
-  // Сегмент загорается целиком, когда открыты все его дни; последний огонёк — только при полном прогрессе.
-  const lit = Math.min(bulbs, Math.floor(opened / perBulb));
+  // Сегмент загорается целиком, когда открыты все его дни. Последний сегмент бывает короче остальных (31 день по 2):
+  // он горит при полном прогрессе.
+  const lit = opened >= total ? bulbs : Math.min(bulbs, Math.floor(opened / perBulb));
   const goalBulb = nextGoalOpened === null ? null : Math.min(bulbs, Math.max(1, Math.ceil(nextGoalOpened / perBulb)));
   const left = goalBulb === null ? 0 : Math.max(0, goalBulb - lit);
   return { bulbs, perBulb, lit, goalBulb, left };

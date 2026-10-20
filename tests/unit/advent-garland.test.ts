@@ -18,6 +18,12 @@ describe("garlandModel: гирлянда-шкала", () => {
     for (const days of [5, 7, 12, 16, 17, 24, 31]) expect(garlandModel(days, 0, null).bulbs).toBeLessThanOrEqual(GARLAND_MAX_BULBS);
   });
 
+  it("короткий последний сегмент (31 день по 2) загорается при полном прогрессе, цель на нём достижима", () => {
+    expect(garlandModel(31, 31, null)).toMatchObject({ bulbs: 16, perBulb: 2, lit: 16 });
+    expect(garlandModel(31, 30, 31)).toMatchObject({ lit: 15, goalBulb: 16, left: 1 });
+    for (let days = 5; days <= 31; days += 1) expect(garlandModel(days, days, null).lit, `${days} дней`).toBe(garlandModel(days, days, null).bulbs);
+  });
+
   it("прогресс вне границ не ломает шкалу", () => {
     expect(garlandModel(12, 99, null).lit).toBe(12);
     expect(garlandModel(12, -3, 5).lit).toBe(0);
