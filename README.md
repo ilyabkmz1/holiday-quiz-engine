@@ -239,7 +239,7 @@ Workflow `.github/workflows/ci.yml` запускается на push в `main` �
 
 `payload` по типу задания: `pick`, `phish` — `{ optionId }`; `build` — `{ optionIds }` ровно из `slots` карточек; `access` — `{ enabledIds }`; `order` — `{ orderedIds }` со всеми карточками. Правильные ответы, `explanation`, `tip`, `thanks` и `oops` неотвеченных заданий клиенту не отдаются: они приходят в `reveal` после ответа и затем в `session.answers`. Клиентские таймеры нужны только для показа: решения принимает сервер. Клиент хранит в `localStorage` только id сессии, cookie доступа ставит сервер; после перезагрузки экран определяется по `GET /api/sessions/:id`.
 
-API адвента — под `/api/advent/` (см. `docs/engine/ADVENT_PLAN.md`). Напоминания (A5): `POST /api/advent/reminders` (переключатель «Напоминания на почту»), `GET /api/advent/reminders/open` (кнопка письма), `POST /api/advent/unsubscribe` (кнопка страницы `/unsubscribe`), `POST /api/advent/unsubscribe/one-click` (RFC 8058), `GET /api/admin/advent/metrics`.
+API адвента — под `/api/advent/` (см. `docs/engine/ADVENT_PLAN.md`). Напоминания (A5, по умолчанию выключены; письма — только участникам с согласием на рекламную рассылку по ст. 18 38-ФЗ): `POST /api/advent/reminders` (переключатель «Напоминания на почту»; включение — только с `marketingConsent: true`), `GET /api/advent/reminders/open` (кнопка письма: с cookie участника — сразу на день, иначе страница `/reminder`), `POST /api/advent/reminders/login` (кнопка «Прислать ссылку для входа» на `/reminder`: свежая ссылка на адрес владельца письма), `POST /api/advent/unsubscribe` (кнопка страницы `/unsubscribe`), `POST /api/advent/unsubscribe/one-click` (RFC 8058), `GET /api/admin/advent/metrics`.
 
 ## Операторский доступ
 
