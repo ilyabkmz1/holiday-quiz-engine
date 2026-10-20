@@ -118,6 +118,14 @@ describe("LuckReveal: число вариантов и колесо", () => {
     expect(screen.getAllByText(result.label).length).toBeGreaterThan(0);
   });
 
+  it("после выбора фокус не теряется: переходит на блок удачи", () => {
+    const view = mount("boxes", "choose", { chosen: null });
+    const box = screen.getAllByRole("button")[1];
+    box.focus();
+    view.rerenderWith({ phase: "pending", chosen: 1, result: null });
+    expect(document.activeElement).toBe(document.querySelector(".adv-luck"));
+  });
+
   it("новый исход (другая выдача) снова проходит раскрытие", () => {
     const view = mount("boxes", "reveal", { chosen: 0, result });
     act(() => void vi.advanceTimersByTime(LUCK_REVEAL_MS.boxes + 100));
