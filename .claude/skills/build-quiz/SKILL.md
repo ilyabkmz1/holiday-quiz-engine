@@ -143,7 +143,7 @@ npm run quiz:new -- <slug> --experience advent --days 12 --profile horeca --brie
 `rewards[]`: `kind` (`promo`, `gift`, `points`, `finalEntry`), `redeem` (`online` — нужен `url`; `cashier` — QR на кассе; `both`; `none`), `validDays`, `stock` (остаток для удачи), `codes`:
 - `{ "static": "КОД" }` — один общий код (гасится только по QR, если погашение на кассе);
 - `{ "generated": { "prefix": "NY", "length": 6 } }` — код на выдачу;
-- `{ "list": "codes/<id>.csv" }` — список клиента: положите CSV в `tenants/<slug>/codes/` для проверки запаса или загрузите в админке (`POST /api/admin/advent/codes`), задайте `expectedParticipants`.
+- `{ "list": "codes/<id>.csv" }` — список клиента: положите CSV в `tenants/<slug>/codes/` для проверки запаса (каталог локальный: он в `.gitignore` и `.dockerignore`, не коммитьте его) и загрузите в админке (`POST /api/admin/advent/codes`), задайте `expectedParticipants`.
 Награды с кодом, остатком или погашением на кассе получают только вошедшие по ссылке: так задумано (антифарминг).
 
 ### 6. Проверка
