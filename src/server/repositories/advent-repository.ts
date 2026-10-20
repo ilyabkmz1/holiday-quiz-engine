@@ -65,8 +65,6 @@ export type LoginTokenRecord = {
   consentAt: Date;
   marketingConsentAt: Date | null;
   reminderOptIn: boolean;
-  /** Ссылка выпущена сервером для подтверждённого адреса (письмо-напоминание), а не запрошена с устройства. */
-  trusted: boolean;
   createdAt: Date;
   expiresAt: Date;
   usedAt: Date | null;
@@ -249,6 +247,11 @@ export type ReminderCandidateQuery = {
 };
 
 export type ReminderClaimInput = {
+  /**
+   * Идентификатор доставки (uuid), выбранный до заявки: письмо со ссылкой собирается заранее, и между заявкой и отправкой
+   * нет обращений к БД. Повтор неудачной доставки получает новый идентификатор (ссылки неотправленного письма не нужны).
+   */
+  deliveryId: string;
   participantId: string;
   day: number;
   now: Date;
@@ -288,8 +291,10 @@ export interface ReminderRepository {
   /** Участник по хешу токена отписки: последнему или любому из прежних писем. */
   findParticipantByUnsubscribeHash(hash: string): Promise<ParticipantRecord | null>;
   /**
-   * Включает или отключает напоминания. Идемпотентно. Согласие на обработку персональных данных не трогает;
-   * отключение запоминает `unsubscribedAt` (первое сохраняется), включение его сбрасывает. Участника нет — `null`.
+   * Включает или отключает напоминания. Напоминания — рассылка (ст. 18 38-ФЗ), поэтому включение записывает и согласие на неё
+   * (`marketingConsentAt`, первое сохраняется), а отключение (отписка, переключатель) его отзывает: `reminderOptIn = false`,
+   * `marketingConsentAt = null`, `unsubscribedAt` — момент первой отписки; включение его сбрасывает. Идемпотентно.
+   * Согласие на обработку персональных данных не трогает. Участника нет — `null`.
    */
   setReminderOptIn(participantId: string, enabled: boolean, now: Date): Promise<ParticipantRecord | null>;
   reminderStats(campaignSlug: string): Promise<ReminderStats>;

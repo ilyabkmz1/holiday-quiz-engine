@@ -51,7 +51,7 @@ export function memoryAdventApi(options: { advent?: AdventConfig; start?: Date }
       }),
     openDay: (n) => call(async () => timed({ state: await ctx.service.openDay(require(), n, clock.now) })),
     submitBlock: (n, index, payload) => call(async () => timed(await ctx.service.submitBlock(require(), n, index, payload ?? {}, clock.now))),
-    setReminders: (enabled) => call(async () => timed({ state: await ctx.service.setReminders(require(), enabled, clock.now) })),
+    setReminders: (input) => call(async () => timed({ state: await ctx.service.setReminders(require(), input, clock.now) })),
     requestLink: (input) =>
       call(async () => {
         await identity.requestLink(require(), input, clock.now);

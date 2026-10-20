@@ -14,6 +14,14 @@ if (!databaseUrl) throw new Error("DATABASE_URL is required");
 const appUrl = process.env.APP_URL;
 if (!appUrl) throw new Error("APP_URL is required");
 
+// SIGTERM/SIGINT (деплой, docker stop): текущее письмо дописывается, следующее не начинается, процесс выходит штатно.
+let stopping = false;
+const stop = () => {
+  stopping = true;
+};
+process.on("SIGTERM", stop);
+process.on("SIGINT", stop);
+
 const tenants = getTenants().filter(isAdventTenant);
 const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: databaseUrl }) });
 let failed = 0;
@@ -26,13 +34,15 @@ try {
     appUrl,
     options: parseReminderOptions(process.env),
     repositoryFor: () => repository,
-    send: (email, vars) => sendMail("reminder", email, vars)
+    send: (email, vars) => sendMail("reminder", email, vars),
+    shouldStop: () => stopping
   });
   for (const report of reports) {
     failed += report.failed;
     if (report.skipped === "error") process.exitCode = 1;
     console.info(JSON.stringify({ event: "advent_reminders_run", ...report }));
   }
+  if (stopping) console.info(JSON.stringify({ event: "advent_reminders_stopped" }));
   if (reports.length === 0) console.info(JSON.stringify({ event: "advent_reminders_run", tenants: 0 }));
 } finally {
   await prisma.$disconnect();

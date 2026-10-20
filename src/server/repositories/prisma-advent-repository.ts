@@ -402,6 +402,8 @@ export class PrismaAdventRepository implements AdventRepository, IdentityReposit
         reminderOptIn: true,
         normalizedEmail: { not: null },
         consentAt: { not: null },
+        // Напоминание — рассылка: без согласия на неё (ст. 18 38-ФЗ) не шлём.
+        marketingConsentAt: { not: null },
         dayOpens: { none: { day: query.day } },
         // Доставка есть и не подлежит повтору — не кандидат.
         reminders: {
@@ -422,14 +424,14 @@ export class PrismaAdventRepository implements AdventRepository, IdentityReposit
     // упирается в уникальный ключ (участник, день) и ждёт первого; его условие `status = 'failed'` уже не выполняется.
     const rows = await this.prisma.$transaction(async (tx) => {
       const claimed = await tx.$queryRaw<DeliveryRow[]>`
-        INSERT INTO "ReminderDelivery" ("participantId", "day", "status", "attempts", "claimedAt", "lastAttemptAt", "unsubscribeHash")
-        SELECT p."id", ${input.day}, 'sending', 1, ${utc(input.now)}, ${utc(input.now)}, ${input.unsubscribeHash}
+        INSERT INTO "ReminderDelivery" ("id", "participantId", "day", "status", "attempts", "claimedAt", "lastAttemptAt", "unsubscribeHash")
+        SELECT ${input.deliveryId}::uuid, p."id", ${input.day}, 'sending', 1, ${utc(input.now)}, ${utc(input.now)}, ${input.unsubscribeHash}
         FROM "Participant" p
         WHERE p."id" = ${input.participantId}::uuid
-          AND p."reminderOptIn" AND p."normalizedEmail" IS NOT NULL AND p."consentAt" IS NOT NULL
+          AND p."reminderOptIn" AND p."normalizedEmail" IS NOT NULL AND p."consentAt" IS NOT NULL AND p."marketingConsentAt" IS NOT NULL
           AND NOT EXISTS (SELECT 1 FROM "DayOpen" o WHERE o."participantId" = p."id" AND o."day" = ${input.day})
         ON CONFLICT ("participantId", "day") DO UPDATE SET
-          "status" = 'sending', "attempts" = "ReminderDelivery"."attempts" + 1, "lastError" = NULL,
+          "id" = ${input.deliveryId}::uuid, "status" = 'sending', "attempts" = "ReminderDelivery"."attempts" + 1, "lastError" = NULL,
           "claimedAt" = ${utc(input.now)}, "lastAttemptAt" = ${utc(input.now)}, "unsubscribeHash" = ${input.unsubscribeHash}
         WHERE "ReminderDelivery"."status" = 'failed' AND "ReminderDelivery"."attempts" < ${input.maxAttempts}
           AND "ReminderDelivery"."lastAttemptAt" < ${utc(input.retryBefore)}
@@ -472,9 +474,16 @@ export class PrismaAdventRepository implements AdventRepository, IdentityReposit
   async setReminderOptIn(participantId: string, enabled: boolean, now: Date): Promise<ParticipantRecord | null> {
     // Условные UPDATE: повтор ничего не меняет, а первая отписка запоминает свой момент.
     if (enabled) {
-      await this.prisma.participant.updateMany({ where: { id: participantId, OR: [{ reminderOptIn: false }, { unsubscribedAt: { not: null } }] }, data: { reminderOptIn: true, unsubscribedAt: null } });
+      // Одна инструкция: согласие на рассылку — первое сохраняется (COALESCE), отметка ставится, прежняя отписка снимается.
+      await this.prisma.$executeRaw`
+        UPDATE "Participant" SET "reminderOptIn" = true, "unsubscribedAt" = NULL, "marketingConsentAt" = COALESCE("marketingConsentAt", ${utc(now)})
+        WHERE "id" = ${participantId}::uuid AND (NOT "reminderOptIn" OR "unsubscribedAt" IS NOT NULL OR "marketingConsentAt" IS NULL)`;
     } else {
-      await this.prisma.participant.updateMany({ where: { id: participantId, reminderOptIn: true }, data: { reminderOptIn: false, unsubscribedAt: now } });
+      // Отзыв согласия на рассылку вместе с отметкой; повтор не сдвигает момент первой отписки.
+      await this.prisma.participant.updateMany({
+        where: { id: participantId, OR: [{ reminderOptIn: true }, { marketingConsentAt: { not: null } }] },
+        data: { reminderOptIn: false, marketingConsentAt: null, unsubscribedAt: now }
+      });
     }
     return this.getParticipant(participantId);
   }
@@ -491,7 +500,7 @@ export class PrismaAdventRepository implements AdventRepository, IdentityReposit
         FROM "ReminderDelivery" r JOIN "Participant" p ON p."id" = r."participantId"
         WHERE p."campaignSlug" = ${campaignSlug}
         GROUP BY r."day" ORDER BY r."day"`,
-      this.prisma.participant.count({ where: { campaignSlug, reminderOptIn: true, normalizedEmail: { not: null } } }),
+      this.prisma.participant.count({ where: { campaignSlug, reminderOptIn: true, normalizedEmail: { not: null }, marketingConsentAt: { not: null } } }),
       this.prisma.participant.count({ where: { campaignSlug, reminderOptIn: false, unsubscribedAt: { not: null } } })
     ]);
     return {
@@ -575,8 +584,7 @@ export class PrismaAdventRepository implements AdventRepository, IdentityReposit
 
     const mergedFrom: string[] = [];
     // Ссылку открыли не на устройстве, которое её запросило: устройства запросившего доступа не получают (см. контракт).
-    // Ссылка сервера на подтверждённый адрес (`trusted`, письмо-напоминание) устройство не запрашивала: ключи не отзываются.
-    const sameDevice = token.trusted || input.currentParticipantId === requester.id;
+    const sameDevice = input.currentParticipantId === requester.id;
     const revokeRequesterKeys = !sameDevice && target.id === requester.id;
     // До слияния, чтобы не задеть ключи вливаемого устройства.
     if (revokeRequesterKeys) await tx.participantKey.deleteMany({ where: { participantId: target.id } });

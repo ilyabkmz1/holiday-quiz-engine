@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 
 import { AdventLogin } from "@/components/advent/AdventLogin";
-import { loginTokenSchema } from "@/server/advent-api";
+import { DELIVERY_ID, loginTokenSchema } from "@/server/advent-api";
 import { adventTenantForPage } from "@/server/page-tenant";
 
 export const dynamic = "force-dynamic";
@@ -17,6 +17,6 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
   const query = await searchParams;
   const parsed = loginTokenSchema.safeParse(query.token);
   // Идентификатор доставки письма-напоминания (uuid): без него вход обычный.
-  const delivery = typeof query.r === "string" && /^[0-9a-f-]{36}$/i.test(query.r) ? query.r : null;
+  const delivery = typeof query.r === "string" && DELIVERY_ID.test(query.r) ? query.r : null;
   return <AdventLogin advent={advent} token={parsed.success ? parsed.data : null} delivery={delivery} />;
 }

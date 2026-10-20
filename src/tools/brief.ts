@@ -39,6 +39,7 @@ export type BriefFields = Partial<{
   adventReminderComebackSubject: string;
   adventReminderComebackText: string;
   adventOperatorDetails: string;
+  adventMarketingConsent: string;
   adventAudience: string;
   adventLeaderboard: string;
   adventTeams: string;
@@ -82,6 +83,7 @@ const KEYS: Record<string, keyof BriefFields> = {
   "тема письма-возвращения": "adventReminderComebackSubject",
   "абзац письма-возвращения": "adventReminderComebackText",
   "реквизиты оператора": "adventOperatorDetails",
+  "согласие на рассылку": "adventMarketingConsent",
   "кто играет": "adventAudience",
   "рейтинг": "adventLeaderboard",
   "команды": "adventTeams",

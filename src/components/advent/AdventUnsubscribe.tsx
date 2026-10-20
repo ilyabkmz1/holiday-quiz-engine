@@ -10,7 +10,7 @@ export type UnsubscribeView = "confirm" | "done" | "error";
 
 /**
  * Страница отписки от напоминаний. Открытие страницы (GET) ничего не меняет: письмо отключается кнопкой, то есть POST.
- * Работает без JavaScript. Отписка не затрагивает согласие на обработку персональных данных.
+ * Работает без JavaScript. Отписка отзывает согласие на рассылку и не затрагивает согласие на обработку персональных данных.
  */
 export function AdventUnsubscribe({ advent, view, token }: { advent: AdventConfig; view: UnsubscribeView; token: string | null }) {
   const { brand } = advent;
@@ -27,14 +27,14 @@ export function AdventUnsubscribe({ advent, view, token }: { advent: AdventConfi
         {view === "done" && (
           <>
             <h1>Вы отписались</h1>
-            <p>Письма-напоминания больше не придут. Играть можно по-прежнему, а вернуть напоминания — в разделе серии на сайте.</p>
+            <p>Письма-напоминания больше не придут, согласие на рассылку отозвано. Играть можно по-прежнему, а вернуть напоминания — в разделе серии на сайте.</p>
             <Link className="btn btn-primary" href="/">К адвенту</Link>
           </>
         )}
         {view === "confirm" && token && (
           <>
             <h1>Отписаться от напоминаний?</h1>
-            <p>Мы перестанем присылать письма об открытых днях. Ваш прогресс и награды останутся.</p>
+            <p>Мы перестанем присылать письма об открытых днях и отзовём ваше согласие на рассылку. Прогресс, награды и вход по email останутся.</p>
             <form method="post" action={UNSUBSCRIBE_FORM_ACTION}>
               <input type="hidden" name="t" value={token} />
               <button className="btn btn-primary" type="submit">Отписаться</button>

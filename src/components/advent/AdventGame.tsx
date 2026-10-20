@@ -234,7 +234,8 @@ export function AdventGame({ advent, world, api = adventApi }: { advent: PublicA
   }
 
   async function changeReminders(enabled: boolean): Promise<AdventState> {
-    return (await api.setReminders(enabled)).state;
+    // Включение всегда несёт согласие на рассылку: переключатель показывает его текст до запроса (`RemindersToggle`).
+    return (await api.setReminders({ enabled, marketingConsent: enabled })).state;
   }
 
   const storefront = advent.presentation === "storefront" && advent.facade !== null;
@@ -324,10 +325,10 @@ export function AdventGame({ advent, world, api = adventApi }: { advent: PublicA
         {current.participant.email ? (
           <>
             <p className="adv-saved"><span className="adv-dot" aria-hidden="true" /> {fill(copy.saveDone, { email: current.participant.email })}</p>
-            <RemindersToggle copy={copy} state={current} onChange={changeReminders} onState={adopt} />
+            <RemindersToggle copy={copy} marketingText={advent.legal.marketingConsentText} state={current} onChange={changeReminders} onState={adopt} />
           </>
         ) : (
-          anyDone && !finished && openN === null && <SaveProgressCard copy={copy} consentText={advent.legal.consentText} reason="after-day" onSubmit={requestLink} />
+          anyDone && !finished && openN === null && <SaveProgressCard copy={copy} consentText={advent.legal.consentText} marketingText={advent.legal.marketingConsentText} reason="after-day" onSubmit={requestLink} />
         )}
       </>
     );
@@ -367,10 +368,10 @@ export function AdventGame({ advent, world, api = adventApi }: { advent: PublicA
               {state.participant.email ? (
                 <>
                   <p className="adv-saved"><span className="adv-dot" aria-hidden="true" /> {fill(copy.saveDone, { email: state.participant.email })}</p>
-                  <RemindersToggle copy={copy} state={state} onChange={changeReminders} onState={adopt} />
+                  <RemindersToggle copy={copy} marketingText={advent.legal.marketingConsentText} state={state} onChange={changeReminders} onState={adopt} />
                 </>
               ) : (
-                anyDoorDone && <SaveProgressCard copy={copy} consentText={advent.legal.consentText} reason="after-day" onSubmit={requestLink} />
+                anyDoorDone && <SaveProgressCard copy={copy} consentText={advent.legal.consentText} marketingText={advent.legal.marketingConsentText} reason="after-day" onSubmit={requestLink} />
               )}
             </div>
           </AdventSheet>

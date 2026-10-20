@@ -90,16 +90,29 @@ describe("IdentityService.verify", () => {
   it("привязывает email, хранит согласия раздельно и выдаёт новый ключ устройства", async () => {
     const { service, identity, sent } = setup();
     const { participant } = await service.createParticipant(at(1));
-    await identity.requestLink(participant.id, { email: "anna@example.test", consent: true, marketingConsent: false, reminderOptIn: true }, at(1, 10));
+    await identity.requestLink(participant.id, { email: "anna@example.test", consent: true, marketingConsent: false, reminderOptIn: false }, at(1, 10));
     const { participant: verified, accessKey } = await identity.verify(sent[0].token, participant, at(1, 10, 5));
 
-    expect(verified).toMatchObject({ id: participant.id, normalizedEmail: "anna@example.test", reminderOptIn: true });
+    expect(verified).toMatchObject({ id: participant.id, normalizedEmail: "anna@example.test", reminderOptIn: false });
     expect(verified.consentAt).toEqual(at(1, 10));
-    // Согласие на рассылку — отдельный чекбокс: его не дали, и оно не появилось из согласия на обработку.
+    // Согласие на рассылку — отдельная отметка: его не дали, и оно не появилось из согласия на обработку.
     expect(verified.marketingConsentAt).toBeNull();
     expect((await service.identify(accessKey))?.id).toBe(participant.id);
     const state = await service.state(participant.id, at(1, 11));
-    expect(state.participant).toEqual({ id: participant.id, email: "a***@example.test", consent: true, marketingConsent: false, reminderOptIn: true, canRemind: true });
+    expect(state.participant).toEqual({ id: participant.id, email: "a***@example.test", consent: true, marketingConsent: false, reminderOptIn: false, canRemind: true });
+  });
+
+  it("напоминания — рассылка: включаются только вместе с согласием на неё (ст. 18 38-ФЗ)", async () => {
+    const { service, identity, sent } = setup();
+    const { participant } = await service.createParticipant(at(1));
+    await expect(
+      identity.requestLink(participant.id, { email: "anna@example.test", consent: true, marketingConsent: false, reminderOptIn: true }, at(1, 10))
+    ).rejects.toMatchObject({ code: "invalid" });
+    expect(sent).toEqual([]);
+    await identity.requestLink(participant.id, { email: "anna@example.test", consent: true, marketingConsent: true, reminderOptIn: true }, at(1, 10));
+    const { participant: verified } = await identity.verify(sent[0].token, participant, at(1, 10, 5));
+    expect(verified).toMatchObject({ reminderOptIn: true, marketingConsentAt: at(1, 10) });
+    expect((await service.state(participant.id, at(1, 11))).participant).toMatchObject({ marketingConsent: true, reminderOptIn: true });
   });
 
   it("согласие на рассылку записывается отдельно, с временем", async () => {
@@ -114,7 +127,7 @@ describe("IdentityService.verify", () => {
   it("напоминания не включаются, если кампания их не использует (channel: off)", async () => {
     const { service, identity, sent } = setup((draft) => { draft.reminders.channel = "off"; });
     const { participant } = await service.createParticipant(at(1));
-    await identity.requestLink(participant.id, { email: "a@b.co", consent: true, marketingConsent: false, reminderOptIn: true }, at(1));
+    await identity.requestLink(participant.id, { email: "a@b.co", consent: true, marketingConsent: true, reminderOptIn: true }, at(1));
     expect((await identity.verify(sent[0].token, null, at(1))).participant.reminderOptIn).toBe(false);
   });
 

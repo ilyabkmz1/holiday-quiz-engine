@@ -1,5 +1,4 @@
 import { DomainError } from "@/domain/errors";
-import { createId } from "@/server/crypto";
 import {
   GENERATED_CODE_ATTEMPTS,
   type AdventRepository,
@@ -321,6 +320,7 @@ export class InMemoryAdventRepository implements AdventRepository, IdentityRepos
       participant.reminderOptIn &&
       participant.normalizedEmail !== null &&
       participant.consentAt !== null &&
+      participant.marketingConsentAt !== null &&
       !this.opens.has(`${participant.id}:${day}`)
     );
   }
@@ -349,7 +349,7 @@ export class InMemoryAdventRepository implements AdventRepository, IdentityRepos
     let delivery: ReminderDeliveryRecord;
     if (!existing) {
       delivery = {
-        id: createId(),
+        id: input.deliveryId,
         participantId: input.participantId,
         day: input.day,
         status: "sending",
@@ -362,7 +362,7 @@ export class InMemoryAdventRepository implements AdventRepository, IdentityRepos
         unsubscribeHash: input.unsubscribeHash
       };
     } else if (this.retryable(existing, input.retryBefore, input.maxAttempts)) {
-      delivery = { ...existing, status: "sending", attempts: existing.attempts + 1, lastError: null, claimedAt: input.now, lastAttemptAt: input.now, unsubscribeHash: input.unsubscribeHash };
+      delivery = { ...existing, id: input.deliveryId, status: "sending", attempts: existing.attempts + 1, lastError: null, claimedAt: input.now, lastAttemptAt: input.now, unsubscribeHash: input.unsubscribeHash };
     } else {
       return null;
     }
@@ -409,8 +409,10 @@ export class InMemoryAdventRepository implements AdventRepository, IdentityRepos
     if (enabled) {
       participant.reminderOptIn = true;
       participant.unsubscribedAt = null;
-    } else if (participant.reminderOptIn) {
+      participant.marketingConsentAt ??= now;
+    } else if (participant.reminderOptIn || participant.marketingConsentAt !== null) {
       participant.reminderOptIn = false;
+      participant.marketingConsentAt = null;
       participant.unsubscribedAt = now;
     }
     return structuredClone(participant);
@@ -431,7 +433,7 @@ export class InMemoryAdventRepository implements AdventRepository, IdentityRepos
     const people = [...this.participants.values()].filter((participant) => participant.campaignSlug === campaignSlug);
     return {
       days: [...byDay.values()].sort((a, b) => a.day - b.day),
-      subscribed: people.filter((participant) => participant.reminderOptIn && participant.normalizedEmail !== null).length,
+      subscribed: people.filter((participant) => participant.reminderOptIn && participant.normalizedEmail !== null && participant.marketingConsentAt !== null).length,
       unsubscribed: people.filter((participant) => !participant.reminderOptIn && participant.unsubscribedAt !== null).length
     };
   }
@@ -491,7 +493,7 @@ export class InMemoryAdventRepository implements AdventRepository, IdentityRepos
     target.reminderOptIn = target.reminderOptIn || token.reminderOptIn;
 
     const current = input.currentParticipantId ? this.participants.get(input.currentParticipantId) : undefined;
-    const sameDevice = token.trusted || input.currentParticipantId === requester.id;
+    const sameDevice = input.currentParticipantId === requester.id;
     if (!sameDevice && target.id === requester.id) {
       // Ссылку открыли не на запросившем устройстве: его ключи отзываются (до слияния, чтобы не задеть ключи
       // вливаемого устройства), ключ создателя — ключ этого устройства.

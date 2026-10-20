@@ -199,7 +199,7 @@ export function DaySheet({ advent, state, n, reduced, nowMs, api, onClose, onSta
   }
 
   const saveCard = (reason: "after-day" | "identity") => (
-    <SaveProgressCard copy={copy} consentText={advent.legal.consentText} reason={reason} onSubmit={requestLink} />
+    <SaveProgressCard copy={copy} consentText={advent.legal.consentText} marketingText={advent.legal.marketingConsentText} reason={reason} onSubmit={requestLink} />
   );
   const done = current === null;
   const dayGrants = state.grants.filter((grant) => grant.day === n && (grant.source === "day" || grant.source === "luck"));

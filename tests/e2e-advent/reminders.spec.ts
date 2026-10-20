@@ -10,6 +10,7 @@ import {
   copy,
   expect,
   gotoDay,
+  marketingLabel,
   playDay,
   sheet,
   submitSaveProgress,
@@ -18,8 +19,9 @@ import {
   uniqueEmail
 } from "./support/advent";
 
-// Напоминания (A5): запуск `npm run advent:remind` с часами asOf → письмо в Mailpit → кнопка (вход без cookie, затем сразу на день)
-// → отписка → повторный запуск писем не шлёт. Процесс рассылки — тот же скрипт, что и в deploy/compose.yml.
+// Напоминания (A5): запуск `npm run advent:remind` с часами asOf → письмо в Mailpit → кнопка: без cookie — страница «войдите»
+// и свежая ссылка входа на адрес владельца (входа по ссылке письма нет), с cookie — сразу на день → отписка → повторный запуск
+// писем не шлёт. Процесс рассылки — тот же скрипт, что и в deploy/compose.yml.
 test.describe("напоминания на почту", () => {
   test.skip(advent.reminders.channel !== "email", "в пакете напоминания выключены");
 
@@ -40,7 +42,7 @@ test.describe("напоминания на почту", () => {
     });
   }
 
-  type Mail = { ID: string; Subject: string };
+  type Mail = { ID: string; Subject: string; To?: Array<{ Address: string }> };
   async function mailsTo(request: APIRequestContext, address: string): Promise<Mail[]> {
     const response = await request.get(`${mailpitUrl}/api/v1/search`, { params: { query: `to:"${address}"` } });
     expect(response.ok()).toBe(true);
@@ -50,7 +52,7 @@ test.describe("напоминания на почту", () => {
   const day2 = advent.days[1];
   const subject = advent.reminders.subject.replace("{day}", "2").replace("{teaser}", day2.teaser);
 
-  test("письмо → кнопка → вход и день письма → отписка → повторный запуск не шлёт", async ({ page, request, browser, isMobile }) => {
+  test("письмо → кнопка без cookie → «Прислать ссылку» → ссылка владельцу → вход и день письма → с cookie сразу → отписка → повторный запуск не шлёт", async ({ page, request, browser, isMobile }) => {
     test.skip(isMobile, "рассылка не зависит от размера экрана: один прогон, на десктопе");
     test.setTimeout(240_000);
     const email = uniqueEmail("remind");
@@ -94,10 +96,32 @@ test.describe("напоминания на почту", () => {
     const siteOrigin = new URL(buttonLink!).origin;
     const local = (link: string) => `${new URL(link).pathname}${new URL(link).search}`;
 
-    // Кнопка с нового устройства (без cookie): страница входа с кнопкой, затем сайт на дне письма.
+    // В кнопке письма нет ссылки входа: только непрозрачный идентификатор доставки.
+    expect([...new URL(buttonLink!).searchParams.keys()]).toEqual(["r"]);
+
+    // Кнопка с нового устройства (без cookie, например пересланное письмо): страница «войдите», входа нет, адрес не показан.
     const phone = await browser.newContext({ extraHTTPHeaders: { "x-forwarded-for": `10.${1 + Math.floor(Math.random() * 253)}.7.7` }, baseURL: localEnv.APP_URL });
     const mobile = await phone.newPage();
     await mobile.goto(buttonLink!);
+    await expect(mobile).toHaveURL(/\/reminder\?/);
+    await expect(mobile.getByRole("heading", { level: 1 })).toHaveText(copy.reminderLoginTitle.replace("{day}", "2"));
+    await expect(mobile.locator("body")).not.toContainText(email);
+    await expect(mobile.locator('input[type="email"]')).toHaveCount(0);
+
+    // «Прислать ссылку для входа» (POST) — свежая ссылка входа уходит на подтверждённый адрес владельца письма.
+    const loginSubject = `${advent.brand.name}: вход по ссылке`;
+    const loginsBefore = (await mailsTo(request, email)).filter((mail) => mail.Subject === loginSubject).length;
+    await mobile.getByRole("button", { name: copy.reminderLoginButton }).click();
+    await expect(mobile).toHaveURL(/\/reminder\?sent=1$/);
+    await expect(mobile.getByRole("heading", { level: 1, name: copy.reminderLoginSentTitle })).toBeVisible();
+    await expect.poll(async () => (await mailsTo(request, email)).filter((mail) => mail.Subject === loginSubject).length, { message: "письмо со ссылкой входа не пришло владельцу" }).toBe(loginsBefore + 1);
+    const loginMail = (await mailsTo(request, email)).find((mail) => mail.Subject === loginSubject)!;
+    const loginText = ((await (await request.get(`${mailpitUrl}/api/v1/message/${loginMail.ID}`)).json()) as { Text: string }).Text;
+    const loginLink = loginText.match(/https?:\/\/\S+\/api\/advent\/identity\/verify\?token=[\w-]+&r=[\w-]+/)?.[0];
+    expect(loginLink, "в письме нет ссылки входа с днём письма").toBeTruthy();
+
+    // Владелец открывает ссылку на этом устройстве: «Войти» → сайт на дне письма.
+    await mobile.goto(loginLink!);
     await expect(mobile).toHaveURL(/\/login\?/);
     // Адрес с ?day=2 живёт недолго (клиент убирает параметр), поэтому переход проверяем по ответу сервера.
     const verified = mobile.waitForResponse((response) => response.url().endsWith("/api/advent/identity/verify") && response.request().method() === "POST");
@@ -109,13 +133,18 @@ test.describe("напоминания на почту", () => {
     await mobile.goto(`${siteOrigin}/?asOf=${encodeURIComponent(asOfDay(2, 11))}&day=2`);
     await expect(sheet(mobile)).toBeVisible();
     await expect(mobile).not.toHaveURL(/day=/);
-    // Повторное нажатие кнопки уже на устройстве, где выполнен вход: сразу на сайт, без страницы входа.
+    // Повторное нажатие кнопки уже на устройстве, где выполнен вход (cookie того же участника): сразу на сайт.
     const again = mobile.waitForResponse((response) => response.url().includes("/api/advent/reminders/open"));
     await mobile.goto(buttonLink!);
     const direct = await again;
     expect(direct.status()).toBe(303);
     expect(direct.headers().location).toMatch(/\/\?day=2$/);
     await phone.close();
+
+    // Первое устройство владельца не «выбросило»: оно по-прежнему вошло, кнопка письма ведёт сразу на день.
+    const first = page.waitForResponse((response) => response.url().includes("/api/advent/reminders/open"));
+    await page.goto(local(buttonLink!));
+    expect((await first).headers().location).toMatch(/\/\?day=2$/);
 
     // Метрики оператора: письмо отправлено, переход засчитан один раз, день открыт после письма.
     const auth = `Basic ${Buffer.from(`${localEnv.ADMIN_USERNAME}:${localEnv.ADMIN_PASSWORD}`).toString("base64")}`;
@@ -143,8 +172,12 @@ test.describe("напоминания на почту", () => {
     const toggle = page.getByRole("checkbox", { name: copy.remindersToggle });
     if (advent.presentation === "storefront") await page.getByRole("button", { name: /Подробнее о серии/ }).click();
     await expect(toggle).not.toBeChecked();
+    // Отписка отозвала согласие на рассылку: включение сначала показывает его текст, запрос — по «Согласен(на), включить».
     // Состояние переключателя приходит с сервера, поэтому click и ожидание, а не check().
     await toggle.click();
+    await expect(page.getByText(marketingLabel)).toBeVisible();
+    await expect(toggle).not.toBeChecked();
+    await page.getByRole("button", { name: copy.remindersConsentAccept }).click();
     await expect(toggle).toBeChecked();
     runReminders(asOfDay(3, 11));
     await expect.poll(async () => (await mailsTo(request, email)).length).toBe(before + 1);

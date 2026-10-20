@@ -58,7 +58,11 @@ export function adventFixture(): Record<string, any> {
     intro: "С 20 по 31 декабря каждый день открывается новая дверь: история, задание и подарок на кассе.",
     brand: demo.brand,
     story: demo.story,
-    legal: { ...demo.legal, operatorDetails: "ИНН 000000000000 (демо), г. Москва; privacy@zerno.example" },
+    legal: {
+      ...demo.legal,
+      operatorDetails: "ИНН 000000000000 (демо), г. Москва; privacy@zerno.example",
+      marketingConsentText: "Согласен(на) получать напоминания о новых днях адвента и рекламные рассылки от {operator}"
+    },
     heroes: demo.heroes,
     presentation: "calendar",
     schedule: {

@@ -309,9 +309,6 @@ model LoginToken {
   consentAt          DateTime
   marketingConsentAt DateTime?
   reminderOptIn      Boolean
-  /// Ссылка выпущена самим сервером для подтверждённого адреса участника (письмо-напоминание), а не запрошена с устройства:
-  /// вход с неё не отзывает ключи его прочих устройств.
-  trusted            Boolean     @default(false)
   createdAt          DateTime    @default(now())
   expiresAt          DateTime
   usedAt             DateTime?

@@ -15,18 +15,24 @@ describe("quiz:check для адвента", () => {
     expect(report.info.join("\n")).toContain("дней: 12");
   });
 
-  it("напоминания по email без реквизитов оператора — предупреждение; с реквизитами или без рассылки — нет", async () => {
+  it("напоминания по email без реквизитов оператора или без текста согласия на рассылку — ошибка; без рассылки — ничего", async () => {
     const pack = adventPackFixture();
     delete pack.advent.legal.operatorDetails;
     const report = await checkPack(pack);
-    expect(report.errors).toEqual([]);
-    expect(report.warnings.join("\n")).toContain("нет реквизитов оператора");
+    expect(report.errors.join("\n")).toContain("нет реквизитов оператора");
+
+    const noConsent = adventPackFixture();
+    delete noConsent.advent.legal.marketingConsentText;
+    expect((await checkPack(noConsent)).errors.join("\n")).toContain("нет текста согласия на рассылку");
 
     const off = adventPackFixture();
     delete off.advent.legal.operatorDetails;
+    delete off.advent.legal.marketingConsentText;
     off.advent.reminders.channel = "off";
-    expect((await checkPack(off)).warnings.join("\n")).not.toContain("реквизитов оператора");
-    expect((await checkPack(adventPackFixture())).warnings.join("\n")).not.toContain("реквизитов оператора");
+    const offReport = await checkPack(off);
+    expect(offReport.errors).toEqual([]);
+    expect(offReport.warnings.join("\n")).not.toContain("реквизитов оператора");
+    expect((await checkPack(adventPackFixture())).errors).toEqual([]);
   });
 
   it("неизвестные подстановки в текстах напоминаний и слишком длинная тема — предупреждения", async () => {

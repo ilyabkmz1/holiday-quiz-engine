@@ -81,7 +81,6 @@
     "fallbackRewardId": "luck-a"
   },
   "reminders": {
-    "channel": "email",
     "sendAtLocal": "09:00",
     "subject": "Дверь {day}: {teaser}",
     "preheader": "Материал дня уже открыт"

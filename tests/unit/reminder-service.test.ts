@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 
-import { hashToken } from "@/server/crypto";
+import { createOpaqueToken, hashToken } from "@/server/crypto";
 import type { ReminderMailVars } from "@/server/mail-reminder";
+import { IdentityService } from "@/server/services/identity-service";
 import { DEFAULT_REMINDER_OPTIONS, ReminderService, parseReminderOptions, reminderErrorCode, type ReminderOptions } from "@/server/services/reminder-service";
 
 import { adventConfig, at, newAdventService, verifyParticipant } from "../support/advent";
@@ -14,8 +15,10 @@ function setup(patch?: (draft: Record<string, any>) => void, options: Partial<Re
   const base = newAdventService(adventConfig(patch));
   const sent: Sent[] = [];
   let failWith: ((email: string) => unknown) | null = null;
+  let stop = false;
   const sleeps: number[] = [];
   const reminders = new ReminderService({
+    shouldStop: () => stop,
     repository: base.repository,
     advent: base.advent,
     baseUrl: "https://advent.test",
@@ -29,6 +32,13 @@ function setup(patch?: (draft: Record<string, any>) => void, options: Partial<Re
       sent.push({ email, vars });
     }
   });
+  const stopAfter = (count: number) => {
+    const original = failWith;
+    failWith = (email) => {
+      if (sent.length + 1 >= count) stop = true;
+      return original?.(email);
+    };
+  };
   /** Подписчик: анонимный участник → подтверждённый email и включённые напоминания. */
   async function subscriber(name: string, now = at(1, 9), optIn = true) {
     const { participant } = await base.service.createParticipant(now);
@@ -36,7 +46,7 @@ function setup(patch?: (draft: Record<string, any>) => void, options: Partial<Re
     if (optIn) await base.repository.setReminderOptIn(verified.id, true, now);
     return verified;
   }
-  return { ...base, reminders, sent, sleeps, failWith: (fn: typeof failWith) => { failWith = fn; }, subscriber };
+  return { ...base, reminders, sent, sleeps, failWith: (fn: typeof failWith) => { failWith = fn; }, stopAfter, subscriber };
 }
 
 describe("ReminderService.run: кому и когда", () => {
@@ -55,9 +65,15 @@ describe("ReminderService.run: кому и когда", () => {
     expect(person.normalizedEmail).toBe("anna@example.test");
   });
 
-  it("не шлёт: без подписки, анониму, без подтверждённого email, открывшему день, отписавшемуся", async () => {
+  it("не шлёт: без подписки, анониму, без подтверждённого email, открывшему день, отписавшемуся, без согласия на рассылку", async () => {
     const { reminders, subscriber, sent, service, repository } = setup();
     await subscriber("off", at(1, 9), false);
+    // Отметка напоминаний без согласия на рассылку (ст. 18 38-ФЗ): письма нет. Сервис такую ссылку не выпустит — пишем в репозиторий напрямую.
+    const bare = await subscriber("bare", at(1, 9), false);
+    const tokenHash = hashToken(createOpaqueToken());
+    await repository.createLoginToken({ tokenHash, participantId: bare.id, normalizedEmail: bare.normalizedEmail!, consentAt: at(1, 9), marketingConsentAt: null, reminderOptIn: true, createdAt: at(1, 9), expiresAt: at(1, 10), usedAt: null });
+    await repository.completeLogin({ tokenHash, now: at(1, 9, 5), campaignSlug: "zerno-advent-2026", currentParticipantId: bare.id, newAccessKeyHash: hashToken("bare-key") });
+    expect(await repository.getParticipant(bare.id)).toMatchObject({ reminderOptIn: true, marketingConsentAt: null });
     await service.createParticipant(at(1, 9));
     const opened = await subscriber("opened");
     await service.openDay(opened.id, 2, at(2, 8, 0));
@@ -342,53 +358,97 @@ describe("вход из письма, переход и отписка", () => {
     await ctx.reminders.run(at(2, 9));
     const { vars } = ctx.sent[0];
     const link = new URL(vars.link);
-    return { ...ctx, person, vars, deliveryId: link.searchParams.get("r")!, token: link.searchParams.get("token")!, unsub: new URL(vars.unsubscribeUrl).searchParams.get("t")! };
+    return { ...ctx, person, vars, deliveryId: link.searchParams.get("r")!, unsub: new URL(vars.unsubscribeUrl).searchParams.get("t")! };
   }
 
-  it("ссылка входа доверенная, живёт до конца местных суток и ведёт участника на свой аккаунт без отзыва ключей", async () => {
-    const { repository, person, token } = await delivered();
-    const current = await repository.getParticipant(person.id);
-    const phone = hashToken("phone-key");
-    const { participant } = await repository.completeLogin({
-      tokenHash: hashToken(token),
-      now: at(2, 20),
-      campaignSlug: "zerno-advent-2026",
-      currentParticipantId: null,
-      newAccessKeyHash: phone
-    });
-    expect(participant.id).toBe(person.id);
-    expect((await repository.findParticipantByAccessKeyHash(current!.accessKeyHash))?.id).toBe(person.id);
-    // Ссылка одноразовая.
-    await expect(
-      repository.completeLogin({ tokenHash: hashToken(token), now: at(2, 20, 1), campaignSlug: "zerno-advent-2026", currentParticipantId: null, newAccessKeyHash: "x" })
-    ).rejects.toMatchObject({ code: "conflict" });
+  it("кнопка письма — только идентификатор доставки: входа по ссылке нет, письмо не создаёт ссылок входа", async () => {
+    const { repository, vars, deliveryId } = await delivered();
+    const link = new URL(vars.link);
+    expect(link.pathname).toBe("/api/advent/reminders/open");
+    expect([...link.searchParams.keys()]).toEqual(["r"]);
+    expect((await repository.getReminderDelivery(deliveryId))?.status).toBe("sent");
+    // Единственная ссылка входа — та, по которой участник подтвердил адрес (уже использована).
+    const tokens = [...(repository as unknown as { tokens: Map<string, { usedAt: Date | null }> }).tokens.values()];
+    expect(tokens.filter((token) => token.usedAt === null)).toEqual([]);
   });
 
-  it("ссылка перестаёт действовать после конца местных суток", async () => {
-    const { repository, token } = await delivered();
+  it("письмо собирается до заявки: сбой чтения из БД не оставляет доставку в sending и роняет запуск", async () => {
+    const ctx = setup();
+    await ctx.subscriber("broken");
+    const original = ctx.repository.listGrants.bind(ctx.repository);
+    ctx.repository.listGrants = async () => {
+      throw new Error("db down");
+    };
+    await expect(ctx.reminders.run(at(2, 9))).rejects.toThrow("db down");
+    expect(deliveries(ctx.repository)).toEqual([]);
+    ctx.repository.listGrants = original;
+    expect(await ctx.reminders.run(at(2, 9))).toMatchObject({ sent: 1 });
+  });
+
+  it("остановка по сигналу: текущее письмо дописывается, следующее не начинается", async () => {
+    const ctx = setup();
+    for (const name of ["s1", "s2", "s3"]) await ctx.subscriber(name);
+    ctx.stopAfter(1);
+    expect(await ctx.reminders.run(at(2, 9))).toMatchObject({ claimed: 1, sent: 1 });
+    expect(deliveries(ctx.repository).map((delivery) => delivery.status)).toEqual(["sent"]);
+  });
+
+  it("loginTarget (кнопка «Прислать ссылку»): засчитывает переход и отдаёт владельца; неизвестная доставка или обезличенный владелец — null", async () => {
+    const { reminders, repository, person, deliveryId } = await delivered();
+    const target = await reminders.loginTarget(deliveryId, at(2, 10));
+    expect(target).toMatchObject({ day: 2, owner: { id: person.id, normalizedEmail: "click@example.test" } });
+    expect((await repository.getReminderDelivery(deliveryId))?.clickedAt).toEqual(at(2, 10));
+    expect(await reminders.loginTarget("00000000-0000-4000-8000-000000000000", at(2, 10))).toBeNull();
+    expect(await reminders.loginTarget("мусор", at(2, 10))).toBeNull();
+    await repository.anonymizeCampaignParticipants("zerno-advent-2026");
+    expect(await reminders.loginTarget(deliveryId, at(2, 11))).toBeNull();
+  });
+
+  it("requestOwnerLink: обычная 30-минутная ссылка на адрес владельца, запросившее устройство — своё; согласий не меняет; вход с неё открывает день письма", async () => {
+    const ctx = await delivered();
+    const { repository, person, deliveryId, advent, service, reminders } = ctx;
+    const links: Array<{ email: string; link: string }> = [];
+    const identity = new IdentityService({
+      repository,
+      advent,
+      verifyEndpoint: "https://advent.test/api/advent/identity/verify",
+      sendLoginLink: async (email, link) => {
+        links.push({ email, link });
+      }
+    });
+    const stranger = (await newStranger(repository))!;
+    const target = (await reminders.loginTarget(deliveryId, at(2, 10)))!;
+    await identity.requestOwnerLink(stranger.id, target.owner, deliveryId, at(2, 10));
+    expect(links).toHaveLength(1);
+    expect(links[0].email).toBe("click@example.test");
+    const url = new URL(links[0].link);
+    expect(url.searchParams.get("r")).toBe(deliveryId);
+    const tokenHash = hashToken(url.searchParams.get("token")!);
+    // Срок обычной ссылки — 30 минут.
     await expect(
-      repository.completeLogin({ tokenHash: hashToken(token), now: new Date("2026-12-22T00:00:01+03:00"), campaignSlug: "zerno-advent-2026", currentParticipantId: null, newAccessKeyHash: "y" })
+      repository.completeLogin({ tokenHash, now: at(2, 10, 31), campaignSlug: "zerno-advent-2026", currentParticipantId: stranger.id, newAccessKeyHash: "late" })
     ).rejects.toMatchObject({ code: "expired" });
+
+    await identity.requestOwnerLink(stranger.id, target.owner, deliveryId, at(2, 11));
+    const fresh = new URL(links[1].link).searchParams.get("token")!;
+    // Владелец открыл ссылку у себя: чужое устройство доступа не получило, ключ владельца цел.
+    const owner = (await repository.getParticipant(person.id))!;
+    const { participant } = await identity.verify(fresh, owner, at(2, 11, 5));
+    expect(participant.id).toBe(person.id);
+    expect(await repository.findParticipantByAccessKeyHash(stranger.accessKeyHash)).toBeNull();
+    expect((await repository.findParticipantByAccessKeyHash(owner.accessKeyHash))?.id).toBe(person.id);
+    expect(await repository.getParticipant(person.id)).toMatchObject({ reminderOptIn: true, consentAt: owner.consentAt, marketingConsentAt: owner.marketingConsentAt });
+    expect(await reminders.confirmLogin(deliveryId, participant.id, at(2, 11, 6))).toBe(2);
+    expect(service).toBeTruthy();
   });
 
-  it("поздно вечером срок ссылки не короче двух часов", async () => {
-    const ctx = setup((draft) => {
-      draft.reminders.sendAtLocal = "23:30";
-    });
-    await ctx.subscriber("night");
-    await ctx.reminders.run(at(2, 23, 30));
-    const token = new URL(ctx.sent[0].vars.link).searchParams.get("token")!;
-    const ok = await ctx.repository.completeLogin({ tokenHash: hashToken(token), now: at(3, 1, 20), campaignSlug: "zerno-advent-2026", currentParticipantId: null, newAccessKeyHash: "z" });
-    expect(ok.participant.normalizedEmail).toBe("night@example.test");
-  });
-
-  it("ссылка входа не включает подписку заново и не создаёт согласий", async () => {
-    const { repository, person, token } = await delivered();
-    await repository.setReminderOptIn(person.id, false, at(2, 10));
-    await repository.completeLogin({ tokenHash: hashToken(token), now: at(2, 11), campaignSlug: "zerno-advent-2026", currentParticipantId: null, newAccessKeyHash: "k" });
-    const after = await repository.getParticipant(person.id);
-    expect(after?.reminderOptIn).toBe(false);
-    expect(after?.marketingConsentAt).toBeNull();
+  it("requestOwnerLink не шлёт после завершения адвента и владельцу без адреса", async () => {
+    const { repository, person, advent } = await delivered();
+    const identity = new IdentityService({ repository, advent, verifyEndpoint: "https://advent.test/v", sendLoginLink: async () => undefined });
+    const stranger = (await newStranger(repository))!;
+    const owner = (await repository.getParticipant(person.id))!;
+    await expect(identity.requestOwnerLink(stranger.id, { ...owner, normalizedEmail: null }, "00000000-0000-4000-8000-000000000000", at(2, 10))).rejects.toMatchObject({ code: "not_found" });
+    await expect(identity.requestOwnerLink(stranger.id, owner, "00000000-0000-4000-8000-000000000000", new Date("2027-03-01T00:00:00Z"))).rejects.toMatchObject({ code: "conflict" });
   });
 
   it("resolveOpen: на устройстве того же участника засчитывает переход сразу, на чужом — нет", async () => {
@@ -420,12 +480,13 @@ describe("вход из письма, переход и отписка", () => {
     expect((await repository.getReminderDelivery(deliveryId))?.clickedAt).toEqual(at(2, 10));
   });
 
-  it("отписка по токену письма: снимает напоминания, не трогает согласие на данные, идемпотентна, работает по токену старого письма", async () => {
+  it("отписка по токену письма: отзывает согласие на рассылку, не трогает согласие на данные, идемпотентна, работает по токену старого письма", async () => {
     const ctx = await delivered();
     const { reminders, repository, person, unsub } = ctx;
+    expect((await repository.getParticipant(person.id))?.marketingConsentAt).not.toBeNull();
     await reminders.unsubscribe(unsub, at(2, 10));
     const off = await repository.getParticipant(person.id);
-    expect(off).toMatchObject({ reminderOptIn: false, unsubscribedAt: at(2, 10) });
+    expect(off).toMatchObject({ reminderOptIn: false, marketingConsentAt: null, unsubscribedAt: at(2, 10) });
     expect(off?.consentAt).not.toBeNull();
     expect(off?.normalizedEmail).toBe("click@example.test");
     await reminders.unsubscribe(unsub, at(2, 20));

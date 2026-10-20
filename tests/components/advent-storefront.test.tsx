@@ -604,6 +604,9 @@ describe("AdventGame: «Витрина»", () => {
     const toggle = within(sheet).getByRole("checkbox", { name: copy.remindersToggle });
     expect(within(sheet).getByText(/новое окно/)).toBeInTheDocument();
     fireEvent.click(toggle);
+    // Сначала текст согласия на рассылку, затем явное «Согласен(на), включить».
+    expect(within(sheet).getByText(/рекламные рассылки/)).toBeInTheDocument();
+    fireEvent.click(within(sheet).getByRole("button", { name: copy.remindersConsentAccept }));
     await waitFor(() => expect(within(sheet).getByRole("checkbox", { name: copy.remindersToggle })).toBeChecked());
   });
 

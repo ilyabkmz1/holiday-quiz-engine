@@ -6,20 +6,21 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { SaveProgressCard } from "@/components/advent/SaveProgressCard";
 
-import { config } from "../support/advent-ui";
+import { config, publicConfig } from "../support/advent-ui";
 
 afterEach(cleanup);
 
 const consentText = config.legal.consentText;
+const marketingText = publicConfig.legal.marketingConsentText!;
 
-function mount(onSubmit = vi.fn().mockResolvedValue(undefined), reason: "after-day" | "identity" = "after-day") {
-  render(<SaveProgressCard copy={config.copy} consentText={consentText} reason={reason} onSubmit={onSubmit} />);
+function mount(onSubmit = vi.fn().mockResolvedValue(undefined), reason: "after-day" | "identity" = "after-day", marketingTextProp: string | null = marketingText) {
+  render(<SaveProgressCard copy={config.copy} consentText={consentText} marketingText={marketingTextProp} reason={reason} onSubmit={onSubmit} />);
   return onSubmit;
 }
 
 const email = () => screen.getByLabelText(config.copy.saveEmail);
 const consent = () => screen.getByRole("checkbox", { name: config.copy.saveConsent });
-const marketing = () => screen.getByRole("checkbox", { name: config.copy.saveMarketing });
+const marketing = () => screen.getByRole("checkbox", { name: marketingText });
 const submit = () => screen.getByRole("button", { name: config.copy.saveSubmit });
 
 describe("SaveProgressCard", () => {
@@ -64,13 +65,24 @@ describe("SaveProgressCard", () => {
     expect(onSubmit).toHaveBeenCalledWith({ email: "guest@example.test", consent: true, marketingConsent: false, reminderOptIn: false });
   });
 
-  it("чекбокс напоминаний включает только напоминания, а не согласие на рекламную рассылку", async () => {
+  it("отметка напоминаний — согласие на рекламную рассылку с текстом оператора: ставит и согласие, и напоминания", async () => {
+    expect(marketingText).toContain(config.legal.operatorName);
+    expect(marketingText).toContain("рекламные рассылки");
     const onSubmit = mount();
     fireEvent.change(email(), { target: { value: "guest@example.test" } });
     fireEvent.click(consent());
     fireEvent.click(marketing());
     await act(async () => void fireEvent.click(submit()));
-    expect(onSubmit).toHaveBeenCalledWith({ email: "guest@example.test", consent: true, marketingConsent: false, reminderOptIn: true });
+    expect(onSubmit).toHaveBeenCalledWith({ email: "guest@example.test", consent: true, marketingConsent: true, reminderOptIn: true });
+  });
+
+  it("кампания без email-напоминаний: отметки рассылки нет, только согласие на данные", async () => {
+    const onSubmit = mount(undefined, "after-day", null);
+    expect(screen.getAllByRole("checkbox")).toHaveLength(1);
+    fireEvent.change(email(), { target: { value: "guest@example.test" } });
+    fireEvent.click(consent());
+    await act(async () => void fireEvent.click(submit()));
+    expect(onSubmit).toHaveBeenCalledWith({ email: "guest@example.test", consent: true, marketingConsent: false, reminderOptIn: false });
   });
 
   it("после отправки — «проверьте почту» с адресом; можно указать другой", async () => {

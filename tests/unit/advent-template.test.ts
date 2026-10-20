@@ -178,6 +178,9 @@ describe("перенос брифа в заготовку адвента", () =>
       comebackText: "Вчера вы заглянули не к нам. Сегодня ждём!"
     });
     expect(advent.legal.operatorDetails).toBe("ИНН 7700000000, Москва");
+    // Напоминания включены брифом, а текста согласия на рассылку нет: текст по умолчанию с маркером юриста.
+    expect(advent.legal.marketingConsentText).toMatch(/^\[ТЕКСТ НА СОГЛАСОВАНИИ ЮРИСТА\] Согласен\(на\) получать напоминания .* рекламные рассылки от \{operator\}$/);
+    expect(applied).toContain("legal.marketingConsentText");
     expect(advent.rules.requiresPurchase).toBe(true);
     expect(advent.brand.name).toBe("Кофейня «Зерно»");
     expect(advent.legal.operatorName).toBe("ООО «Зерно»");
@@ -191,6 +194,22 @@ describe("перенос брифа в заготовку адвента", () =>
     // Даты квиза и режим карточек в адвент не попадают.
     expect(advent).not.toHaveProperty("startsAt");
     expect(advent).not.toHaveProperty("mode");
+  });
+
+  it("напоминания по умолчанию выключены: ни профили, ни заготовка их не включают; текст согласия на рассылку берётся из брифа", () => {
+    for (const profile of ["retail", "horeca", "beauty", "b2b", "corporate", "custom"] as const) {
+      const pack = buildAdventTemplate({ tenant: "zerno", days: 12, profile }) as { advent: Record<string, any> }; // eslint-disable-line @typescript-eslint/no-explicit-any
+      const advent = adventPackSchema.parse(pack).advent;
+      expect(advent.reminders.channel, profile).toBe("off");
+      expect(advent.legal.marketingConsentText, profile).toBeUndefined();
+    }
+    const pack = buildAdventTemplate({ tenant: "zerno", days: 12, profile: "retail" }) as { advent: Record<string, any> }; // eslint-disable-line @typescript-eslint/no-explicit-any
+    applyAdventBrief(pack, parseBrief("- Напоминания на email (да / нет): да\n- Согласие на рассылку: Согласен(на) получать письма от {operator}"));
+    expect(adventPackSchema.parse(pack).advent.legal.marketingConsentText).toBe("Согласен(на) получать письма от {operator}");
+    const quiet = buildAdventTemplate({ tenant: "zerno", days: 12, profile: "retail" }) as { advent: Record<string, any> }; // eslint-disable-line @typescript-eslint/no-explicit-any
+    applyAdventBrief(quiet, parseBrief("- Напоминания на email (да / нет): нет"));
+    expect(adventPackSchema.parse(quiet).advent.reminders.channel).toBe("off");
+    expect(adventPackSchema.parse(quiet).advent.legal.marketingConsentText).toBeUndefined();
   });
 
   it("час открытия из брифа без даты финала: финал всё равно через сутки после открытия последнего дня", () => {

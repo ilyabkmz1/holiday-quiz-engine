@@ -35,6 +35,10 @@ describe("профили бизнеса", () => {
     expect(parse("corporate").rewards?.some((reward) => reward.kind === "promo")).toBe(false);
   });
 
+  it("ни один профиль не включает напоминания: рассылка только по явному решению заказчика (ст. 18 38-ФЗ)", () => {
+    for (const id of PROFILE_IDS) expect(parse(id).reminders?.channel, id).toBeUndefined();
+  });
+
   it("лишние поля в профиле отвергаются", () => {
     expect(adventProfileSchema.safeParse({ ...rawProfiles.retail as object, startDate: "2026-12-20" }).success).toBe(false);
   });

@@ -339,7 +339,6 @@ export const adventCopySchema = copySchema.extend({
   saveIdentityRequired: z.string().min(1).default("Чтобы получить этот приз, нужно сохранить прогресс: пришлём ссылку для входа на email."),
   saveEmail: z.string().min(1).default("Email"),
   saveConsent: z.string().min(1).default("Я согласен(на) на обработку персональных данных"),
-  saveMarketing: z.string().min(1).default("Хочу получать напоминания о новых днях"),
   savePolicy: z.string().min(1).default("Политика обработки данных"),
   saveErrorEmail: z.string().min(1).default("Проверьте адрес email"),
   saveErrorConsent: z.string().min(1).default("Без согласия на обработку данных мы не можем отправить ссылку"),
@@ -353,6 +352,17 @@ export const adventCopySchema = copySchema.extend({
   remindersToggle: z.string().min(1).default("Напоминания на почту"),
   remindersToggleHint: z.string().min(1).default("Письмо, когда открывается новый день. Отписаться можно в любом письме."),
   remindersToggleError: z.string().min(1).default("Не удалось изменить напоминания. Попробуйте ещё раз."),
+  /** Включение напоминаний без согласия на рассылку: под текстом согласия (`legal.marketingConsentText`) — кнопки. */
+  remindersConsentAccept: z.string().min(1).default("Согласен(на), включить"),
+  remindersConsentCancel: z.string().min(1).default("Отмена"),
+  /** Кнопка письма-напоминания на устройстве без входа: страница `/reminder`; `{day}` — номер дня. */
+  reminderLoginTitle: z.string().min(1).default("Чтобы открыть дверь {day}, войдите"),
+  reminderLoginText: z.string().min(1).default("Пришлём ссылку для входа на адрес, на который пришло напоминание. Откройте её на этом устройстве."),
+  reminderLoginButton: z.string().min(1).default("Прислать ссылку для входа"),
+  reminderLoginSentTitle: z.string().min(1).default("Проверьте почту"),
+  reminderLoginSentText: z.string().min(1).default("Мы отправили ссылку для входа на адрес, на который пришло напоминание. Она действует 30 минут."),
+  reminderLoginLimited: z.string().min(1).default("Ссылку уже отправляли недавно. Проверьте почту или попробуйте позже."),
+  reminderLoginInvalid: z.string().min(1).default("Ссылка из письма не сработала. Откройте сайт и войдите по email."),
   finaleEyebrow: z.string().min(1).default("Финал"),
   finaleTitle: z.string().min(1).default("Итоги адвента"),
   finaleOpened: z.string().min(1).default("Открыто дверей"),
@@ -407,6 +417,7 @@ export const STOREFRONT_COPY = {
   dayDoneText: "Возвращайтесь завтра: новое окно ждёт.",
   finaleOpened: "Открыто окон",
   remindersToggleHint: "Письмо, когда открывается новое окно. Отписаться можно в любом письме.",
+  reminderLoginTitle: "Чтобы открыть окно {day}, войдите",
   finaleNoPrize: "Главный приз достаётся тем, кто открыл больше окон. В следующий раз!",
   loading: "Загружаем окна…"
 } as const satisfies Partial<z.input<typeof adventCopySchema>>;

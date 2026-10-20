@@ -350,7 +350,9 @@ describe("маршруты адвента", () => {
       expect((await requestLink(app, cookie, { email: "не-почта", consent: true })).status).toBe(400);
       expect((await requestLink(app, cookie, { email: "a@b.co" })).status).toBe(400);
       expect(world.sent).toEqual([]);
-      const ok = await requestLink(app, cookie, { email: "Kate@Example.test", consent: true, marketingConsent: false, reminderOptIn: true });
+      // Напоминания без согласия на рассылку не принимаются.
+      expect((await requestLink(app, cookie, { email: "a@b.co", consent: true, marketingConsent: false, reminderOptIn: true })).status).toBe(400);
+      const ok = await requestLink(app, cookie, { email: "Kate@Example.test", consent: true, marketingConsent: true, reminderOptIn: true });
       expect(ok.status).toBe(200);
       expect(await json(ok)).toEqual({ sent: true });
       expect(world.sent).toHaveLength(1);

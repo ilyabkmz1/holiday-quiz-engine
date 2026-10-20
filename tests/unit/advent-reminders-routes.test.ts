@@ -22,6 +22,8 @@ const world = vi.hoisted(() => ({
   now: new Date(),
   sent: [] as Array<{ email: string; vars: unknown }>,
   login: [] as string[],
+  /** Кому ушли ссылки входа и с какими параметрами. */
+  loginMail: [] as Array<{ email: string; link: URL }>,
   build: null as null | ((tenant: unknown) => unknown),
   repository: null as unknown
 }));
@@ -49,6 +51,7 @@ async function boot() {
   world.repository = repository;
   world.sent.length = 0;
   world.login.length = 0;
+  world.loginMail.length = 0;
   world.now = at(3, 12);
   world.build = (tenant) => {
     const config = (tenant as { advent: import("@/config/advent-schema").AdventConfig }).advent;
@@ -56,6 +59,7 @@ async function boot() {
     const adventService = new AdventService(repository, config, rewardService);
     return {
       prisma: { campaign: { upsert: async () => undefined } },
+      ensureCampaign: async () => undefined,
       repository,
       adventService,
       rewardService,
@@ -73,8 +77,9 @@ async function boot() {
         advent: config,
         onVerified: (participantId, now) => adventService.ensureCodes(participantId, now),
         verifyEndpoint: "https://advent.test/api/advent/identity/verify",
-        sendLoginLink: async (_email, link) => {
+        sendLoginLink: async (email, link) => {
           world.login.push(new URL(link).searchParams.get("token")!);
+          world.loginMail.push({ email, link: new URL(link) });
         }
       })
     };
@@ -93,6 +98,8 @@ async function boot() {
     identityConfirm: (await import("@/app/api/advent/identity/verify/route")).POST,
     reminders: (await import("@/app/api/advent/reminders/route")).POST,
     open: (await import("@/app/api/advent/reminders/open/route")).GET,
+    reminderLogin: (await import("@/app/api/advent/reminders/login/route")).POST,
+    state: (await import("@/app/api/advent/state/route")).GET,
     unsubscribe: (await import("@/app/api/advent/unsubscribe/route")).POST,
     oneClick: (await import("@/app/api/advent/unsubscribe/one-click/route")).POST,
     oneClickGet: (await import("@/app/api/advent/unsubscribe/one-click/route")).GET
@@ -127,7 +134,7 @@ const location = (response: Response) => new URL(response.headers.get("location"
 async function subscriber(app: App, email = "kate@example.test", optIn = true) {
   const created = await app.participants(request("/api/advent/participants", { method: "POST" }));
   const anon = created.cookies.get(app.ADVENT_COOKIE)!.value;
-  await app.identityRequest(request("/api/advent/identity/request", { method: "POST", cookie: anon, body: { email, consent: true, reminderOptIn: optIn } }));
+  await app.identityRequest(request("/api/advent/identity/request", { method: "POST", cookie: anon, body: { email, consent: true, marketingConsent: optIn, reminderOptIn: optIn } }));
   const confirmed = await app.identityConfirm(request("/api/advent/identity/verify", { method: "POST", cookie: anon, form: { token: world.login.at(-1)! } }));
   return { cookie: confirmed.cookies.get(app.ADVENT_COOKIE)!.value, participantId: (await json(created)).participantId as string };
 }
@@ -155,34 +162,39 @@ describe("маршруты напоминаний", () => {
   });
 
   describe("POST /api/advent/reminders (переключатель на сайте)", () => {
-    it("без cookie — 401, анониму без email — 409, чужой Origin — 403, не boolean — 400", async () => {
+    it("без cookie — 401, анониму без email — 409, чужой Origin — 403, не boolean и включение без согласия на рассылку — 400", async () => {
       const app = await boot();
-      expect((await app.reminders(request("/api/advent/reminders", { method: "POST", body: { enabled: true } }))).status).toBe(401);
+      const on = { enabled: true, marketingConsent: true };
+      expect((await app.reminders(request("/api/advent/reminders", { method: "POST", body: on }))).status).toBe(401);
       const created = await app.participants(request("/api/advent/participants", { method: "POST" }));
       const cookie = created.cookies.get(app.ADVENT_COOKIE)!.value;
-      const anonymous = await app.reminders(request("/api/advent/reminders", { method: "POST", cookie, body: { enabled: true } }));
+      expect((await app.reminders(request("/api/advent/reminders", { method: "POST", cookie, body: { enabled: true } }))).status).toBe(400);
+      expect((await app.reminders(request("/api/advent/reminders", { method: "POST", cookie, body: { enabled: true, marketingConsent: false } }))).status).toBe(400);
+      const anonymous = await app.reminders(request("/api/advent/reminders", { method: "POST", cookie, body: on }));
       expect(anonymous.status).toBe(409);
       expect((await json(anonymous)).error).toMatch(/email/);
-      expect((await app.reminders(request("/api/advent/reminders", { method: "POST", cookie, origin: "https://evil.example", body: { enabled: true } }))).status).toBe(403);
+      expect((await app.reminders(request("/api/advent/reminders", { method: "POST", cookie, origin: "https://evil.example", body: on }))).status).toBe(403);
       expect((await app.reminders(request("/api/advent/reminders", { method: "POST", cookie, body: { enabled: "да" } }))).status).toBe(400);
       expect((await app.reminders(request("/api/advent/reminders", { method: "POST", cookie, body: {} }))).status).toBe(400);
     });
 
-    it("подтверждённый участник включает и выключает напоминания; повтор идемпотентен; согласие на данные остаётся", async () => {
+    it("подтверждённый участник включает (с согласием на рассылку) и выключает (отзыв) напоминания; повтор идемпотентен; согласие на данные остаётся", async () => {
       const app = await boot();
       const { cookie, participantId } = await subscriber(app, "kate@example.test", false);
+      expect(await app.repository.getParticipant(participantId)).toMatchObject({ reminderOptIn: false, marketingConsentAt: null });
       const call = async (enabled: boolean) => {
-        const response = await app.reminders(request("/api/advent/reminders", { method: "POST", cookie, body: { enabled } }));
+        const response = await app.reminders(request("/api/advent/reminders", { method: "POST", cookie, body: { enabled, marketingConsent: enabled } }));
         expect(response.status).toBe(200);
         return (await json(response)).state.participant;
       };
 
-      expect(await call(true)).toMatchObject({ reminderOptIn: true, canRemind: true, consent: true });
+      expect(await call(true)).toMatchObject({ reminderOptIn: true, marketingConsent: true, canRemind: true, consent: true });
+      expect(await app.repository.getParticipant(participantId)).toMatchObject({ marketingConsentAt: world.now });
       expect(await call(true)).toMatchObject({ reminderOptIn: true });
-      expect(await call(false)).toMatchObject({ reminderOptIn: false, consent: true, email: "k***@example.test" });
+      expect(await call(false)).toMatchObject({ reminderOptIn: false, marketingConsent: false, consent: true, email: "k***@example.test" });
       expect(await call(false)).toMatchObject({ reminderOptIn: false });
       const record = await app.repository.getParticipant(participantId);
-      expect(record).toMatchObject({ reminderOptIn: false, consentAt: expect.any(Date), marketingConsentAt: null });
+      expect(record).toMatchObject({ reminderOptIn: false, consentAt: expect.any(Date), marketingConsentAt: null, unsubscribedAt: world.now });
       expect(logs.join("\n")).not.toContain("kate@example.test");
     });
 
@@ -193,96 +205,131 @@ describe("маршруты напоминаний", () => {
       const off = adventPackFixture();
       off.advent.reminders.channel = "off";
       tenants.overrideTenants(tenants.loadTenants([{ ...off, hosts: [HOST], demo: false }]));
-      const response = await app.reminders(request("/api/advent/reminders", { method: "POST", cookie, body: { enabled: true } }));
+      const response = await app.reminders(request("/api/advent/reminders", { method: "POST", cookie, body: { enabled: true, marketingConsent: true } }));
       expect(response.status).toBe(409);
     });
   });
 
-  describe("кнопка письма: GET /api/advent/reminders/open и вход", () => {
-    it("полный путь: письмо → кнопка без cookie → страница входа → «Войти» → сайт на нужном дне, переход засчитан один раз", async () => {
+  describe("кнопка письма: вход только по cookie, иначе — свежая ссылка на адрес владельца", () => {
+    const sendLink = (app: App, form: Record<string, string>, init: Init = {}) => app.reminderLogin(request("/api/advent/reminders/login", { method: "POST", form, ...init }));
+
+    it("полный путь без cookie: страница «войдите» → «Прислать ссылку» → письмо владельцу → вход → сайт на дне письма", async () => {
       const app = await boot();
-      const { participantId } = await subscriber(app);
+      const { participantId, cookie: ownerCookie } = await subscriber(app);
       const { result, mail } = await remind(app);
       expect(result).toMatchObject({ sent: 1, day: 3 });
 
       const button = new URL(mail!.link);
+      expect([...button.searchParams.keys()]).toEqual(["r"]);
+      const deliveryId = button.searchParams.get("r")!;
+      const loginsBefore = world.loginMail.length;
       const first = await app.open(request(`${button.pathname}${button.search}`));
       expect(first.status).toBe(303);
-      const login = location(first);
-      expect(login.pathname).toBe("/login");
-      expect(login.searchParams.get("r")).toBe(button.searchParams.get("r"));
-      expect(login.searchParams.get("token")).toBe(button.searchParams.get("token"));
-      // Переход по GET (его делают и почтовые сканеры) не засчитывается и ссылку не тратит.
-      const deliveryId = button.searchParams.get("r")!;
+      const page = location(first);
+      expect(page.pathname).toBe("/reminder");
+      expect(Object.fromEntries(page.searchParams)).toEqual({ r: deliveryId, d: "3" });
+      // GET (его делают и почтовые сканеры) ничего не тратит, не шлёт и клик не засчитывает.
       expect((await app.repository.getReminderDelivery(deliveryId))?.clickedAt).toBeNull();
-      await app.open(request(`${button.pathname}${button.search}`));
+      expect(world.loginMail).toHaveLength(loginsBefore);
+      expect(first.cookies.get(app.ADVENT_COOKIE)).toBeUndefined();
 
-      const confirmed = await app.identityConfirm(request("/api/advent/identity/verify", { method: "POST", form: { token: login.searchParams.get("token")!, r: deliveryId } }));
-      expect(confirmed.status).toBe(303);
+      const asked = await sendLink(app, { r: deliveryId });
+      expect(asked.status).toBe(303);
+      expect(location(asked).pathname + location(asked).search).toBe("/reminder?sent=1");
+      expect(asked.headers.get("location")).not.toContain("kate");
+      expect(world.loginMail).toHaveLength(loginsBefore + 1);
+      const letter = world.loginMail.at(-1)!;
+      expect(letter.email).toBe("kate@example.test");
+      expect(letter.link.searchParams.get("r")).toBe(deliveryId);
+      expect((await app.repository.getReminderDelivery(deliveryId))?.clickedAt).toEqual(world.now);
+      const device = asked.cookies.get(app.ADVENT_COOKIE)!.value;
+      // У запросившего устройства пока только свой анонимный участник.
+      expect((await json(await app.state(request("/api/advent/state", { cookie: device })))).participant).toMatchObject({ email: null });
+
+      const confirmed = await app.identityConfirm(request("/api/advent/identity/verify", { method: "POST", cookie: device, form: { token: letter.link.searchParams.get("token")!, r: deliveryId } }));
       expect(location(confirmed).pathname + location(confirmed).search).toBe("/?day=3");
       const cookie = confirmed.cookies.get(app.ADVENT_COOKIE)!.value;
-      expect((await app.repository.getReminderDelivery(deliveryId))?.clickedAt).toEqual(world.now);
-      expect((await app.repository.findParticipantByAccessKeyHash((await import("@/server/crypto")).hashToken(cookie)))?.id).toBe(participantId);
-
-      // С cookie того же участника кнопка ведёт прямо на сайт, без страницы входа; первый переход не затирается.
-      world.now = at(3, 13);
-      const direct = await app.open(request(`${button.pathname}${button.search}`, { cookie }));
-      expect(location(direct).pathname + location(direct).search).toBe("/?day=3");
-      expect((await app.repository.getReminderDelivery(deliveryId))?.clickedAt).toEqual(at(3, 9));
+      const { hashToken } = await import("@/server/crypto");
+      expect((await app.repository.findParticipantByAccessKeyHash(hashToken(cookie)))?.id).toBe(participantId);
+      // Ключ прежнего устройства владельца не отозван.
+      expect((await app.repository.findParticipantByAccessKeyHash(hashToken(ownerCookie)))?.id).toBe(participantId);
     });
 
-    it("с cookie того же участника сразу на сайт и переход засчитывается", async () => {
+    it("с cookie того же участника сразу на сайт и переход засчитывается; повторный переход первый не затирает", async () => {
       const app = await boot();
       const { cookie } = await subscriber(app);
       const { mail } = await remind(app);
       const button = new URL(mail!.link);
       const response = await app.open(request(`${button.pathname}${button.search}`, { cookie }));
       expect(location(response).pathname + location(response).search).toBe("/?day=3");
-      expect((await app.repository.getReminderDelivery(button.searchParams.get("r")!))?.clickedAt).not.toBeNull();
+      expect((await app.repository.getReminderDelivery(button.searchParams.get("r")!))?.clickedAt).toEqual(at(3, 9));
+      world.now = at(3, 13);
+      await app.open(request(`${button.pathname}${button.search}`, { cookie }));
+      expect((await app.repository.getReminderDelivery(button.searchParams.get("r")!))?.clickedAt).toEqual(at(3, 9));
+      // Кнопка «Прислать ссылку» на устройстве, где владелец уже вошёл, письма не шлёт.
+      const before = world.loginMail.length;
+      const already = await sendLink(app, { r: button.searchParams.get("r")! }, { cookie });
+      expect(location(already).pathname + location(already).search).toBe("/?day=3");
+      expect(world.loginMail).toHaveLength(before);
     });
 
-    it("cookie другого участника: страница входа, переход не засчитан; вход чужой доставкой переход тоже не засчитывает", async () => {
+    it("пересланное письмо: cookie другого участника — страница «войдите», ссылка уходит владельцу, а не пересылавшему; чужая доставка при входе дня не открывает", async () => {
       const app = await boot();
       await subscriber(app, "kate@example.test");
-      const { cookie: other, participantId: otherId } = await subscriber(app, "oleg@example.test", false);
+      const { cookie: other } = await subscriber(app, "oleg@example.test", false);
       const { mail } = await remind(app);
       const button = new URL(mail!.link);
       const deliveryId = button.searchParams.get("r")!;
       const response = await app.open(request(`${button.pathname}${button.search}`, { cookie: other }));
-      expect(location(response).pathname).toBe("/login");
+      expect(location(response).pathname).toBe("/reminder");
       expect((await app.repository.getReminderDelivery(deliveryId))?.clickedAt).toBeNull();
 
-      // Олег подставляет в форму чужую доставку со своей ссылкой входа: переход не засчитывается.
+      const asked = await sendLink(app, { r: deliveryId }, { cookie: other });
+      expect(location(asked).search).toBe("?sent=1");
+      expect(asked.cookies.get(app.ADVENT_COOKIE)).toBeUndefined();
+      expect(world.loginMail.at(-1)!.email).toBe("kate@example.test");
+
+      // Олег подставляет в форму входа чужую доставку со своей ссылкой: вход его, день письма не открывается.
       await app.identityRequest(request("/api/advent/identity/request", { method: "POST", cookie: other, body: { email: "oleg@example.test", consent: true } }));
       const confirmed = await app.identityConfirm(request("/api/advent/identity/verify", { method: "POST", cookie: other, form: { token: world.login.at(-1)!, r: deliveryId } }));
       expect(location(confirmed).pathname + location(confirmed).search).toBe("/");
-      expect((await app.repository.getReminderDelivery(deliveryId))?.clickedAt).toBeNull();
-      expect(otherId).toBeTruthy();
     });
 
-    it("неизвестная доставка и мусор ведут на главную, битая ссылка входа — на главную с ошибкой", async () => {
+    it("«Прислать ссылку»: без Origin или с чужим — 403; мусор — страница ошибки; неизвестная доставка — тот же ответ без письма", async () => {
       const app = await boot();
       await subscriber(app);
       const { mail } = await remind(app);
-      const good = new URL(mail!.link);
-      for (const query of ["", "?r=не-uuid", "?r=00000000-0000-4000-8000-000000000000&token=" + "x".repeat(30)]) {
+      const deliveryId = new URL(mail!.link).searchParams.get("r")!;
+      const before = world.loginMail.length;
+      expect((await sendLink(app, { r: deliveryId }, { origin: null })).status).toBe(403);
+      expect((await sendLink(app, { r: deliveryId }, { origin: "https://evil.example" })).status).toBe(403);
+      expect(location(await sendLink(app, { r: "не-uuid" })).pathname + location(await sendLink(app, {})).search).toBe("/reminder");
+      expect(location(await sendLink(app, { r: "00000000-0000-4000-8000-000000000000" })).search).toBe("?sent=1");
+      // Email страница не принимает: поле игнорируется, письмо уходит только владельцу доставки.
+      await sendLink(app, { r: deliveryId, email: "attacker@example.test" });
+      expect(world.loginMail.slice(before).map((item) => item.email)).toEqual(["kate@example.test"]);
+    });
+
+    it("лимиты: не больше 3 ссылок с одной кнопки письма за 15 минут", async () => {
+      const app = await boot();
+      await subscriber(app);
+      const { mail } = await remind(app);
+      const deliveryId = new URL(mail!.link).searchParams.get("r")!;
+      const before = world.loginMail.length;
+      const results: string[] = [];
+      for (let index = 0; index < 4; index += 1) results.push(location(await sendLink(app, { r: deliveryId }, { headers: { "x-forwarded-for": `10.0.0.${index}` } })).search);
+      expect(results.slice(0, 3)).toEqual(["?sent=1", "?sent=1", "?sent=1"]);
+      expect(results[3]).toBe(`?r=${deliveryId}&limited=1`);
+      expect(world.loginMail.length - before).toBe(3);
+    });
+
+    it("неизвестная доставка и мусор в кнопке ведут на главную", async () => {
+      const app = await boot();
+      for (const query of ["", "?r=не-uuid", "?r=00000000-0000-4000-8000-000000000000"]) {
         const response = await app.open(request(`/api/advent/reminders/open${query}`));
         expect(response.status).toBe(303);
         expect(location(response).pathname + location(response).search).toBe("/");
       }
-      const noToken = await app.open(request(`/api/advent/reminders/open?r=${good.searchParams.get("r")}`));
-      expect(location(noToken).pathname + location(noToken).search).toBe("/?login=error");
-    });
-
-    it("ссылка живёт до конца местных суток и срабатывает один раз; после — вход с ошибкой, переход не засчитан", async () => {
-      const app = await boot();
-      await subscriber(app);
-      const { mail } = await remind(app);
-      const button = new URL(mail!.link);
-      world.now = new Date("2026-12-23T00:00:30+03:00");
-      const confirmed = await app.identityConfirm(request("/api/advent/identity/verify", { method: "POST", form: { token: button.searchParams.get("token")!, r: button.searchParams.get("r")! } }));
-      expect(location(confirmed).search).toBe("?login=error");
-      expect((await app.repository.getReminderDelivery(button.searchParams.get("r")!))?.clickedAt).toBeNull();
     });
 
     it("на квиз-арендаторе маршрутов напоминаний нет — 404", async () => {
@@ -307,7 +354,7 @@ describe("маршруты напоминаний", () => {
       expect(response.status).toBe(303);
       expect(location(response).pathname + location(response).search).toBe("/unsubscribe?done=1");
       const record = await app.repository.getParticipant(participantId);
-      expect(record).toMatchObject({ reminderOptIn: false, unsubscribedAt: world.now, consentAt: expect.any(Date), normalizedEmail: "kate@example.test" });
+      expect(record).toMatchObject({ reminderOptIn: false, marketingConsentAt: null, unsubscribedAt: world.now, consentAt: expect.any(Date), normalizedEmail: "kate@example.test" });
 
       world.now = at(3, 15);
       const again = await app.unsubscribe(request("/api/advent/unsubscribe", { method: "POST", form: { t: token } }));
@@ -334,7 +381,7 @@ describe("маршруты напоминаний", () => {
       const response = await oneClick();
       expect(response.status).toBe(200);
       expect(await json(response)).toEqual({ unsubscribed: true });
-      expect((await app.repository.getParticipant(participantId))?.reminderOptIn).toBe(false);
+      expect(await app.repository.getParticipant(participantId)).toMatchObject({ reminderOptIn: false, marketingConsentAt: null, consentAt: expect.any(Date) });
       expect((await oneClick()).status).toBe(200);
     });
 
@@ -375,12 +422,15 @@ describe("маршруты напоминаний", () => {
       const button = new URL(mail!.link);
       const token = new URL(mail!.unsubscribeUrl).searchParams.get("t")!;
       await app.open(request(`${button.pathname}${button.search}`, { cookie }));
+      await app.open(request(`${button.pathname}${button.search}`));
+      await app.reminderLogin(request("/api/advent/reminders/login", { method: "POST", form: { r: button.searchParams.get("r")! } }));
+      const loginToken = world.login.at(-1)!;
       await app.unsubscribe(request("/api/advent/unsubscribe", { method: "POST", form: { t: token } }));
       await app.oneClick(request(`/api/advent/unsubscribe/one-click?t=${token}`, { method: "POST", origin: null }));
-      await app.reminders(request("/api/advent/reminders", { method: "POST", cookie, body: { enabled: true } }));
+      await app.reminders(request("/api/advent/reminders", { method: "POST", cookie, body: { enabled: true, marketingConsent: true } }));
       const text = logs.join("\n");
-      expect(text.length).toBeGreaterThan(0);
-      for (const secret of ["secret.person@example.test", token, button.searchParams.get("token")!, "unsubscribe?t=", "reminders/open?r="]) expect(text).not.toContain(secret);
+      expect(text).toContain("advent_reminder_login_requested");
+      for (const secret of ["secret.person@example.test", token, loginToken, "unsubscribe?t=", "reminders/open?r=", "verify?token="]) expect(text).not.toContain(secret);
     });
   });
 });

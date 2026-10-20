@@ -1,9 +1,6 @@
 -- Этап A5 адвента: напоминания. Аддитивно: новые столбцы с значениями по умолчанию, отправка до записи больше не требует sentAt.
 ALTER TABLE "Participant" ADD COLUMN "unsubscribedAt" TIMESTAMP(3);
 
--- Ссылка входа, выпущенная сервером для подтверждённого адреса (письмо-напоминание).
-ALTER TABLE "LoginToken" ADD COLUMN "trusted" BOOLEAN NOT NULL DEFAULT false;
-
 ALTER TABLE "ReminderDelivery"
   ADD COLUMN "id" UUID NOT NULL DEFAULT gen_random_uuid(),
   ADD COLUMN "status" TEXT NOT NULL DEFAULT 'sent',

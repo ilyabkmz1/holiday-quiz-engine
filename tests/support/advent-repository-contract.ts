@@ -63,7 +63,6 @@ export function tokenRecord(participantId: string, email: string, overrides: Par
     consentAt: T0,
     marketingConsentAt: null,
     reminderOptIn: false,
-    trusted: false,
     createdAt: T0,
     expiresAt: minutes(30),
     usedAt: null,
@@ -772,29 +771,30 @@ export function describeAdventRepositoryContract(name: string, create: () => Pro
         expect(first.participant.id).toBe(second.participant.id);
       });
 
-      it("доверенная ссылка (письмо-напоминание) на другом устройстве не отзывает ключи прежних устройств", async () => {
+      it("ссылка на адрес владельца, запрошенная другим устройством (страница письма-напоминания): ключи владельца целы, запросившее устройство получает доступ, только если ссылку открыли на нём", async () => {
         const owner = await newParticipant();
-        const first = tokenRecord(owner.id, "trusted@example.test");
+        const first = tokenRecord(owner.id, "owner@example.test");
         await repo.createLoginToken(first);
         await loginWith(first.tokenHash, owner.id);
 
-        const ordinary = tokenRecord(owner.id, "trusted@example.test", { tokenHash: hashToken("ordinary") });
-        const trusted = tokenRecord(owner.id, "trusted@example.test", { tokenHash: hashToken("trusted"), trusted: true });
-        await repo.createLoginToken(ordinary);
-        await repo.createLoginToken(trusted);
-
-        // Обычная ссылка, открытая на чужом устройстве, отзывает ключи запросившего; доверенная — нет.
-        const phone = hashToken("phone");
-        await repo.completeLogin({ tokenHash: trusted.tokenHash, now: minutes(2), campaignSlug: CAMPAIGN, currentParticipantId: null, newAccessKeyHash: phone });
+        // Чужое устройство (пересланное письмо) просит ссылку; владелец открывает её у себя.
+        const stranger = await newParticipant();
+        const foreign = tokenRecord(stranger.id, "owner@example.test");
+        await repo.createLoginToken(foreign);
+        const laptop = hashToken("laptop");
+        await repo.completeLogin({ tokenHash: foreign.tokenHash, now: minutes(2), campaignSlug: CAMPAIGN, currentParticipantId: owner.id, newAccessKeyHash: laptop });
         expect((await repo.findParticipantByAccessKeyHash(owner.accessKeyHash))?.id).toBe(owner.id);
-        expect((await repo.findParticipantByAccessKeyHash(phone))?.id).toBe(owner.id);
+        expect((await repo.findParticipantByAccessKeyHash(laptop))?.id).toBe(owner.id);
+        expect(await repo.findParticipantByAccessKeyHash(stranger.accessKeyHash)).toBeNull();
 
-        // Для сравнения: обычная ссылка на третьем устройстве отзывает ключи всех прежних.
-        const tablet = hashToken("tablet");
-        await repo.completeLogin({ tokenHash: ordinary.tokenHash, now: minutes(3), campaignSlug: CAMPAIGN, currentParticipantId: null, newAccessKeyHash: tablet });
-        expect(await repo.findParticipantByAccessKeyHash(owner.accessKeyHash)).toBeNull();
-        expect(await repo.findParticipantByAccessKeyHash(phone)).toBeNull();
-        expect((await repo.findParticipantByAccessKeyHash(tablet))?.id).toBe(owner.id);
+        // Телефон владельца без cookie просит ссылку и открывает её у себя: входит, ключи прежних устройств не отзываются.
+        const phone = await newParticipant();
+        const own = tokenRecord(phone.id, "owner@example.test");
+        await repo.createLoginToken(own);
+        await repo.completeLogin({ tokenHash: own.tokenHash, now: minutes(3), campaignSlug: CAMPAIGN, currentParticipantId: phone.id, newAccessKeyHash: hashToken("phone") });
+        expect((await repo.findParticipantByAccessKeyHash(phone.accessKeyHash))?.id).toBe(owner.id);
+        expect((await repo.findParticipantByAccessKeyHash(owner.accessKeyHash))?.id).toBe(owner.id);
+        expect((await repo.findParticipantByAccessKeyHash(laptop))?.id).toBe(owner.id);
       });
     });
 
@@ -808,8 +808,9 @@ export function describeAdventRepositoryContract(name: string, create: () => Pro
         ...overrides
       });
       const subscriber = (overrides: Partial<ParticipantRecord> = {}) =>
-        newParticipant({ normalizedEmail: `${createId()}@example.test`, consentAt: T0, reminderOptIn: true, ...overrides });
+        newParticipant({ normalizedEmail: `${createId()}@example.test`, consentAt: T0, marketingConsentAt: T0, reminderOptIn: true, ...overrides });
       const claimInput = (participantId: string, day: number, extra: Record<string, unknown> = {}) => ({
+        deliveryId: createId(),
         participantId,
         day,
         now: minutes(10),
@@ -819,7 +820,7 @@ export function describeAdventRepositoryContract(name: string, create: () => Pro
         ...extra
       });
 
-      it("кандидаты: подтверждённый email и согласие, напоминания включены, день не открыт, своя кампания", async () => {
+      it("кандидаты: подтверждённый email, согласие на данные и на рассылку, напоминания включены, день не открыт, своя кампания", async () => {
         const good = await subscriber();
         const opened = await subscriber();
         await repo.openDayOnce(opened.id, 5, minutes(1), true);
@@ -828,6 +829,8 @@ export function describeAdventRepositoryContract(name: string, create: () => Pro
         await subscriber({ reminderOptIn: false });
         await newParticipant({ reminderOptIn: true });
         await subscriber({ consentAt: null });
+        // Напоминание — рассылка: без согласия на неё (ст. 18 38-ФЗ) не шлём, даже при включённой отметке.
+        await subscriber({ marketingConsentAt: null });
         await subscriber({ campaignSlug: OTHER_CAMPAIGN });
 
         const ids = (await repo.listReminderCandidates(query(5))).map((participant) => participant.id);
@@ -851,12 +854,13 @@ export function describeAdventRepositoryContract(name: string, create: () => Pro
         expect(await repo.listReminderCandidates(query(3))).toEqual([]);
       });
 
-      it("claim не выдаётся отписавшемуся, открывшему день и участнику без email", async () => {
+      it("claim не выдаётся отписавшемуся, открывшему день, участнику без email и без согласия на рассылку", async () => {
         const unsubscribed = await subscriber({ reminderOptIn: false });
         const opened = await subscriber();
         await repo.openDayOnce(opened.id, 3, minutes(1), true);
         const anonymous = await newParticipant({ reminderOptIn: true });
-        for (const person of [unsubscribed, opened, anonymous]) expect(await repo.claimReminder(claimInput(person.id, 3))).toBeNull();
+        const noMarketing = await subscriber({ marketingConsentAt: null });
+        for (const person of [unsubscribed, opened, anonymous, noMarketing]) expect(await repo.claimReminder(claimInput(person.id, 3))).toBeNull();
       });
 
       it("failed повторяется не раньше retryBefore и не больше maxAttempts; sent не повторяется", async () => {
@@ -870,8 +874,11 @@ export function describeAdventRepositoryContract(name: string, create: () => Pro
         expect(await repo.claimReminder(claimInput(person.id, 6, { now: minutes(11), retryBefore: minutes(5) }))).toBeNull();
 
         expect((await repo.listReminderCandidates(query(6, { retryBefore: minutes(20) }))).map((candidate) => candidate.id)).toEqual([person.id]);
-        const second = (await repo.claimReminder(claimInput(person.id, 6, { now: minutes(30), retryBefore: minutes(20) })))!;
-        expect(second).toMatchObject({ id: first.id, attempts: 2, status: "sending", lastError: null });
+        const retry = claimInput(person.id, 6, { now: minutes(30), retryBefore: minutes(20) });
+        const second = (await repo.claimReminder(retry))!;
+        // Повтор получает новый идентификатор: письмо со ссылкой собрано заранее под него.
+        expect(second).toMatchObject({ id: retry.deliveryId, attempts: 2, status: "sending", lastError: null });
+        expect(await repo.getReminderDelivery(first.id)).toBeNull();
         await repo.markReminderFailed(second.id, "smtp_etimedout");
         const third = (await repo.claimReminder(claimInput(person.id, 6, { now: minutes(60), retryBefore: minutes(50) })))!;
         expect(third.attempts).toBe(3);
@@ -913,14 +920,19 @@ export function describeAdventRepositoryContract(name: string, create: () => Pro
         expect(await repo.findParticipantByUnsubscribeHash(hashToken("чужой"))).toBeNull();
       });
 
-      it("setReminderOptIn идемпотентен: первая отписка запоминается, согласие на данные не трогается, включение снимает отметку", async () => {
+      it("setReminderOptIn идемпотентен: отписка отзывает согласие на рассылку, первая запоминается, согласие на данные не трогается; включение записывает согласие", async () => {
         const person = await subscriber();
         const off = await repo.setReminderOptIn(person.id, false, minutes(5));
-        expect(off).toMatchObject({ reminderOptIn: false, unsubscribedAt: minutes(5), consentAt: T0 });
+        expect(off).toMatchObject({ reminderOptIn: false, marketingConsentAt: null, unsubscribedAt: minutes(5), consentAt: T0 });
         const again = await repo.setReminderOptIn(person.id, false, minutes(50));
         expect(again?.unsubscribedAt).toEqual(minutes(5));
         const on = await repo.setReminderOptIn(person.id, true, minutes(60));
-        expect(on).toMatchObject({ reminderOptIn: true, unsubscribedAt: null });
+        expect(on).toMatchObject({ reminderOptIn: true, marketingConsentAt: minutes(60), unsubscribedAt: null });
+        // Повторное включение не сдвигает момент согласия.
+        expect((await repo.setReminderOptIn(person.id, true, minutes(90)))?.marketingConsentAt).toEqual(minutes(60));
+        // Отказ от рассылки без отметки напоминаний — тоже отзыв.
+        const marketingOnly = await subscriber({ reminderOptIn: false });
+        expect(await repo.setReminderOptIn(marketingOnly.id, false, minutes(7))).toMatchObject({ marketingConsentAt: null, unsubscribedAt: minutes(7) });
         expect(await repo.setReminderOptIn(createId(), true, minutes(1))).toBeNull();
       });
 
@@ -934,10 +946,10 @@ export function describeAdventRepositoryContract(name: string, create: () => Pro
       it("вход по ссылке с включёнными напоминаниями снимает прежнюю отписку", async () => {
         const person = await subscriber();
         await repo.setReminderOptIn(person.id, false, minutes(5));
-        const token = tokenRecord(person.id, person.normalizedEmail!, { reminderOptIn: true });
+        const token = tokenRecord(person.id, person.normalizedEmail!, { reminderOptIn: true, marketingConsentAt: minutes(6) });
         await repo.createLoginToken(token);
         await repo.completeLogin({ tokenHash: token.tokenHash, now: minutes(6), campaignSlug: CAMPAIGN, currentParticipantId: person.id, newAccessKeyHash: hashToken("k") });
-        expect(await repo.getParticipant(person.id)).toMatchObject({ reminderOptIn: true, unsubscribedAt: null });
+        expect(await repo.getParticipant(person.id)).toMatchObject({ reminderOptIn: true, marketingConsentAt: minutes(6), unsubscribedAt: null });
       });
 
       it("сводка: отправлено, ошибки, переходы, открыли после письма; подписаны и отписавшиеся", async () => {
@@ -946,6 +958,8 @@ export function describeAdventRepositoryContract(name: string, create: () => Pro
         const c = await subscriber();
         const gone = await subscriber();
         await repo.setReminderOptIn(gone.id, false, minutes(1));
+        // Отметка без согласия на рассылку подпиской не считается.
+        await subscriber({ marketingConsentAt: null });
         const da = (await repo.claimReminder(claimInput(a.id, 2)))!;
         const db = (await repo.claimReminder(claimInput(b.id, 2)))!;
         const dc = (await repo.claimReminder(claimInput(c.id, 2)))!;

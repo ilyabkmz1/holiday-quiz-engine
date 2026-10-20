@@ -9,14 +9,17 @@ import { getAdventServices } from "@/server/container";
 import { adventTenantFromHeaders } from "@/server/tenants";
 import type { IdentityRequestResponse } from "@/types/advent";
 
-const requestSchema = z.object({
-  email: z.string().trim().max(254).pipe(z.email()),
-  /** Согласие на обработку персональных данных (152-ФЗ): без него ссылка не уходит. */
-  consent: z.boolean(),
-  /** Отдельное согласие на рассылку (ст. 18 38-ФЗ). */
-  marketingConsent: z.boolean().default(false),
-  reminderOptIn: z.boolean().default(false)
-});
+const requestSchema = z
+  .object({
+    email: z.string().trim().max(254).pipe(z.email()),
+    /** Согласие на обработку персональных данных (152-ФЗ): без него ссылка не уходит. */
+    consent: z.boolean(),
+    /** Отдельное согласие на рекламную и информационную рассылку (ст. 18 38-ФЗ). */
+    marketingConsent: z.boolean().default(false),
+    /** Напоминания — рассылка: только вместе с `marketingConsent: true`. */
+    reminderOptIn: z.boolean().default(false)
+  })
+  .refine((input) => !input.reminderOptIn || input.marketingConsent, { message: "Напоминания включаются только с согласием на рассылку.", path: ["marketingConsent"] });
 
 /** «Сохранить серию»: письмо со ссылкой входа. Ответ не зависит от того, известен ли email. */
 export async function POST(request: NextRequest) {

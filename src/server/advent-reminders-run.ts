@@ -1,6 +1,6 @@
 import type { MailVars } from "@/server/mailer";
 import { ReminderService, type ReminderOptions, type ReminderRunResult } from "@/server/services/reminder-service";
-import type { AdventRepository, IdentityRepository, ReminderRepository } from "@/server/repositories/advent-repository";
+import type { AdventRepository, ReminderRepository } from "@/server/repositories/advent-repository";
 import { tenantBaseUrl, type AdventTenant } from "@/server/tenants";
 
 export type { ReminderRunResult };
@@ -12,7 +12,7 @@ export type TenantRunReport = { tenant: string } & (ReminderRunResult | ({ skipp
 
 type RunEnv = Record<string, string | undefined>;
 
-type AdventRepositories = AdventRepository & IdentityRepository & ReminderRepository;
+type AdventRepositories = AdventRepository & ReminderRepository;
 
 /** Время запуска: `ADVENT_REMIND_AS_OF` разрешён вне production и для демо-пакетов, иначе игнорируется (как `?asOf=` в API). */
 function runTime(asOf: string | undefined, tenant: AdventTenant, nodeEnv: string | undefined, now: () => Date): Date {
@@ -40,9 +40,12 @@ export async function runAdventReminders(input: {
   repositoryFor: (tenant: AdventTenant) => AdventRepositories;
   send: (email: string, vars: MailVars["reminder"]) => Promise<void>;
   sleep?: (ms: number) => Promise<void>;
+  /** Остановка по сигналу: следующий арендатор и следующее письмо не начинаются. */
+  shouldStop?: () => boolean;
 }): Promise<TenantRunReport[]> {
   const reports: TenantRunReport[] = [];
   for (const tenant of input.tenants) {
+    if (input.shouldStop?.()) break;
     if (tenant.advent.reminders.channel !== "email") continue;
     if (tenant.demo && input.env.ADVENT_REMINDERS_DEMO !== "true") {
       reports.push({ tenant: tenant.tenant, skipped: "demo", day: null, claimed: 0, sent: 0, failed: 0, lostClaims: 0 });
@@ -57,7 +60,8 @@ export async function runAdventReminders(input: {
         baseUrl: tenantBaseUrl(tenant, input.appUrl),
         send: input.send,
         options: input.options,
-        sleep: input.sleep
+        sleep: input.sleep,
+        shouldStop: input.shouldStop
       });
       reports.push({ tenant: tenant.tenant, ...(await service.run(now)) });
     } catch {

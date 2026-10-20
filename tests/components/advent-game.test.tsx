@@ -274,27 +274,43 @@ describe("AdventGame: возвращение и сохранение прогр�
     async function confirmed(options: { optIn: boolean }) {
       const harness = memoryAdventApi({ start: at(2) });
       await harness.ensureParticipant();
-      await harness.api.requestLink({ email: "guest@example.test", consent: true, marketingConsent: false, reminderOptIn: options.optIn });
+      await harness.api.requestLink({ email: "guest@example.test", consent: true, marketingConsent: options.optIn, reminderOptIn: options.optIn });
       await harness.confirmLogin();
       return harness;
     }
 
-    it("вошедший видит переключатель, включает и выключает его; состояние берётся с сервера", async () => {
+    it("включение без согласия на рассылку сначала показывает его текст; запрос — только после «Согласен(на), включить»; выключение отзывает согласие", async () => {
       const harness = await confirmed({ optIn: false });
       const setReminders = vi.spyOn(harness.api, "setReminders");
       mount(harness.api);
       const toggle = await screen.findByRole("checkbox", { name: copy.remindersToggle });
       expect(toggle).not.toBeChecked();
       expect(screen.getByText(copy.remindersToggleHint)).toBeInTheDocument();
+      const consentText = publicConfig.legal.marketingConsentText!;
+      expect(screen.queryByText(consentText)).not.toBeInTheDocument();
 
+      // «Отмена»: ничего не уходит, переключатель выключен.
       fireEvent.click(toggle);
+      expect(await screen.findByText(consentText)).toBeInTheDocument();
+      expect(setReminders).not.toHaveBeenCalled();
+      fireEvent.click(screen.getByRole("button", { name: copy.remindersConsentCancel }));
+      expect(screen.queryByText(consentText)).not.toBeInTheDocument();
+      expect(screen.getByRole("checkbox", { name: copy.remindersToggle })).not.toBeChecked();
+
+      fireEvent.click(screen.getByRole("checkbox", { name: copy.remindersToggle }));
+      fireEvent.click(await screen.findByRole("button", { name: copy.remindersConsentAccept }));
       await waitFor(() => expect(screen.getByRole("checkbox", { name: copy.remindersToggle })).toBeChecked());
-      expect(setReminders).toHaveBeenLastCalledWith(true);
-      expect((await harness.api.getState()).participant.reminderOptIn).toBe(true);
+      expect(setReminders).toHaveBeenLastCalledWith({ enabled: true, marketingConsent: true });
+      expect((await harness.api.getState()).participant).toMatchObject({ reminderOptIn: true, marketingConsent: true });
+      expect(screen.queryByText(consentText)).not.toBeInTheDocument();
 
       fireEvent.click(screen.getByRole("checkbox", { name: copy.remindersToggle }));
       await waitFor(() => expect(screen.getByRole("checkbox", { name: copy.remindersToggle })).not.toBeChecked());
-      expect(setReminders).toHaveBeenLastCalledWith(false);
+      expect(setReminders).toHaveBeenLastCalledWith({ enabled: false, marketingConsent: false });
+      expect((await harness.api.getState()).participant).toMatchObject({ reminderOptIn: false, marketingConsent: false });
+      // Согласие отозвано: повторное включение снова спрашивает его.
+      fireEvent.click(screen.getByRole("checkbox", { name: copy.remindersToggle }));
+      expect(await screen.findByText(consentText)).toBeInTheDocument();
     });
 
     it("уже подписанный видит включённый переключатель; при ошибке сервера возвращается прежнее и звучит сообщение", async () => {

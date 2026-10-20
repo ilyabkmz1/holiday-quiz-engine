@@ -114,9 +114,13 @@ export class AdventService {
 
   /**
    * Переключатель «Напоминания на почту» (`POST reminders`). Только для участника с подтверждённым адресом и согласием на
-   * обработку данных: анонимному напоминать некуда. Идемпотентно; согласие на обработку данных не затрагивает.
+   * обработку данных: анонимному напоминать некуда. Напоминания — рассылка (ст. 18 38-ФЗ): включение только с явным
+   * согласием на неё (`marketingConsent`) и записывает его, выключение отзывает. Идемпотентно; согласие на обработку
+   * данных не затрагивает.
    */
-  async setReminders(participantId: string, enabled: boolean, now: Date): Promise<AdventState> {
+  async setReminders(participantId: string, input: { enabled: boolean; marketingConsent: boolean }, now: Date): Promise<AdventState> {
+    const { enabled } = input;
+    if (enabled && !input.marketingConsent) throw new DomainError("invalid", "Напоминания включаются только с согласием на рассылку.");
     const { participant } = await this.snapshot(participantId);
     if (this.advent.reminders.channel !== "email") throw new DomainError("conflict", "Напоминания в этой кампании не рассылаются.");
     if (participant.normalizedEmail === null || participant.consentAt === null) {

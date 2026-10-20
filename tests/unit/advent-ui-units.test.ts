@@ -60,7 +60,25 @@ describe("публичный срез адвента для страницы", (
     expect(view).toMatchObject({ slug: advent.slug, tenant: "zerno-advent", worldId: "snow-globe", title: advent.title, luckSkin: "boxes" });
     expect(view.heroes.map((hero) => hero.id)).toEqual(advent.heroes.map((hero) => hero.id));
     expect(view.schedule).toEqual({ timezone: "Europe/Moscow", startDate: "2026-12-20", days: 12, finaleAt: advent.schedule.finaleAt, claimEndsAt: advent.schedule.claimEndsAt });
-    expect(view.legal).toEqual({ operatorName: advent.legal.operatorName, consentText: advent.legal.consentText });
+    expect(view.legal).toEqual({
+      operatorName: advent.legal.operatorName,
+      consentText: advent.legal.consentText,
+      marketingConsentText: advent.legal.marketingConsentText!.replace("{operator}", advent.legal.operatorName)
+    });
+  });
+
+  it("отметка согласия на рассылку есть только при email-напоминаниях; без своего текста — текст по умолчанию с оператором", () => {
+    const off = adventConfig((draft) => {
+      draft.reminders.channel = "off";
+    });
+    expect(publicAdvent(off, "zerno-advent", "snow-globe").legal.marketingConsentText).toBeNull();
+    const fallback = adventConfig((draft) => {
+      delete draft.legal.marketingConsentText;
+    });
+    const text = publicAdvent(fallback, "zerno-advent", "snow-globe").legal.marketingConsentText!;
+    expect(text).toContain(fallback.legal.operatorName);
+    expect(text).toContain("рекламные рассылки");
+    expect(text).not.toContain("{operator}");
   });
 
   it("не содержит заданий, ответов, наград, пулов удачи, политики и текстов разбора", () => {

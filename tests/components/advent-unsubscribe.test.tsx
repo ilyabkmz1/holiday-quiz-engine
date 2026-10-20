@@ -25,7 +25,7 @@ describe("AdventUnsubscribe (страница отписки)", () => {
     expect(screen.getByText(advent.brand.topNote)).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /Остаться/ })).toHaveAttribute("href", "/");
     // Прогресс и награды остаются.
-    expect(screen.getByText(/прогресс и награды останутся/i)).toBeInTheDocument();
+    expect(screen.getByText(/отзовём ваше согласие на рассылку. Прогресс, награды и вход по email останутся/i)).toBeInTheDocument();
   });
 
   it("готово: подтверждение без формы и без токена", () => {

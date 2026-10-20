@@ -7,7 +7,7 @@ import { hashToken } from "@/server/crypto";
 import { getPrisma } from "@/server/db";
 import type { MailVars } from "@/server/mailer";
 import { DEFAULT_REMINDER_OPTIONS } from "@/server/services/reminder-service";
-import { identityRequestIpRateLimiter, identityRequestParticipantRateLimiter } from "@/server/rate-limit";
+import { identityRequestEmailRateLimiter, identityRequestIpRateLimiter, identityRequestParticipantRateLimiter, reminderLoginDeliveryRateLimiter } from "@/server/rate-limit";
 import { findTenant, isAdventTenant, loadTenants, overrideTenants } from "@/server/tenants";
 
 import { GET as adminMetrics } from "@/app/api/admin/advent/metrics/route";
@@ -16,6 +16,8 @@ import { POST as postIdentityRequest } from "@/app/api/advent/identity/request/r
 import { POST as postIdentityVerify } from "@/app/api/advent/identity/verify/route";
 import { POST as postReminders } from "@/app/api/advent/reminders/route";
 import { GET as openFromEmail } from "@/app/api/advent/reminders/open/route";
+import { POST as postReminderLogin } from "@/app/api/advent/reminders/login/route";
+import { GET as getState } from "@/app/api/advent/state/route";
 import { POST as postUnsubscribe } from "@/app/api/advent/unsubscribe/route";
 import { POST as postOneClick } from "@/app/api/advent/unsubscribe/one-click/route";
 
@@ -28,6 +30,8 @@ const HOST = "advent.test";
 const clock = { value: at(2, 9) };
 const sent: Array<{ email: string; vars: MailVars["reminder"] }> = [];
 const loginTokens: string[] = [];
+/** Письма со ссылкой входа: кому и какая ссылка (проверяем, что ссылка со страницы письма уходит владельцу). */
+const loginMails: Array<{ email: string; link: string }> = [];
 
 function request(path: string, init: { method?: string; cookie?: string | null; body?: unknown; form?: Record<string, string>; origin?: boolean; auth?: string } = {}): NextRequest {
   const method = init.method ?? "GET";
@@ -55,7 +59,7 @@ async function subscriber(email: string, reminderOptIn = true): Promise<{ cookie
   identityRequestParticipantRateLimiter.reset();
   const created = await createParticipant(request("/api/advent/participants", { method: "POST" }));
   const anonymous = created.cookies.get(ADVENT_COOKIE)!.value;
-  const requested = await postIdentityRequest(request("/api/advent/identity/request", { method: "POST", cookie: anonymous, body: { email, consent: true, reminderOptIn } }));
+  const requested = await postIdentityRequest(request("/api/advent/identity/request", { method: "POST", cookie: anonymous, body: { email, consent: true, marketingConsent: reminderOptIn, reminderOptIn } }));
   expect(requested.status).toBe(200);
   const confirmed = await postIdentityVerify(request("/api/advent/identity/verify", { method: "POST", cookie: anonymous, form: { token: loginTokens.at(-1)! } }));
   return { cookie: confirmed.cookies.get(ADVENT_COOKIE)!.value, participantId: (await json(created)).participantId };
@@ -72,6 +76,9 @@ describe("напоминания адвента на PostgreSQL", () => {
     clock.value = at(2, 9);
     sent.length = 0;
     loginTokens.length = 0;
+    loginMails.length = 0;
+    reminderLoginDeliveryRateLimiter.reset();
+    identityRequestEmailRateLimiter.reset();
     overrideServices({
       now: () => new Date(clock.value),
       sendLogin: async (email, link) => {
@@ -79,10 +86,10 @@ describe("напоминания адвента на PostgreSQL", () => {
         sensitiveValues.add(token);
         sensitiveValues.add(email);
         loginTokens.push(token);
+        loginMails.push({ email, link });
       },
       sendReminder: async (email, vars) => {
         sensitiveValues.add(email);
-        sensitiveValues.add(new URL(vars.link).searchParams.get("token")!);
         sensitiveValues.add(new URL(vars.unsubscribeUrl).searchParams.get("t")!);
         sent.push({ email, vars });
       }
@@ -105,13 +112,14 @@ describe("напоминания адвента на PostgreSQL", () => {
     const deliveries = await prisma.reminderDelivery.findMany();
     expect(deliveries).toHaveLength(24);
     expect(deliveries.every((delivery) => delivery.status === "sent" && delivery.attempts === 1 && delivery.sentAt && delivery.lastError === null)).toBe(true);
-    // В БД только хеши токенов: ни токена входа, ни токена отписки в открытом виде.
-    const tokens = await prisma.loginToken.findMany({ where: { trusted: true } });
-    expect(tokens).toHaveLength(24);
+    // Входа по ссылке письма нет: письмо не создаёт ссылок входа, в кнопке — только идентификатор доставки.
+    expect(await prisma.loginToken.count({ where: { usedAt: null } })).toBe(0);
     for (const mail of sent) {
-      const loginToken = new URL(mail.vars.link).searchParams.get("token")!;
+      const button = new URL(mail.vars.link);
+      expect([...button.searchParams.keys()]).toEqual(["r"]);
+      expect(deliveries.some((delivery) => delivery.id === button.searchParams.get("r"))).toBe(true);
+      // В БД только хеш токена отписки.
       const unsubscribe = new URL(mail.vars.unsubscribeUrl).searchParams.get("t")!;
-      expect(tokens.some((token) => token.tokenHash === hashToken(loginToken))).toBe(true);
       expect(deliveries.some((delivery) => delivery.unsubscribeHash === hashToken(unsubscribe))).toBe(true);
       expect(deliveries.some((delivery) => delivery.unsubscribeHash === unsubscribe)).toBe(false);
     }
@@ -143,27 +151,79 @@ describe("напоминания адвента на PostgreSQL", () => {
     expect(sent).toHaveLength(1);
   });
 
-  it("путь из письма: кнопка → вход → фасад, переход один раз; метрики; отписка по ссылке и one-click; повторный запуск не шлёт", async () => {
-    const { participantId } = await subscriber("path@example.test");
+  it("путь из письма: cookie есть → сразу на день; нет → страница → свежая ссылка на адрес владельца → вход; метрики; отписка отзывает согласие на рассылку", async () => {
+    const owner = await subscriber("path@example.test");
+    const { participantId } = owner;
     const other = await subscriber("other@example.test");
+    // Только отметка без согласия на рассылку письма не даёт (сервер её и не примет).
+    const refused = await postIdentityRequest(request("/api/advent/identity/request", { method: "POST", cookie: other.cookie, body: { email: "x@example.test", consent: true, reminderOptIn: true } }));
+    expect(refused.status).toBe(400);
+    loginMails.length = 0;
     await reminderService().run(clock.value);
     expect(sent).toHaveLength(2);
     const mail = sent.find((item) => item.email === "path@example.test")!.vars;
     const button = new URL(mail.link);
     const deliveryId = button.searchParams.get("r")!;
-
-    // Кнопка на чужом устройстве → страница входа; клик не засчитан.
-    const first = await openFromEmail(request(`${button.pathname}${button.search}`));
-    const login = new URL(first.headers.get("location")!);
-    expect(login.pathname).toBe("/login");
     const prisma = getPrisma();
-    expect((await prisma.reminderDelivery.findUniqueOrThrow({ where: { id: deliveryId } })).clickedAt).toBeNull();
+    const clickedAt = async (id: string) => (await prisma.reminderDelivery.findUniqueOrThrow({ where: { id } })).clickedAt;
 
-    // Войти → сайт на дне письма; вход с нового устройства не отзывает прежние ключи.
-    const confirmed = await postIdentityVerify(request("/api/advent/identity/verify", { method: "POST", form: { token: login.searchParams.get("token")!, r: deliveryId } }));
+    // Своё устройство (cookie того же участника) → сразу на день письма, переход засчитан.
+    const otherMail = sent.find((item) => item.email === "other@example.test")!.vars;
+    const otherButton = new URL(otherMail.link);
+    const direct = await openFromEmail(request(`${otherButton.pathname}${otherButton.search}`, { cookie: other.cookie }));
+    expect(new URL(direct.headers.get("location")!).search).toBe("?day=2");
+    expect(await clickedAt(otherButton.searchParams.get("r")!)).toEqual(clock.value);
+
+    // Чужое устройство (пересланное письмо, нет cookie) → страница «войдите», входа нет, клик не засчитан, письма нет.
+    const first = await openFromEmail(request(`${button.pathname}${button.search}`));
+    const page = new URL(first.headers.get("location")!);
+    expect(page.pathname).toBe("/reminder");
+    expect(Object.fromEntries(page.searchParams)).toEqual({ r: deliveryId, d: "2" });
+    expect(first.cookies.get(ADVENT_COOKIE)).toBeUndefined();
+    expect(await clickedAt(deliveryId)).toBeNull();
+    expect(loginMails).toHaveLength(0);
+
+    // Кнопка без Origin не работает.
+    expect((await postReminderLogin(request("/api/advent/reminders/login", { method: "POST", origin: false, form: { r: deliveryId } }))).status).toBe(403);
+    expect(loginMails).toHaveLength(0);
+
+    // «Прислать ссылку для входа»: свежая ссылка уходит на подтверждённый адрес владельца, страница адреса не знает.
+    const asked = await postReminderLogin(request("/api/advent/reminders/login", { method: "POST", form: { r: deliveryId } }));
+    expect(asked.status).toBe(303);
+    expect(new URL(asked.headers.get("location")!).search).toBe("?sent=1");
+    expect(asked.headers.get("location")).not.toContain("path@");
+    expect(await clickedAt(deliveryId)).toEqual(clock.value);
+    expect(loginMails).toHaveLength(1);
+    expect(loginMails[0].email).toBe("path@example.test");
+    const loginLink = new URL(loginMails[0].link);
+    expect(loginLink.pathname).toBe("/api/advent/identity/verify");
+    expect(loginLink.searchParams.get("r")).toBe(deliveryId);
+    // Запросившее устройство получило анонимный cookie, но не доступ к владельцу.
+    const strangerCookie = asked.cookies.get(ADVENT_COOKIE)!.value;
+    expect((await json(await getState(request("/api/advent/state", { cookie: strangerCookie })))).participant.id).not.toBe(participantId);
+    const token = await prisma.loginToken.findFirstOrThrow({ where: { usedAt: null } });
+    expect(token).toMatchObject({ normalizedEmail: "path@example.test", reminderOptIn: false, marketingConsentAt: null });
+    expect(token.expiresAt.getTime() - clock.value.getTime()).toBe(30 * 60_000);
+
+    // Владелец открывает ссылку на этом же устройстве → вход и сайт на дне письма; прежние ключи владельца целы.
+    const confirmed = await postIdentityVerify(request("/api/advent/identity/verify", { method: "POST", cookie: strangerCookie, form: { token: loginLink.searchParams.get("token")!, r: deliveryId } }));
     expect(new URL(confirmed.headers.get("location")!).search).toBe("?day=2");
-    expect((await prisma.reminderDelivery.findUniqueOrThrow({ where: { id: deliveryId } })).clickedAt).toEqual(clock.value);
-    expect(await prisma.participantKey.count({ where: { participantId } })).toBeGreaterThanOrEqual(2);
+    const ownerCookie = confirmed.cookies.get(ADVENT_COOKIE)!.value;
+    expect((await json(await getState(request("/api/advent/state", { cookie: ownerCookie })))).participant.id).toBe(participantId);
+    expect((await json(await getState(request("/api/advent/state", { cookie: owner.cookie })))).participant.id).toBe(participantId);
+
+    // Лимит на доставку: не больше 3 писем за 15 минут с одной кнопки.
+    loginMails.length = 0;
+    identityRequestEmailRateLimiter.reset();
+    const statuses: string[] = [];
+    for (let index = 0; index < 4; index += 1) {
+      identityRequestIpRateLimiter.reset();
+      const response = await postReminderLogin(request("/api/advent/reminders/login", { method: "POST", form: { r: deliveryId } }));
+      statuses.push(new URL(response.headers.get("location")!).search);
+    }
+    expect(statuses.slice(0, 2)).toEqual(["?sent=1", "?sent=1"]);
+    expect(statuses.slice(2)).toEqual([`?r=${deliveryId}&limited=1`, `?r=${deliveryId}&limited=1`]);
+    expect(loginMails.every((item) => item.email === "path@example.test")).toBe(true);
 
     // Открыл день после письма → метрики.
     clock.value = at(2, 9, 20);
@@ -173,28 +233,30 @@ describe("напоминания адвента на PostgreSQL", () => {
     const auth = `Basic ${Buffer.from(`${TEST_ADMIN_USERNAME}:${TEST_ADMIN_PASSWORD}`).toString("base64")}`;
     const metrics = await json(await adminMetrics(request("/api/admin/advent/metrics", { auth })));
     expect(metrics.reminders).toMatchObject({ channel: "email", subscribed: 2, unsubscribed: 0 });
-    expect(metrics.reminders.days[1]).toMatchObject({ day: 2, sent: 2, failed: 0, clicked: 1, openedAfter: 1 });
+    expect(metrics.reminders.days[1]).toMatchObject({ day: 2, sent: 2, failed: 0, clicked: 2, openedAfter: 1 });
     expect(JSON.stringify(metrics)).not.toContain("@");
     expect((await adminMetrics(request("/api/admin/advent/metrics"))).status).toBe(401);
 
-    // Отписка ссылкой (форма) и one-click (RFC 8058) у разных участников.
+    // Отписка ссылкой (форма) и one-click (RFC 8058) у разных участников: отзывает согласие на рассылку, не на данные.
     const unsubscribe = new URL(mail.unsubscribeUrl).searchParams.get("t")!;
-    const page = await postUnsubscribe(request("/api/advent/unsubscribe", { method: "POST", form: { t: unsubscribe } }));
-    expect(new URL(page.headers.get("location")!).search).toBe("?done=1");
-    const otherMail = sent.find((item) => item.email === "other@example.test")!.vars;
+    const unsubscribed = await postUnsubscribe(request("/api/advent/unsubscribe", { method: "POST", form: { t: unsubscribe } }));
+    expect(new URL(unsubscribed.headers.get("location")!).search).toBe("?done=1");
     const oneClick = new URL(otherMail.unsubscribeOneClickUrl);
     const oneClickResponse = await postOneClick(request(`${oneClick.pathname}${oneClick.search}`, { method: "POST", origin: false, form: { "List-Unsubscribe": "One-Click" } }));
     expect(oneClickResponse.status).toBe(200);
-    expect(await prisma.participant.findMany({ where: { reminderOptIn: true } })).toHaveLength(0);
-    expect(await prisma.participant.findUniqueOrThrow({ where: { id: participantId } })).toMatchObject({ unsubscribedAt: clock.value, consentAt: expect.any(Date), normalizedEmail: "path@example.test" });
+    expect(await prisma.participant.findMany({ where: { OR: [{ reminderOptIn: true }, { marketingConsentAt: { not: null } }] } })).toHaveLength(0);
+    expect(await prisma.participant.findUniqueOrThrow({ where: { id: participantId } })).toMatchObject({ unsubscribedAt: clock.value, marketingConsentAt: null, consentAt: expect.any(Date), normalizedEmail: "path@example.test" });
     const after = await json(await adminMetrics(request("/api/admin/advent/metrics", { auth })));
     expect(after.reminders).toMatchObject({ subscribed: 0, unsubscribed: 2 });
 
-    // Следующий день: отписавшимся письма нет; включение на сайте возвращает рассылку.
+    // Следующий день: отписавшимся письма нет; включение на сайте — только с согласием на рассылку.
     clock.value = at(3, 9);
     expect(await reminderService().run(clock.value)).toMatchObject({ sent: 0, claimed: 0 });
-    const on = await postReminders(request("/api/advent/reminders", { method: "POST", cookie: other.cookie, body: { enabled: true } }));
-    expect((await json(on)).state.participant.reminderOptIn).toBe(true);
+    const noConsent = await postReminders(request("/api/advent/reminders", { method: "POST", cookie: other.cookie, body: { enabled: true } }));
+    expect(noConsent.status).toBe(400);
+    const on = await postReminders(request("/api/advent/reminders", { method: "POST", cookie: other.cookie, body: { enabled: true, marketingConsent: true } }));
+    expect((await json(on)).state.participant).toMatchObject({ reminderOptIn: true, marketingConsent: true });
+    expect(await prisma.participant.findUniqueOrThrow({ where: { id: other.participantId } })).toMatchObject({ marketingConsentAt: clock.value, unsubscribedAt: null });
     expect(await reminderService().run(clock.value)).toMatchObject({ sent: 1 });
     expect(sent.at(-1)?.email).toBe("other@example.test");
   });
@@ -206,7 +268,7 @@ describe("напоминания адвента на PostgreSQL", () => {
     const tenant = findTenant(HOST);
     if (!tenant || !isAdventTenant(tenant)) throw new Error("нет арендатора");
     await getAdventServices(tenant).repository.anonymizeCampaignParticipants(tenant.advent.slug);
-    expect(await prisma.participant.findUniqueOrThrow({ where: { id: participantId } })).toMatchObject({ normalizedEmail: null, reminderOptIn: false, unsubscribeHash: null, unsubscribedAt: null });
+    expect(await prisma.participant.findUniqueOrThrow({ where: { id: participantId } })).toMatchObject({ normalizedEmail: null, reminderOptIn: false, marketingConsentAt: null, unsubscribeHash: null, unsubscribedAt: null });
     const delivery = await prisma.reminderDelivery.findFirstOrThrow({ where: { participantId } });
     expect(delivery.unsubscribeHash).toBeNull();
     expect(delivery.status).toBe("sent");

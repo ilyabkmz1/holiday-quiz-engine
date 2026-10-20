@@ -217,8 +217,12 @@ export async function checkAdventPack(raw: unknown, options: AdventCheckOptions 
     report.warnings.push("rules.requiresPurchase вместе с удачей или финальным розыгрышем: случайный приз за покупку может считаться стимулирующей лотереей (138-ФЗ, уведомление ФНС) — нужна оценка юриста");
   }
   if (advent.reminders.channel === "email") {
+    // Напоминание — рассылка (ст. 18 38-ФЗ): нужно явное согласие на неё со своим текстом и реквизиты оператора в каждом письме.
+    if (!advent.legal.marketingConsentText) {
+      report.errors.push("напоминания: reminders.channel = email, а в legal нет текста согласия на рассылку (marketingConsentText: «Согласен(на) получать напоминания … и рекламные рассылки от {operator}») — письма уходят только с этим согласием, его текст утверждает юрист заказчика");
+    }
     if (!advent.legal.operatorDetails) {
-      report.warnings.push("напоминания: reminders.channel = email, а в legal нет реквизитов оператора (operatorDetails: адрес, ИНН/ОГРН, контакт) — в подвале каждого письма будет только название юрлица");
+      report.errors.push("напоминания: reminders.channel = email, а в legal нет реквизитов оператора (operatorDetails: адрес, ИНН/ОГРН, контакт) — они обязательны в подвале каждого письма");
     }
     const { reminders } = advent;
     const texts: Array<[string, string, readonly string[]]> = [

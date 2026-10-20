@@ -12,6 +12,8 @@ type Props = {
   copy: AdventCopy;
   /** Согласие на обработку персональных данных из юридических текстов пакета. */
   consentText: string;
+  /** Текст согласия на рассылку (`legal.marketingConsentText`) — подпись необязательной отметки; `null` — напоминаний нет, отметки тоже. */
+  marketingText: string | null;
   /** `identity` — сервер ответил `identity_required`: без входа приз не выдаётся. */
   reason: "after-day" | "identity";
   onSubmit: (input: SaveProgressInput) => Promise<void>;
@@ -20,10 +22,11 @@ type Props = {
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 
 /**
- * «Сохранить прогресс»: email, обязательное согласие на обработку персональных данных и отдельное необязательное
- * согласие на напоминания (ст. 18 38-ФЗ). Письмо уходит только по явному действию; после отправки — экран «проверьте почту».
+ * «Сохранить прогресс»: email, обязательное согласие на обработку персональных данных и отдельная необязательная отметка
+ * «напоминания» — согласие на рекламную и информационную рассылку (ст. 18 38-ФЗ), по умолчанию снята. Письмо уходит только
+ * по явному действию; после отправки — экран «проверьте почту».
  */
-export function SaveProgressCard({ copy, consentText, reason, onSubmit }: Props) {
+export function SaveProgressCard({ copy, consentText, marketingText, reason, onSubmit }: Props) {
   const ids = useId();
   const [email, setEmail] = useState("");
   const [consent, setConsent] = useState(false);
@@ -41,9 +44,9 @@ export function SaveProgressCard({ copy, consentText, reason, onSubmit }: Props)
     setError(null);
     setState("sending");
     try {
-      // Чекбокс — согласие только на напоминания о днях (его текст), а не на рекламную рассылку бренда:
-      // marketingConsentAt по нему не ставится (ст. 18 38-ФЗ — согласие на то, что написано).
-      await onSubmit({ email: clean, consent, marketingConsent: false, reminderOptIn: marketing });
+      // Одна отметка — согласие на рассылку (её текст) и включение напоминаний: письма уходят только при обоих.
+      const optIn = marketingText !== null && marketing;
+      await onSubmit({ email: clean, consent, marketingConsent: optIn, reminderOptIn: optIn });
       setSentTo(clean);
       setState("sent");
     } catch (failure) {
@@ -90,10 +93,12 @@ export function SaveProgressCard({ copy, consentText, reason, onSubmit }: Props)
         <p className="adv-legal">
           {consentText} <a href="/privacy" target="_blank" rel="noopener noreferrer">{copy.savePolicy}</a>
         </p>
-        <label className="adv-check">
-          <input type="checkbox" checked={marketing} onChange={(event) => setMarketing(event.target.checked)} />
-          <span>{copy.saveMarketing}</span>
-        </label>
+        {marketingText !== null && (
+          <label className="adv-check">
+            <input type="checkbox" checked={marketing} onChange={(event) => setMarketing(event.target.checked)} />
+            <span>{marketingText}</span>
+          </label>
+        )}
         {error && <p className="adv-error" id={`${ids}-err`} role="alert">{error}</p>}
         <button type="submit" className="adv-btn adv-btn-primary" disabled={state === "sending"}>
           {state === "sending" ? copy.saveSending : copy.saveSubmit}
