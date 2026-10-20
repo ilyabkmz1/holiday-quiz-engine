@@ -174,7 +174,7 @@ export function Facade({ template, signText, host, doors, grants, today, copy, t
           <span className="adv-window-glass" aria-hidden="true" />
           {status === "today" && <span className="adv-ribbon" aria-hidden="true"><i /><i /><b /></span>}
           <span className="adv-window-num" aria-hidden="true">{door.n}</span>
-          <AdventIcon name={icon} size={cell.big ? 34 : finale ? 24 : 22} className="adv-window-icon" />
+          {icon && <AdventIcon name={icon} size={finale ? 24 : 22} className="adv-window-icon" />}
           {(cell.big || finale) && <span className="adv-window-tag" aria-hidden="true">{cell.big ? copy.windowToday : copy.windowFinale}</span>}
           {finale && <AdventIcon name="star" size={16} className="adv-window-star" />}
           {status === "opened" && door.blocksTotal > 0 && !door.completed && (

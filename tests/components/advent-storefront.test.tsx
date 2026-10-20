@@ -112,7 +112,13 @@ describe("Facade: окна и их статусы", () => {
     mountFacade(state);
     const buttons = [1, 2, 3, 4, 5].map(win);
     expect(new Set(buttons.map((button) => button.dataset.shape)).size).toBe(5);
-    expect(new Set(buttons.map((button) => button.querySelector(".adv-window-icon")!.getAttribute("data-icon"))).size).toBe(5);
+    // Значки у четырёх статусов разные; у сегодняшнего значка нет (звезда — знак финала), его признак — лента и подпись.
+    const others = buttons.filter((button) => button.dataset.status !== "today");
+    expect(new Set(others.map((button) => button.querySelector(".adv-window-icon")!.getAttribute("data-icon"))).size).toBe(4);
+    expect(win(4).querySelector(".adv-window-icon")).toBeNull();
+    expect(win(4).querySelector(".adv-ribbon")).not.toBeNull();
+    expect(win(4).querySelector(".adv-window-tag")).toHaveTextContent("Сегодня");
+    expect(win(4).querySelector('[data-icon="star"]')).toBeNull();
     ["opened", "missed", "catchup", "today", "locked"].forEach((status, index) => {
       expect(buttons[index].dataset.shape).toBe(WINDOW_SHAPE[status as keyof typeof WINDOW_SHAPE]);
     });

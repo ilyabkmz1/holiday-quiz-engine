@@ -10,7 +10,8 @@ import type { AdventGrantView, AdventState, DoorStatus } from "@/types/advent";
  * пропущенное заиндевело (`frost`), сегодняшнее обвязано лентой (`ribbon`).
  */
 export const WINDOW_SHAPE: Record<DoorStatus, string> = { locked: "shut", today: "ribbon", catchup: "dashed", missed: "frost", opened: "lit" };
-export const WINDOW_ICON: Record<DoorStatus, IconName> = { locked: "lock", today: "star", catchup: "replay", missed: "cross", opened: "check" };
+/** Значок окна по статусу; у сегодняшнего значка нет: его признак — лента и подпись «Сегодня», звезда — знак финала. */
+export const WINDOW_ICON: Record<DoorStatus, IconName | null> = { locked: "lock", today: null, catchup: "replay", missed: "cross", opened: "check" };
 
 export function windowStatusLabel(copy: AdventCopy, status: DoorStatus): string {
   return { locked: copy.windowLocked, today: copy.windowToday, catchup: copy.windowCatchup, missed: copy.windowMissed, opened: copy.windowOpened }[status];

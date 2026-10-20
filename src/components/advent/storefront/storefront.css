@@ -35,20 +35,29 @@
 .adv-garland-caption { display: block; margin-top: -2px; font-size: 14px; line-height: 1.25; font-weight: 700; color: var(--ink); }
 
 /* ——— Фасад ——— */
-.adv-facade-scroll { flex: 1 1 auto; min-height: 0; display: flex; justify-content: center; align-items: center; padding-inline: 8px; overflow-x: clip; }
-.adv-facade-scroll[data-scroll="true"] { overflow-y: auto; max-height: calc(100dvh - 290px); overscroll-behavior: contain; scrollbar-width: thin; }
-.adv-facade { --ch-ratio: 0.92; position: relative; flex: none; container-type: inline-size;
-  width: min(100%, 520px, max(300px, calc((100dvh - 314px - 56px) * 4 / (var(--rows) * var(--ch-ratio))))); padding-bottom: 22px; }
+/*
+ * Фасад заполняет всё место между гирляндой и нижней плашкой: область фасада — size-контейнер (её высота не зависит
+ * от содержимого), поэтому 100cqh — высота, которая осталась на фасад. Ширина подбирается так, чтобы крыша, ряды окон
+ * и земля поместились по высоте (окна не ниже 0,92 ширины), а лишняя высота уходит в окна (до 1,12 ширины), а не в пустоту.
+ * Длинный фасад (много рядов) не сжимается, а прокручивается внутри области.
+ */
+.adv-facade-scroll { flex: 1 1 0; min-height: 260px; container-type: size; display: flex; justify-content: center; align-items: flex-start; padding-inline: 8px; overflow-x: clip; }
+.adv-facade-scroll[data-scroll="true"] { overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; }
+.adv-facade { --ch-ratio: 0.92; --roof-k: 0.155; --ground-h: 22px; --roof-extra: 0px; position: relative; flex: none; container-type: inline-size;
+  width: min(100%, 520px, calc((100cqh - var(--ground-h) - var(--roof-extra)) / (var(--roof-k) + var(--rows) * 0.25 * var(--ch-ratio)))); padding-bottom: var(--ground-h); }
+.adv-facade:has(.adv-roof[data-awning="true"]) { --roof-extra: 18px; }
+.adv-facade-scroll[data-scroll="true"] .adv-facade { width: min(100%, 520px); }
+.adv-facade-scroll[data-scroll="true"] .adv-wall { --ch: calc(var(--cw) * var(--ch-ratio)); }
 
-.adv-roof { position: relative; height: calc(25cqw * 0.62); margin-inline: -2%; z-index: 2; }
+.adv-roof { position: relative; height: calc(100cqw * var(--roof-k)); margin-inline: -2%; z-index: 2; }
 .adv-roof-svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
 .adv-roof-fill { fill: var(--fc-roof); }
 .adv-roof-trim { fill: var(--fc-trim); }
 .adv-roof-snow { fill: var(--fc-ground); }
-.adv-sign { position: absolute; left: 50%; bottom: 14%; transform: translateX(-50%); max-width: 58%; padding: 2px 10px; border-radius: 7px; border: 2px solid var(--fc-trim); background: var(--fc-sign); color: var(--fc-signInk); font-size: clamp(10px, 3.4cqw, 13px); font-weight: 800; letter-spacing: 0.02em; line-height: 1.25; }
+.adv-sign { position: absolute; z-index: 2; left: 50%; bottom: 14%; transform: translateX(-50%); max-width: 58%; padding: 2px 10px; border-radius: 7px; border: 2px solid var(--fc-trim); background: var(--fc-sign); color: var(--fc-signInk); font-size: clamp(10px, 3.4cqw, 13px); font-weight: 800; letter-spacing: 0.02em; line-height: 1.25; }
 .adv-sign-text { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .adv-roof[data-roof="flat"] .adv-sign { bottom: 8%; }
-.adv-eave { position: absolute; left: 3%; right: 3%; bottom: -3px; display: flex; justify-content: space-between; pointer-events: none; }
+.adv-eave { position: absolute; z-index: 1; left: 3%; right: 3%; bottom: -3px; display: flex; justify-content: space-between; pointer-events: none; }
 .adv-eave i { width: 6px; height: 6px; border-radius: 50%; box-shadow: 0 0 8px 1px currentColor; animation: advBulbTwinkle 2.4s ease-in-out infinite; }
 .adv-roof[data-roof="flat"] .adv-eave { bottom: 8px; }
 .adv-roof[data-roof="dome"] .adv-eave { display: none; }
@@ -57,7 +66,7 @@
 .adv-awning-a { fill: var(--fc-roof); }
 .adv-awning-b { fill: var(--fc-sign); }
 
-.adv-wall { --cw: 25cqw; --ch: calc(var(--cw) * var(--ch-ratio)); position: relative; height: calc(var(--rows) * var(--ch)); background:
+.adv-wall { --cw: 25cqw; --ch: clamp(calc(var(--cw) * var(--ch-ratio)), calc((100cqh - var(--ground-h) - var(--roof-extra) - 100cqw * var(--roof-k)) / var(--rows)), calc(var(--cw) * 1.12)); position: relative; height: calc(var(--rows) * var(--ch)); background:
     repeating-linear-gradient(0deg, transparent 0 calc(var(--ch) - 1px), color-mix(in srgb, var(--fc-trim) 18%, transparent) calc(var(--ch) - 1px) var(--ch)),
     var(--fc-wall);
   border-inline: 3px solid var(--fc-trim); box-shadow: inset 0 -26px 40px -20px color-mix(in srgb, var(--void) 45%, transparent); }
@@ -111,7 +120,10 @@
 .adv-window[data-big="true"] { align-items: stretch; }
 .adv-window[data-big="true"] .adv-window-num { position: absolute; left: 12%; top: 9%; font-size: clamp(34px, 12cqw, 54px); }
 .adv-window[data-big="true"] .adv-window-icon { position: absolute; right: 10%; top: 10%; }
-.adv-window[data-big="true"] .adv-window-tag { position: absolute; right: 8%; bottom: 10%; max-width: 40%; font-size: clamp(9px, 2.8cqw, 12px); font-weight: 800; letter-spacing: 0.1em; text-transform: uppercase; text-align: right; }
+.adv-window[data-big="true"] .adv-window-tag { position: absolute; right: 8%; bottom: 10%; max-width: 44%; padding: 2px 6px; border-radius: 6px; background: var(--fc-glow); font-size: clamp(9px, 2.8cqw, 12px); font-weight: 800; letter-spacing: 0.1em; text-transform: uppercase; text-align: right; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* Круглое окно: номер и подпись внутри круга (в углах квадрата их бы срезал край). */
+.adv-facade[data-windows="round"] .adv-window[data-big="true"] .adv-window-num { left: 20%; top: 17%; }
+.adv-facade[data-windows="round"] .adv-window[data-big="true"] .adv-window-tag { right: auto; left: 50%; bottom: 15%; transform: translateX(-50%); max-width: 56%; text-align: center; }
 .adv-window-today::before { content: ""; position: absolute; inset: -5px; border-radius: inherit; border: 2px solid var(--fc-glow); pointer-events: none; animation: advRing 2.6s ease-out infinite; }
 .adv-window-today .adv-window-glass { animation: advGlowPulse 2.6s ease-in-out infinite; }
 .adv-ribbon { position: absolute; inset: 0; z-index: 1; border-radius: inherit; overflow: hidden; pointer-events: none; }
