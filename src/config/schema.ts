@@ -274,6 +274,8 @@ export const campaignModeSchema = z.enum(["cards", "quest"]);
 /** Юридические тексты кампании; сами тексты и маркер «на согласовании» — в `src/config/legal.ts` (модуль без zod для клиента). */
 export const legalSchema = z.object({
   operatorName: z.string().trim().min(1),
+  /** Реквизиты оператора для писем: адрес, ИНН/ОГРН, контакт для запросов по персональным данным (необязательно, но `quiz:check` просит их при email-напоминаниях). */
+  operatorDetails: z.string().trim().min(1).max(300).optional(),
   policyText: z.string().trim().min(1),
   consentText: z.string().trim().min(1)
 });

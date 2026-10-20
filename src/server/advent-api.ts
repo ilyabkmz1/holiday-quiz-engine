@@ -26,6 +26,9 @@ export const LOGIN_PAGE_PATH = "/login";
 /** Форма токена из ссылки входа (`createOpaqueToken`: 43 символа base64url); остальное — сразу «ссылка не сработала». */
 export const loginTokenSchema = z.string().min(20).max(200);
 
+/** Токен отписки из письма (`createOpaqueToken`: 43 символа base64url). */
+export const unsubscribeTokenSchema = z.string().min(20).max(200);
+
 /** Параметры cookie: httpOnly, SameSite=Lax, Secure в production, срок — до конца выдачи (`claimEndsAt`). */
 export function adventCookieOptions(advent: Pick<AdventConfig, "schedule">) {
   return {

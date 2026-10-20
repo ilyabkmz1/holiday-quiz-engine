@@ -6,7 +6,7 @@ import { z } from "zod";
 import { adventPackSchema, type AdventPack } from "@/config/pack";
 import type { AdventConfig } from "@/config/advent-schema";
 import { hasLegalPlaceholder } from "@/config/legal";
-import { dayUnlockAt, isOverNdflThreshold } from "@/domain/advent";
+import { REMINDER_PLACEHOLDERS, dayUnlockAt, isOverNdflThreshold, unknownPlaceholders } from "@/domain/advent";
 import { simulateAdvent } from "@/tools/advent-sim";
 import type { CheckReport } from "@/tools/pack-check";
 import { MARKER, walkStrings } from "@/tools/pack-walk";
@@ -128,6 +128,16 @@ function textLimits(advent: AdventConfig, warn: (message: string) => void): void
       }
     }
   }
+  const { reminders } = advent;
+  if (reminders.channel === "email") {
+    limit("reminders.subject", reminders.subject, 70, warn);
+    limit("reminders.comebackSubject", reminders.comebackSubject, 70, warn);
+    limit("reminders.preheader", reminders.preheader, 110, warn);
+    limit("reminders.comebackPreheader", reminders.comebackPreheader, 110, warn);
+    limit("reminders.comebackText", reminders.comebackText, 220, warn);
+    limit("reminders.catchUpText", reminders.catchUpText, 160, warn);
+    limit("reminders.button", reminders.button, 30, warn);
+  }
   for (const reward of advent.rewards) {
     limit(`награда ${reward.id}: label`, reward.label, 60, warn);
     limit(`награда ${reward.id}: description`, reward.description, 160, warn);
@@ -205,6 +215,28 @@ export async function checkAdventPack(raw: unknown, options: AdventCheckOptions 
   }
   if (advent.rules.requiresPurchase && (advent.days.some((day) => day.blocks.some((block) => block.type === "luck")) || advent.rewards.some((reward) => reward.kind === "finalEntry"))) {
     report.warnings.push("rules.requiresPurchase вместе с удачей или финальным розыгрышем: случайный приз за покупку может считаться стимулирующей лотереей (138-ФЗ, уведомление ФНС) — нужна оценка юриста");
+  }
+  if (advent.reminders.channel === "email") {
+    if (!advent.legal.operatorDetails) {
+      report.warnings.push("напоминания: reminders.channel = email, а в legal нет реквизитов оператора (operatorDetails: адрес, ИНН/ОГРН, контакт) — в подвале каждого письма будет только название юрлица");
+    }
+    const { reminders } = advent;
+    const texts: Array<[string, string, readonly string[]]> = [
+      ["subject", reminders.subject, REMINDER_PLACEHOLDERS],
+      ["preheader", reminders.preheader, REMINDER_PLACEHOLDERS],
+      ["button", reminders.button, REMINDER_PLACEHOLDERS],
+      ["comebackSubject", reminders.comebackSubject, REMINDER_PLACEHOLDERS],
+      ["comebackPreheader", reminders.comebackPreheader, REMINDER_PLACEHOLDERS],
+      ["comebackText", reminders.comebackText, REMINDER_PLACEHOLDERS],
+      ["catchUpText", reminders.catchUpText, [...REMINDER_PLACEHOLDERS, "missed"]]
+    ];
+    for (const [name, text, known] of texts) {
+      const unknown = unknownPlaceholders(text, known);
+      if (unknown.length > 0) report.warnings.push(`напоминания: в reminders.${name} неизвестные подстановки ${unknown.map((item) => `{${item}}`).join(", ")} (допустимы ${known.map((item) => `{${item}}`).join(", ")}): они попадут в письмо как есть`);
+    }
+    if (advent.streak.comebackBonusRewardId === undefined) {
+      report.info.push("напоминания: нет streak.comebackBonusRewardId — письмо-возвращение не используется, всем уходит обычное");
+    }
   }
   if (hasLegalPlaceholder(advent.legal)) {
     report.warnings.push("legal: в юридических текстах маркер «на согласовании юриста» — в production запуск запрещён");

@@ -203,7 +203,10 @@ model Participant {
   /// Отдельное согласие на рассылку (ст. 18 38-ФЗ); не зависит от consentAt.
   marketingConsentAt DateTime?
   reminderOptIn      Boolean            @default(false)
+  /// Хеш токена отписки из последнего письма-напоминания (в БД только хеш); прежние письма хранят свои хеши в ReminderDelivery.
   unsubscribeHash    String?            @unique
+  /// Когда участник последний раз отключил напоминания (ссылка в письме или переключатель на сайте); при включении сбрасывается.
+  unsubscribedAt     DateTime?
   createdAt          DateTime           @default(now())
   campaign           Campaign           @relation(fields: [campaignSlug], references: [slug], onDelete: Restrict)
   keys               ParticipantKey[]
@@ -306,6 +309,9 @@ model LoginToken {
   consentAt          DateTime
   marketingConsentAt DateTime?
   reminderOptIn      Boolean
+  /// Ссылка выпущена самим сервером для подтверждённого адреса участника (письмо-напоминание), а не запрошена с устройства:
+  /// вход с неё не отзывает ключи его прочих устройств.
+  trusted            Boolean     @default(false)
   createdAt          DateTime    @default(now())
   expiresAt          DateTime
   usedAt             DateTime?
@@ -316,13 +322,25 @@ model LoginToken {
 
 /// Отправленное напоминание (A5). Уникальный ключ защищает от повторной отправки.
 model ReminderDelivery {
-  participantId String      @db.Uuid
-  day           Int
-  sentAt        DateTime
-  clickedAt     DateTime?
-  participant   Participant @relation(fields: [participantId], references: [id], onDelete: Cascade)
+  /// Непрозрачный идентификатор доставки: попадает в ссылку письма (учёт перехода), email в нём нет.
+  id              String      @unique @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  participantId   String      @db.Uuid
+  day             Int
+  /// `sending` (заявлена до отправки), `sent`, `failed` (повтор в следующий запуск, пока `attempts` меньше предела).
+  status          String      @default("sent")
+  attempts        Int         @default(1)
+  /// Код ошибки отправки (`smtp_connect`, `smtp_rejected`, …) без текста ответа сервера: в нём может быть адрес.
+  lastError       String?
+  claimedAt       DateTime    @default(now())
+  lastAttemptAt   DateTime    @default(now())
+  sentAt          DateTime?
+  clickedAt       DateTime?
+  /// Хеш токена отписки из этого письма: ссылка в старых письмах остаётся рабочей.
+  unsubscribeHash String?     @unique
+  participant     Participant @relation(fields: [participantId], references: [id], onDelete: Cascade)
 
   @@id([participantId, day])
+  @@index([day, status])
 }
 
 /// Логин оператора клиента: строго в рамках одного арендатора (slug пакета `tenants/<slug>`). Пароль хранится только хешем (scrypt).

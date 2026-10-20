@@ -15,6 +15,37 @@ describe("quiz:check для адвента", () => {
     expect(report.info.join("\n")).toContain("дней: 12");
   });
 
+  it("напоминания по email без реквизитов оператора — предупреждение; с реквизитами или без рассылки — нет", async () => {
+    const pack = adventPackFixture();
+    delete pack.advent.legal.operatorDetails;
+    const report = await checkPack(pack);
+    expect(report.errors).toEqual([]);
+    expect(report.warnings.join("\n")).toContain("нет реквизитов оператора");
+
+    const off = adventPackFixture();
+    delete off.advent.legal.operatorDetails;
+    off.advent.reminders.channel = "off";
+    expect((await checkPack(off)).warnings.join("\n")).not.toContain("реквизитов оператора");
+    expect((await checkPack(adventPackFixture())).warnings.join("\n")).not.toContain("реквизитов оператора");
+  });
+
+  it("неизвестные подстановки в текстах напоминаний и слишком длинная тема — предупреждения", async () => {
+    const pack = adventPackFixture();
+    pack.advent.reminders.subject = "Окно {dya}: {teaser}";
+    pack.advent.reminders.comebackText = "Вернитесь за {gift}";
+    pack.advent.reminders.preheader = "п".repeat(120);
+    const warnings = (await checkPack(pack)).warnings.join("\n");
+    expect(warnings).toContain("reminders.subject неизвестные подстановки {dya}");
+    expect(warnings).toContain("reminders.comebackText неизвестные подстановки {gift}");
+    expect(warnings).toContain("длина: reminders.preheader");
+    // {missed} допустим только в catchUpText.
+    const ok = adventPackFixture();
+    ok.advent.reminders.catchUpText = "Догоните {missed}";
+    expect((await checkPack(ok)).warnings.join("\n")).not.toContain("catchUpText");
+    ok.advent.reminders.subject = "{missed}";
+    expect((await checkPack(ok)).warnings.join("\n")).toContain("reminders.subject неизвестные подстановки {missed}");
+  });
+
   it("ошибки схемы — русские, а не «expected quiz»", async () => {
     const pack = adventPackFixture();
     delete pack.advent.schedule.startDate;

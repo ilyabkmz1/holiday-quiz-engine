@@ -21,6 +21,8 @@ export type ParticipantRecord = {
   marketingConsentAt: Date | null;
   reminderOptIn: boolean;
   unsubscribeHash: string | null;
+  /** Когда участник последний раз отключил напоминания; `null` — не отключал или включил снова. */
+  unsubscribedAt: Date | null;
   createdAt: Date;
 };
 
@@ -63,6 +65,8 @@ export type LoginTokenRecord = {
   consentAt: Date;
   marketingConsentAt: Date | null;
   reminderOptIn: boolean;
+  /** Ссылка выпущена сервером для подтверждённого адреса (письмо-напоминание), а не запрошена с устройства. */
+  trusted: boolean;
   createdAt: Date;
   expiresAt: Date;
   usedAt: Date | null;
@@ -213,4 +217,80 @@ export interface IdentityRepository {
    * участников, у которых было что стирать.
    */
   anonymizeCampaignParticipants(campaignSlug: string): Promise<number>;
+}
+
+/** Состояние доставки напоминания: заявлена до отправки (`sending`), отправлена или не отправлена (повтор, пока есть попытки). */
+export type ReminderStatus = "sending" | "sent" | "failed";
+
+export type ReminderDeliveryRecord = {
+  /** Непрозрачный идентификатор для ссылки письма; email в нём нет. */
+  id: string;
+  participantId: string;
+  day: number;
+  status: ReminderStatus;
+  attempts: number;
+  /** Код ошибки (`smtp_connect`, …), без текста ответа сервера. */
+  lastError: string | null;
+  claimedAt: Date;
+  lastAttemptAt: Date;
+  sentAt: Date | null;
+  clickedAt: Date | null;
+  unsubscribeHash: string | null;
+};
+
+export type ReminderCandidateQuery = {
+  campaignSlug: string;
+  day: number;
+  limit: number;
+  /** Повторять неудачные доставки, чья последняя попытка раньше этого момента. */
+  retryBefore: Date;
+  /** Неудачную доставку повторяют, пока попыток меньше этого числа. */
+  maxAttempts: number;
+};
+
+export type ReminderClaimInput = {
+  participantId: string;
+  day: number;
+  now: Date;
+  retryBefore: Date;
+  maxAttempts: number;
+  /** Хеш свежего токена отписки: ложится на доставку и на участника. */
+  unsubscribeHash: string;
+};
+
+/** Сводка напоминаний кампании для панели оператора. */
+export type ReminderStats = {
+  days: Array<{ day: number; sent: number; failed: number; clicked: number; openedAfter: number }>;
+  /** Участники с подтверждённым email и включёнными напоминаниями. */
+  subscribed: number;
+  /** Отключили напоминания (ссылкой в письме или на сайте) и не включили снова. */
+  unsubscribed: number;
+};
+
+export interface ReminderRepository {
+  /**
+   * Кому ещё можно написать о дне `day`: подтверждённый email и согласие, напоминания включены, день не открыт, доставки
+   * ещё не было (или она `failed`, попыток меньше предела и последняя была раньше `retryBefore`). Порядок стабилен.
+   */
+  listReminderCandidates(query: ReminderCandidateQuery): Promise<ParticipantRecord[]>;
+  /**
+   * Атомарно «заявляет» доставку ДО отправки: вставка новой записи `sending` или перевод `failed` в `sending` с `attempts + 1`.
+   * Условия кандидата перепроверяются в самом запросе, поэтому отписавшийся между выборкой и заявкой письма не получит.
+   * `null` — заявлять нечего (доставка уже есть, участник отписался или открыл день): письмо не шлётся. Параллельные запуски
+   * получают заявку ровно один.
+   */
+  claimReminder(input: ReminderClaimInput): Promise<ReminderDeliveryRecord | null>;
+  markReminderSent(deliveryId: string, now: Date): Promise<void>;
+  markReminderFailed(deliveryId: string, errorCode: string): Promise<void>;
+  getReminderDelivery(deliveryId: string): Promise<ReminderDeliveryRecord | null>;
+  /** Фиксирует первый переход по письму; повтор ничего не меняет. `null` — доставки нет. */
+  recordReminderClick(deliveryId: string, now: Date): Promise<ReminderDeliveryRecord | null>;
+  /** Участник по хешу токена отписки: последнему или любому из прежних писем. */
+  findParticipantByUnsubscribeHash(hash: string): Promise<ParticipantRecord | null>;
+  /**
+   * Включает или отключает напоминания. Идемпотентно. Согласие на обработку персональных данных не трогает;
+   * отключение запоминает `unsubscribedAt` (первое сохраняется), включение его сбрасывает. Участника нет — `null`.
+   */
+  setReminderOptIn(participantId: string, enabled: boolean, now: Date): Promise<ParticipantRecord | null>;
+  reminderStats(campaignSlug: string): Promise<ReminderStats>;
 }

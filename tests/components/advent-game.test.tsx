@@ -269,4 +269,76 @@ describe("AdventGame: возвращение и сохранение прогр�
     expect(await screen.findByText(/^Прогресс сохранён: g\*+@example\.test$/)).toBeInTheDocument();
     expect(screen.queryByRole("region", { name: copy.saveTitle })).not.toBeInTheDocument();
   });
+
+  describe("напоминания на почту", () => {
+    async function confirmed(options: { optIn: boolean }) {
+      const harness = memoryAdventApi({ start: at(2) });
+      await harness.ensureParticipant();
+      await harness.api.requestLink({ email: "guest@example.test", consent: true, marketingConsent: false, reminderOptIn: options.optIn });
+      await harness.confirmLogin();
+      return harness;
+    }
+
+    it("вошедший видит переключатель, включает и выключает его; состояние берётся с сервера", async () => {
+      const harness = await confirmed({ optIn: false });
+      const setReminders = vi.spyOn(harness.api, "setReminders");
+      mount(harness.api);
+      const toggle = await screen.findByRole("checkbox", { name: copy.remindersToggle });
+      expect(toggle).not.toBeChecked();
+      expect(screen.getByText(copy.remindersToggleHint)).toBeInTheDocument();
+
+      fireEvent.click(toggle);
+      await waitFor(() => expect(screen.getByRole("checkbox", { name: copy.remindersToggle })).toBeChecked());
+      expect(setReminders).toHaveBeenLastCalledWith(true);
+      expect((await harness.api.getState()).participant.reminderOptIn).toBe(true);
+
+      fireEvent.click(screen.getByRole("checkbox", { name: copy.remindersToggle }));
+      await waitFor(() => expect(screen.getByRole("checkbox", { name: copy.remindersToggle })).not.toBeChecked());
+      expect(setReminders).toHaveBeenLastCalledWith(false);
+    });
+
+    it("уже подписанный видит включённый переключатель; при ошибке сервера возвращается прежнее и звучит сообщение", async () => {
+      const harness = await confirmed({ optIn: true });
+      vi.spyOn(harness.api, "setReminders").mockRejectedValue(new ApiError(500, "сбой"));
+      mount(harness.api);
+      const toggle = await screen.findByRole("checkbox", { name: copy.remindersToggle });
+      expect(toggle).toBeChecked();
+      fireEvent.click(toggle);
+      expect(await screen.findByRole("alert")).toHaveTextContent(copy.remindersToggleError);
+      expect(screen.getByRole("checkbox", { name: copy.remindersToggle })).toBeChecked();
+    });
+
+    it("анониму переключателя нет", async () => {
+      const harness = memoryAdventApi({ start: at(2) });
+      await harness.ensureParticipant();
+      mount(harness.api);
+      await waitFor(() => expect(document.querySelectorAll(".adv-door")).toHaveLength(12));
+      expect(screen.queryByRole("checkbox", { name: copy.remindersToggle })).not.toBeInTheDocument();
+    });
+  });
+
+  describe("вход из письма-напоминания: /?day=N", () => {
+    it("открывает указанный сегодняшний день один раз и убирает параметр из адреса", async () => {
+      window.history.replaceState(null, "", "/?day=2&utm=x#top");
+      const harness = memoryAdventApi({ start: at(2) });
+      await harness.ensureParticipant();
+      mount(harness.api);
+      expect(await screen.findByRole("dialog")).toBeInTheDocument();
+      expect(window.location.search).toBe("?utm=x");
+      expect(window.location.hash).toBe("#top");
+      expect((await harness.api.getState()).doors.find((item) => item.n === 2)?.status).toBe("opened");
+    });
+
+    it("закрытый (будущий) день, мусор и день вне диапазона дверь не открывают", async () => {
+      for (const value of ["9", "0", "abc", "-1", "100"]) {
+        window.history.replaceState(null, "", `/?day=${value}`);
+        const harness = memoryAdventApi({ start: at(2) });
+        await harness.ensureParticipant();
+        const view = mount(harness.api);
+        await waitFor(() => expect(document.querySelectorAll(".adv-door")).toHaveLength(12));
+        expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+        view.unmount();
+      }
+    });
+  });
 });

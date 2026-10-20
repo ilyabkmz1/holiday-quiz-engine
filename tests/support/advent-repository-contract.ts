@@ -9,10 +9,11 @@ import type {
   IssueGrantResult,
   LoginTokenRecord,
   ParticipantRecord,
+  ReminderRepository,
   RewardGrantRecord
 } from "@/server/repositories/advent-repository";
 
-export type AdventBackend = AdventRepository & IdentityRepository;
+export type AdventBackend = AdventRepository & IdentityRepository & ReminderRepository;
 
 export const CAMPAIGN = "contract-advent";
 export const OTHER_CAMPAIGN = "contract-advent-other";
@@ -32,6 +33,7 @@ export function participantRecord(overrides: Partial<ParticipantRecord> = {}): P
     marketingConsentAt: null,
     reminderOptIn: false,
     unsubscribeHash: null,
+    unsubscribedAt: null,
     createdAt: T0,
     ...overrides
   };
@@ -61,6 +63,7 @@ export function tokenRecord(participantId: string, email: string, overrides: Par
     consentAt: T0,
     marketingConsentAt: null,
     reminderOptIn: false,
+    trusted: false,
     createdAt: T0,
     expiresAt: minutes(30),
     usedAt: null,
@@ -724,6 +727,252 @@ export function describeAdventRepositoryContract(name: string, create: () => Pro
           { rewardId: "r1", issued: 2, redeemed: 1 },
           { rewardId: "r2", issued: 1, redeemed: 0 }
         ]);
+      });
+    });
+    describe("вход: блокировка по паре (кампания, email)", () => {
+      const loginWith = (tokenHash: string, current: string | null = null, campaignSlug = CAMPAIGN) =>
+        repo.completeLogin({ tokenHash, now: minutes(1), campaignSlug, currentParticipantId: current, newAccessKeyHash: hashToken(`device-${createId()}`) });
+
+      it("пачка параллельных входов разных участников проходит целиком, каждый получает свой email", async () => {
+        const people = await Promise.all(Array.from({ length: 25 }, () => newParticipant()));
+        const tokens = people.map((person, index) => tokenRecord(person.id, `batch${index}@example.test`));
+        for (const token of tokens) await repo.createLoginToken(token);
+
+        const results = await Promise.all(tokens.map((token) => loginWith(token.tokenHash)));
+
+        expect(results.map((result) => result.participant.normalizedEmail)).toEqual(tokens.map((token) => token.normalizedEmail));
+        expect(new Set(results.map((result) => result.participant.id)).size).toBe(25);
+      });
+
+      it("входы разных адресов с одного анонимного устройства: оно вливается ровно в одного, второй вход не падает", async () => {
+        const device = await newParticipant();
+        await repo.openDayOnce(device.id, 4, minutes(4), true);
+        const a = await newParticipant();
+        const b = await newParticipant();
+        const tokenA = tokenRecord(a.id, "pair-a@example.test");
+        const tokenB = tokenRecord(b.id, "pair-b@example.test");
+        await repo.createLoginToken(tokenA);
+        await repo.createLoginToken(tokenB);
+
+        const [first, second] = await Promise.all([loginWith(tokenA.tokenHash, device.id), loginWith(tokenB.tokenHash, device.id)]);
+
+        expect([first.participant.normalizedEmail, second.participant.normalizedEmail].sort()).toEqual(["pair-a@example.test", "pair-b@example.test"]);
+        expect(first.mergedFrom.length + second.mergedFrom.length).toBe(1);
+        expect(await repo.getParticipant(device.id)).toBeNull();
+      });
+
+      it("два параллельных подтверждения одного адреса с разных устройств: один участник", async () => {
+        const a = await newParticipant();
+        const b = await newParticipant();
+        const tokenA = tokenRecord(a.id, "same-pair@example.test");
+        const tokenB = tokenRecord(b.id, "same-pair@example.test");
+        await repo.createLoginToken(tokenA);
+        await repo.createLoginToken(tokenB);
+        const [first, second] = await Promise.all([loginWith(tokenA.tokenHash, a.id), loginWith(tokenB.tokenHash, b.id)]);
+        expect(first.participant.id).toBe(second.participant.id);
+      });
+
+      it("доверенная ссылка (письмо-напоминание) на другом устройстве не отзывает ключи прежних устройств", async () => {
+        const owner = await newParticipant();
+        const first = tokenRecord(owner.id, "trusted@example.test");
+        await repo.createLoginToken(first);
+        await loginWith(first.tokenHash, owner.id);
+
+        const ordinary = tokenRecord(owner.id, "trusted@example.test", { tokenHash: hashToken("ordinary") });
+        const trusted = tokenRecord(owner.id, "trusted@example.test", { tokenHash: hashToken("trusted"), trusted: true });
+        await repo.createLoginToken(ordinary);
+        await repo.createLoginToken(trusted);
+
+        // Обычная ссылка, открытая на чужом устройстве, отзывает ключи запросившего; доверенная — нет.
+        const phone = hashToken("phone");
+        await repo.completeLogin({ tokenHash: trusted.tokenHash, now: minutes(2), campaignSlug: CAMPAIGN, currentParticipantId: null, newAccessKeyHash: phone });
+        expect((await repo.findParticipantByAccessKeyHash(owner.accessKeyHash))?.id).toBe(owner.id);
+        expect((await repo.findParticipantByAccessKeyHash(phone))?.id).toBe(owner.id);
+
+        // Для сравнения: обычная ссылка на третьем устройстве отзывает ключи всех прежних.
+        const tablet = hashToken("tablet");
+        await repo.completeLogin({ tokenHash: ordinary.tokenHash, now: minutes(3), campaignSlug: CAMPAIGN, currentParticipantId: null, newAccessKeyHash: tablet });
+        expect(await repo.findParticipantByAccessKeyHash(owner.accessKeyHash)).toBeNull();
+        expect(await repo.findParticipantByAccessKeyHash(phone)).toBeNull();
+        expect((await repo.findParticipantByAccessKeyHash(tablet))?.id).toBe(owner.id);
+      });
+    });
+
+    describe("напоминания", () => {
+      const query = (day: number, overrides: Record<string, unknown> = {}) => ({
+        campaignSlug: CAMPAIGN,
+        day,
+        limit: 50,
+        retryBefore: minutes(-10),
+        maxAttempts: 3,
+        ...overrides
+      });
+      const subscriber = (overrides: Partial<ParticipantRecord> = {}) =>
+        newParticipant({ normalizedEmail: `${createId()}@example.test`, consentAt: T0, reminderOptIn: true, ...overrides });
+      const claimInput = (participantId: string, day: number, extra: Record<string, unknown> = {}) => ({
+        participantId,
+        day,
+        now: minutes(10),
+        retryBefore: minutes(0),
+        maxAttempts: 3,
+        unsubscribeHash: hashToken(`unsub-${createId()}`),
+        ...extra
+      });
+
+      it("кандидаты: подтверждённый email и согласие, напоминания включены, день не открыт, своя кампания", async () => {
+        const good = await subscriber();
+        const opened = await subscriber();
+        await repo.openDayOnce(opened.id, 5, minutes(1), true);
+        const otherDayOpened = await subscriber();
+        await repo.openDayOnce(otherDayOpened.id, 4, minutes(1), true);
+        await subscriber({ reminderOptIn: false });
+        await newParticipant({ reminderOptIn: true });
+        await subscriber({ consentAt: null });
+        await subscriber({ campaignSlug: OTHER_CAMPAIGN });
+
+        const ids = (await repo.listReminderCandidates(query(5))).map((participant) => participant.id);
+
+        expect(ids.sort()).toEqual([good.id, otherDayOpened.id].sort());
+      });
+
+      it("лимит и стабильный порядок кандидатов", async () => {
+        const people = [await subscriber({ createdAt: minutes(3) }), await subscriber({ createdAt: minutes(1) }), await subscriber({ createdAt: minutes(2) })];
+        const ids = (await repo.listReminderCandidates(query(2, { limit: 2 }))).map((participant) => participant.id);
+        expect(ids).toEqual([people[1].id, people[2].id]);
+      });
+
+      it("claim выигрывает один из параллельных запусков, повтор отказывает, участник остаётся без кандидата", async () => {
+        const person = await subscriber();
+        const outcomes = await Promise.all(Array.from({ length: 6 }, () => repo.claimReminder(claimInput(person.id, 3))));
+        expect(outcomes.filter((outcome) => outcome !== null)).toHaveLength(1);
+        const claimed = outcomes.find((outcome) => outcome !== null)!;
+        expect(claimed).toMatchObject({ participantId: person.id, day: 3, status: "sending", attempts: 1, sentAt: null, clickedAt: null });
+        expect(await repo.claimReminder(claimInput(person.id, 3))).toBeNull();
+        expect(await repo.listReminderCandidates(query(3))).toEqual([]);
+      });
+
+      it("claim не выдаётся отписавшемуся, открывшему день и участнику без email", async () => {
+        const unsubscribed = await subscriber({ reminderOptIn: false });
+        const opened = await subscriber();
+        await repo.openDayOnce(opened.id, 3, minutes(1), true);
+        const anonymous = await newParticipant({ reminderOptIn: true });
+        for (const person of [unsubscribed, opened, anonymous]) expect(await repo.claimReminder(claimInput(person.id, 3))).toBeNull();
+      });
+
+      it("failed повторяется не раньше retryBefore и не больше maxAttempts; sent не повторяется", async () => {
+        const person = await subscriber();
+        const first = (await repo.claimReminder(claimInput(person.id, 6, { now: minutes(10) })))!;
+        await repo.markReminderFailed(first.id, "smtp_econnection");
+        expect(await repo.getReminderDelivery(first.id)).toMatchObject({ status: "failed", lastError: "smtp_econnection" });
+
+        // Слишком рано: последняя попытка в 10-й минуте, retryBefore = 5-я.
+        expect(await repo.listReminderCandidates(query(6, { retryBefore: minutes(5) }))).toEqual([]);
+        expect(await repo.claimReminder(claimInput(person.id, 6, { now: minutes(11), retryBefore: minutes(5) }))).toBeNull();
+
+        expect((await repo.listReminderCandidates(query(6, { retryBefore: minutes(20) }))).map((candidate) => candidate.id)).toEqual([person.id]);
+        const second = (await repo.claimReminder(claimInput(person.id, 6, { now: minutes(30), retryBefore: minutes(20) })))!;
+        expect(second).toMatchObject({ id: first.id, attempts: 2, status: "sending", lastError: null });
+        await repo.markReminderFailed(second.id, "smtp_etimedout");
+        const third = (await repo.claimReminder(claimInput(person.id, 6, { now: minutes(60), retryBefore: minutes(50) })))!;
+        expect(third.attempts).toBe(3);
+        await repo.markReminderFailed(third.id, "smtp_etimedout");
+        // Попытки исчерпаны.
+        expect(await repo.claimReminder(claimInput(person.id, 6, { now: minutes(90), retryBefore: minutes(80) }))).toBeNull();
+
+        const sentPerson = await subscriber();
+        const sent = (await repo.claimReminder(claimInput(sentPerson.id, 6)))!;
+        await repo.markReminderSent(sent.id, minutes(12));
+        expect(await repo.getReminderDelivery(sent.id)).toMatchObject({ status: "sent", sentAt: minutes(12) });
+        expect(await repo.claimReminder(claimInput(sentPerson.id, 6, { retryBefore: minutes(500) }))).toBeNull();
+      });
+
+      it("markReminderSent и markReminderFailed действуют только на заявленную (sending) доставку", async () => {
+        const person = await subscriber();
+        const delivery = (await repo.claimReminder(claimInput(person.id, 2)))!;
+        await repo.markReminderSent(delivery.id, minutes(11));
+        await repo.markReminderFailed(delivery.id, "late_failure");
+        expect(await repo.getReminderDelivery(delivery.id)).toMatchObject({ status: "sent", lastError: null });
+      });
+
+      it("первый переход запоминается, повторные его не меняют; неизвестная доставка — null", async () => {
+        const person = await subscriber();
+        const delivery = (await repo.claimReminder(claimInput(person.id, 2)))!;
+        expect((await repo.recordReminderClick(delivery.id, minutes(20)))?.clickedAt).toEqual(minutes(20));
+        expect((await repo.recordReminderClick(delivery.id, minutes(40)))?.clickedAt).toEqual(minutes(20));
+        expect(await repo.recordReminderClick(createId(), minutes(20))).toBeNull();
+      });
+
+      it("токен отписки: находится по хешу последнего и прежних писем, чужой хеш — null", async () => {
+        const person = await subscriber();
+        const dayOne = claimInput(person.id, 1);
+        const dayTwo = claimInput(person.id, 2);
+        await repo.claimReminder(dayOne);
+        await repo.claimReminder(dayTwo);
+        for (const input of [dayOne, dayTwo]) expect((await repo.findParticipantByUnsubscribeHash(input.unsubscribeHash))?.id).toBe(person.id);
+        expect((await repo.getParticipant(person.id))?.unsubscribeHash).toBe(dayTwo.unsubscribeHash);
+        expect(await repo.findParticipantByUnsubscribeHash(hashToken("чужой"))).toBeNull();
+      });
+
+      it("setReminderOptIn идемпотентен: первая отписка запоминается, согласие на данные не трогается, включение снимает отметку", async () => {
+        const person = await subscriber();
+        const off = await repo.setReminderOptIn(person.id, false, minutes(5));
+        expect(off).toMatchObject({ reminderOptIn: false, unsubscribedAt: minutes(5), consentAt: T0 });
+        const again = await repo.setReminderOptIn(person.id, false, minutes(50));
+        expect(again?.unsubscribedAt).toEqual(minutes(5));
+        const on = await repo.setReminderOptIn(person.id, true, minutes(60));
+        expect(on).toMatchObject({ reminderOptIn: true, unsubscribedAt: null });
+        expect(await repo.setReminderOptIn(createId(), true, minutes(1))).toBeNull();
+      });
+
+      it("отписанный не попадает в кандидаты и не получает заявку", async () => {
+        const person = await subscriber();
+        await repo.setReminderOptIn(person.id, false, minutes(5));
+        expect(await repo.listReminderCandidates(query(2))).toEqual([]);
+        expect(await repo.claimReminder(claimInput(person.id, 2))).toBeNull();
+      });
+
+      it("вход по ссылке с включёнными напоминаниями снимает прежнюю отписку", async () => {
+        const person = await subscriber();
+        await repo.setReminderOptIn(person.id, false, minutes(5));
+        const token = tokenRecord(person.id, person.normalizedEmail!, { reminderOptIn: true });
+        await repo.createLoginToken(token);
+        await repo.completeLogin({ tokenHash: token.tokenHash, now: minutes(6), campaignSlug: CAMPAIGN, currentParticipantId: person.id, newAccessKeyHash: hashToken("k") });
+        expect(await repo.getParticipant(person.id)).toMatchObject({ reminderOptIn: true, unsubscribedAt: null });
+      });
+
+      it("сводка: отправлено, ошибки, переходы, открыли после письма; подписаны и отписавшиеся", async () => {
+        const a = await subscriber();
+        const b = await subscriber();
+        const c = await subscriber();
+        const gone = await subscriber();
+        await repo.setReminderOptIn(gone.id, false, minutes(1));
+        const da = (await repo.claimReminder(claimInput(a.id, 2)))!;
+        const db = (await repo.claimReminder(claimInput(b.id, 2)))!;
+        const dc = (await repo.claimReminder(claimInput(c.id, 2)))!;
+        await repo.markReminderSent(da.id, minutes(10));
+        await repo.markReminderSent(db.id, minutes(10));
+        await repo.markReminderFailed(dc.id, "smtp_econnection");
+        await repo.recordReminderClick(da.id, minutes(15));
+        await repo.openDayOnce(da.participantId, 2, minutes(16), true);
+        // Открыл до письма: не считается «после письма».
+        await repo.openDayOnce(db.participantId, 2, minutes(5), true);
+
+        const stats = await repo.reminderStats(CAMPAIGN);
+
+        expect(stats.days).toEqual([{ day: 2, sent: 2, failed: 1, clicked: 1, openedAfter: 1 }]);
+        expect(stats.subscribed).toBe(3);
+        expect(stats.unsubscribed).toBe(1);
+        expect(await repo.reminderStats(OTHER_CAMPAIGN)).toEqual({ days: [], subscribed: 0, unsubscribed: 0 });
+      });
+
+      it("очистка ПДн стирает токены отписки (и на участнике, и на доставках) и отметку отписки", async () => {
+        const person = await subscriber();
+        const input = claimInput(person.id, 2);
+        await repo.claimReminder(input);
+        await repo.setReminderOptIn(person.id, false, minutes(30));
+        await repo.anonymizeCampaignParticipants(CAMPAIGN);
+        expect(await repo.findParticipantByUnsubscribeHash(input.unsubscribeHash)).toBeNull();
+        expect(await repo.getParticipant(person.id)).toMatchObject({ unsubscribeHash: null, unsubscribedAt: null, reminderOptIn: false });
       });
     });
   });

@@ -45,7 +45,7 @@ export function adventFixture(): Record<string, any> {
   const demo = structuredClone(demoCoffee.campaign) as unknown as {
     brand: unknown;
     story: unknown;
-    legal: unknown;
+    legal: Record<string, unknown>;
     heroes: unknown;
     rooms: Array<{ tasks: Task[] }>;
   };
@@ -58,7 +58,7 @@ export function adventFixture(): Record<string, any> {
     intro: "С 20 по 31 декабря каждый день открывается новая дверь: история, задание и подарок на кассе.",
     brand: demo.brand,
     story: demo.story,
-    legal: demo.legal,
+    legal: { ...demo.legal, operatorDetails: "ИНН 000000000000 (демо), г. Москва; privacy@zerno.example" },
     heroes: demo.heroes,
     presentation: "calendar",
     schedule: {

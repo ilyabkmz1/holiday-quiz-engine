@@ -7,13 +7,14 @@ export const LEGAL_PLACEHOLDER = "[ТЕКСТ НА СОГЛАСОВАНИИ ЮР
 /** Юридические тексты кампании. Абзацы `policyText` разделяются пустой строкой. Валидирует их `campaignSchema` (поле `legal`). */
 export type LegalConfig = {
   operatorName: string;
+  operatorDetails?: string;
   policyText: string;
   consentText: string;
 };
 
 /** Остался ли в юридических текстах маркер «на согласовании». */
 export function hasLegalPlaceholder(legal: LegalConfig): boolean {
-  return Object.values(legal).some((value) => value.includes(LEGAL_PLACEHOLDER));
+  return Object.values(legal).some((value) => typeof value === "string" && value.includes(LEGAL_PLACEHOLDER));
 }
 
 // Модуль безопасен для клиентского бандла: простые константы, без zod и схемы кампании (не импортируйте сюда schema.ts).

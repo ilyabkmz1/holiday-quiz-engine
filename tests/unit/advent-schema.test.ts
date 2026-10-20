@@ -39,6 +39,19 @@ describe("adventSchema", () => {
     expect(parsed.audience).toEqual({ kind: "customers", leaderboard: "off" });
   });
 
+  it("тексты напоминаний: значения по умолчанию, а для «Витрины» — про окна; тексты пакета важнее", () => {
+    const draft = adventFixture();
+    delete draft.reminders;
+    const calendar = adventSchema.parse(draft);
+    expect(calendar.reminders).toMatchObject({ subject: "Дверь {day} открыта", button: "Открыть дверь {day}", comebackSubject: expect.stringContaining("дверь {day}") });
+    expect(calendar.reminders.comebackText).toBeTruthy();
+    expect(calendar.reminders.catchUpText).toContain("{missed}");
+
+    const storefront = adventSchema.parse({ ...draft, presentation: "storefront", facade: { templateId: "cafe" }, reminders: { channel: "email", subject: "Свой {day}" } });
+    expect(storefront.reminders).toMatchObject({ channel: "email", subject: "Свой {day}", button: "Открыть окно {day}", comebackSubject: "Мы скучали: окно {day} ждёт вас" });
+    expect(storefront.reminders.catchUpText).toContain("окно {missed}");
+  });
+
   it("разбирается повторно (идемпотентность разбора)", () => {
     const once = adventSchema.parse(adventFixture());
     expect(adventSchema.parse(once)).toEqual(once);

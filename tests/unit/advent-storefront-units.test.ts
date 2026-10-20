@@ -101,13 +101,25 @@ describe("нижняя плашка: одна большая кнопка", () =
 });
 
 describe("подпись гирлянды", () => {
-  it("«Ещё 2 огонька — и награда цели»: склонение и первая буква награды строчная", async () => {
+  it("«Ещё 2 окна — и награда цели»: склонение и первая буква награды строчная", async () => {
     const harness = memoryAdventApi({ start: at(1) });
     await harness.ensureParticipant();
     const state = await harness.api.getState();
     const caption = garlandCaption(state, copy);
-    expect(caption).toMatch(/^Ещё \d+ (огонёк|огонька|огоньков) — и /);
+    expect(caption).toMatch(/^Ещё \d+ (окно|окна|окон) — и /);
     expect(caption).toContain(lowerFirst(state.nextGoal!.label));
+  });
+
+  it("при N > 16 подпись считает окна, а не огоньки (один огонёк — несколько дней)", () => {
+    const state = (totalDays: number, progress: number, goal: number) =>
+      ({ totalDays, streak: { progress }, nextGoal: { opened: goal, rewardId: "g", label: "Главный приз" }, goals: [{}] }) as unknown as AdventState;
+    // 24 дня — по 2 дня на огонёк: до цели на 12-м окне осталось 7 окон (4 огонька были бы неверны).
+    expect(garlandCaption(state(24, 5, 12), copy)).toBe("Ещё 7 окон — и главный приз");
+    expect(garlandCaption(state(31, 10, 13), copy)).toBe("Ещё 3 окна — и главный приз");
+    expect(garlandCaption(state(31, 12, 13), copy)).toBe("Ещё 1 окно — и главный приз");
+    // Цель внутри того же огонька: раньше выпадало в «Горит k из n», теперь честно считает окна.
+    expect(garlandCaption(state(24, 11, 12), copy)).toBe("Ещё 1 окно — и главный приз");
+    expect(garlandCaption(state(12, 4, 8), copy)).toBe("Ещё 4 окна — и главный приз");
   });
 
   it("lowerFirst не трогает аббревиатуры и имена с заглавной второй буквой", () => {

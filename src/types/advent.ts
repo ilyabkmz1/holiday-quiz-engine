@@ -106,6 +106,8 @@ export type AdventState = {
     consent: boolean;
     marketingConsent: boolean;
     reminderOptIn: boolean;
+    /** Можно включать и выключать напоминания: кампания их рассылает, адрес подтверждён. */
+    canRemind: boolean;
   };
   doors: AdventDoor[];
   days: AdventDayContent[];

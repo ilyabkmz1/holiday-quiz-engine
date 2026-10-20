@@ -12,6 +12,7 @@ import {
   type DayBlockResultRecord,
   type DayOpenRecord,
   type ParticipantRecord,
+  type ReminderRepository,
   type RewardGrantRecord
 } from "@/server/repositories/advent-repository";
 import { isVerified, rewardNeedsIdentity, RewardService } from "@/server/services/reward-service";
@@ -71,7 +72,7 @@ export class AdventService {
   private readonly rewards: RewardService;
 
   constructor(
-    private readonly repository: AdventRepository,
+    private readonly repository: AdventRepository & ReminderRepository,
     private readonly advent: AdventConfig,
     rewards?: RewardService
   ) {
@@ -104,10 +105,25 @@ export class AdventService {
       marketingConsentAt: null,
       reminderOptIn: false,
       unsubscribeHash: null,
+      unsubscribedAt: null,
       createdAt: now
     });
     await this.reconcile(await this.snapshot(participant.id), now);
     return { participant, accessKey };
+  }
+
+  /**
+   * Переключатель «Напоминания на почту» (`POST reminders`). Только для участника с подтверждённым адресом и согласием на
+   * обработку данных: анонимному напоминать некуда. Идемпотентно; согласие на обработку данных не затрагивает.
+   */
+  async setReminders(participantId: string, enabled: boolean, now: Date): Promise<AdventState> {
+    const { participant } = await this.snapshot(participantId);
+    if (this.advent.reminders.channel !== "email") throw new DomainError("conflict", "Напоминания в этой кампании не рассылаются.");
+    if (participant.normalizedEmail === null || participant.consentAt === null) {
+      throw new DomainError("conflict", "Сначала сохраните прогресс по email: напоминания приходят на подтверждённый адрес.");
+    }
+    await this.repository.setReminderOptIn(participantId, enabled, now);
+    return this.state(participantId, now);
   }
 
   /** Участник по ключу из cookie или `null`: ключа нет, он неизвестен или принадлежит другой кампании. */
@@ -481,7 +497,9 @@ export class AdventService {
         email: participant.normalizedEmail ? maskEmail(participant.normalizedEmail) : null,
         consent: participant.consentAt !== null,
         marketingConsent: participant.marketingConsentAt !== null,
-        reminderOptIn: participant.reminderOptIn
+        reminderOptIn: participant.reminderOptIn,
+        // Переключатель напоминаний доступен после подтверждения адреса, если кампания рассылает письма.
+        canRemind: this.advent.reminders.channel === "email" && participant.normalizedEmail !== null && participant.consentAt !== null
       },
       doors,
       days,

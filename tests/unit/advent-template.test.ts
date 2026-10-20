@@ -141,6 +141,10 @@ describe("перенос брифа в заготовку адвента", () =>
 - Удача (boxes, wheel, scratch или нет): wheel
 - Напоминания на email (да / нет): да
 - Время напоминаний (ЧЧ:ММ): 09:30
+- Тема письма-напоминания ({day}, {teaser}): Окно {day}: {teaser}
+- Тема письма-возвращения: Мы скучали по вам в «Зерне» — окно {day}
+- Абзац письма-возвращения: Вчера вы заглянули не к нам. Сегодня ждём!
+- Реквизиты оператора: ИНН 7700000000, Москва
 - Кто играет (customers / employees): customers
 - Ожидаемое число участников: 1 500
 - Нужна ли покупка для участия (да / нет): да
@@ -166,7 +170,14 @@ describe("перенос брифа в заготовку адвента", () =>
     expect(advent.schedule.claimEndsAt).toBe("2027-01-20T23:59:59+03:00");
     expect(advent.streak).toMatchObject({ freezes: 2, endowedDay: false });
     expect(advent.luck?.skin).toBe("wheel");
-    expect(advent.reminders).toMatchObject({ channel: "email", sendAtLocal: "09:30" });
+    expect(advent.reminders).toMatchObject({
+      channel: "email",
+      sendAtLocal: "09:30",
+      subject: "Окно {day}: {teaser}",
+      comebackSubject: "Мы скучали по вам в «Зерне» — окно {day}",
+      comebackText: "Вчера вы заглянули не к нам. Сегодня ждём!"
+    });
+    expect(advent.legal.operatorDetails).toBe("ИНН 7700000000, Москва");
     expect(advent.rules.requiresPurchase).toBe(true);
     expect(advent.brand.name).toBe("Кофейня «Зерно»");
     expect(advent.legal.operatorName).toBe("ООО «Зерно»");

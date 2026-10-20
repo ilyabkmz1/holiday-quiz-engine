@@ -61,6 +61,8 @@ export const adventApi = {
   /** Пустое тело — подтверждение истории; для задания и удачи — `payload`. Результат приходит только после записи. */
   submitBlock: (n: number, index: number, payload?: Record<string, unknown>) =>
     request<SubmitBlockResponse>(`${dayPath(n)}/blocks/${index}`, "POST", payload ? { payload } : {}),
+  /** Переключатель напоминаний на почту (после подтверждения адреса). */
+  setReminders: (enabled: boolean) => request<OpenDayResponse>("/api/advent/reminders", "POST", { enabled }),
   requestLink: (input: { email: string; consent: boolean; marketingConsent: boolean; reminderOptIn: boolean }) =>
     request<IdentityRequestResponse>("/api/advent/identity/request", "POST", input)
 };

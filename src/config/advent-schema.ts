@@ -142,7 +142,19 @@ export const remindersSchema = z.object({
   sendAtLocal: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, "Время рассылки: HH:MM").default("10:00"),
   /** Тексты с плейсхолдерами `{day}` и `{teaser}`. */
   subject: z.string().min(1).default("Дверь {day} открыта"),
-  preheader: z.string().min(1).default("{teaser}")
+  preheader: z.string().min(1).default("{teaser}"),
+  /** Кнопка в письме; `{day}` — номер дня. */
+  button: z.string().min(1).max(60).default("Открыть дверь {day}"),
+  /**
+   * Вариант «возвращение»: вчерашний день пропущен, и участнику положен бонус за возвращение (`streak.comebackBonusRewardId`).
+   * Подстановки те же; награда в письме не называется.
+   */
+  comebackSubject: z.string().min(1).default("Мы скучали: дверь {day} ждёт вас"),
+  comebackPreheader: z.string().min(1).default("Вернитесь сегодня — вас ждёт бонус за возвращение"),
+  /** Абзац письма-возвращения. */
+  comebackText: z.string().min(1).default("Вчера вы пропустили день, но игра для вас не закончилась: сегодня вас ждёт бонус за возвращение."),
+  /** Абзац о том, что пропущенный день можно догнать; `{missed}` — его номер. Показывается, если правила догоняния это позволяют. */
+  catchUpText: z.string().min(1).default("А пропущенную дверь {missed} ещё можно открыть.")
 });
 
 export const audienceSchema = z.object({
@@ -228,9 +240,10 @@ export const adventCopySchema = copySchema.extend({
   storeTomorrowHint: z.string().min(1).default("Следующее окно откроется {date}"),
   storeHostLine: z.string().min(1).default("Заходите, окно ждёт."),
   garlandLeft: z.string().min(1).default("Ещё {left} {bulbs} — и {label}"),
-  garlandBulbOne: z.string().min(1).default("огонёк"),
-  garlandBulbFew: z.string().min(1).default("огонька"),
-  garlandBulbMany: z.string().min(1).default("огоньков"),
+  // Подпись под гирляндой считает окна (дни), а не огоньки: при N > 16 один огонёк — несколько дней. Имена ключей прежние (garlandBulb*).
+  garlandBulbOne: z.string().min(1).default("окно"),
+  garlandBulbFew: z.string().min(1).default("окна"),
+  garlandBulbMany: z.string().min(1).default("окон"),
   garlandProgress: z.string().min(1).default("Горит {k} из {n}"),
   garlandDone: z.string().min(1).default("Все цели достигнуты"),
   garlandAria: z.string().min(1).default("{caption}. Подробнее о серии"),
@@ -337,6 +350,9 @@ export const adventCopySchema = copySchema.extend({
   saveSentText: z.string().min(1).default("Мы отправили ссылку для входа на {email}. Откройте её на этом устройстве."),
   saveChange: z.string().min(1).default("Указать другой адрес"),
   saveDone: z.string().min(1).default("Прогресс сохранён: {email}"),
+  remindersToggle: z.string().min(1).default("Напоминания на почту"),
+  remindersToggleHint: z.string().min(1).default("Письмо, когда открывается новый день. Отписаться можно в любом письме."),
+  remindersToggleError: z.string().min(1).default("Не удалось изменить напоминания. Попробуйте ещё раз."),
   finaleEyebrow: z.string().min(1).default("Финал"),
   finaleTitle: z.string().min(1).default("Итоги адвента"),
   finaleOpened: z.string().min(1).default("Открыто дверей"),
@@ -390,14 +406,24 @@ export const STOREFRONT_COPY = {
   sheetOpening: "Открываем окно…",
   dayDoneText: "Возвращайтесь завтра: новое окно ждёт.",
   finaleOpened: "Открыто окон",
+  remindersToggleHint: "Письмо, когда открывается новое окно. Отписаться можно в любом письме.",
   finaleNoPrize: "Главный приз достаётся тем, кто открыл больше окон. В следующий раз!",
   loading: "Загружаем окна…"
 } as const satisfies Partial<z.input<typeof adventCopySchema>>;
 
+/** То же для писем-напоминаний: «окно», а не «дверь». Тексты пакета (`reminders.*`) важнее. */
+export const STOREFRONT_REMINDERS = {
+  subject: "Окно {day} открыто",
+  button: "Открыть окно {day}",
+  comebackSubject: "Мы скучали: окно {day} ждёт вас",
+  catchUpText: "А пропущенное окно {missed} ещё можно открыть."
+} as const satisfies Partial<z.input<typeof remindersSchema>>;
+
 function withStorefrontCopy(raw: unknown): unknown {
   if (typeof raw !== "object" || raw === null || (raw as { presentation?: unknown }).presentation !== "storefront") return raw;
-  const copy = (raw as { copy?: unknown }).copy;
-  return { ...raw, copy: { ...STOREFRONT_COPY, ...(typeof copy === "object" && copy !== null ? copy : {}) } };
+  const { copy, reminders } = raw as { copy?: unknown; reminders?: unknown };
+  const merged = (defaults: object, own: unknown) => ({ ...defaults, ...(typeof own === "object" && own !== null ? own : {}) });
+  return { ...raw, copy: merged(STOREFRONT_COPY, copy), reminders: merged(STOREFRONT_REMINDERS, reminders) };
 }
 
 const adventChecked = adventBaseSchema.superRefine((advent, context) => {

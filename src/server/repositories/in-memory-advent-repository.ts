@@ -1,4 +1,5 @@
 import { DomainError } from "@/domain/errors";
+import { createId } from "@/server/crypto";
 import {
   GENERATED_CODE_ATTEMPTS,
   type AdventRepository,
@@ -15,6 +16,11 @@ import {
   type IdentityRepository,
   type LoginTokenRecord,
   type ParticipantRecord,
+  type ReminderCandidateQuery,
+  type ReminderClaimInput,
+  type ReminderDeliveryRecord,
+  type ReminderRepository,
+  type ReminderStats,
   type RewardGrantRecord
 } from "@/server/repositories/advent-repository";
 
@@ -22,7 +28,7 @@ import {
  * Реализация в памяти для тестов и `quiz:check`. Методы не содержат `await` между чтением и записью,
  * поэтому в однопоточном Node каждый из них атомарен — как транзакция в PostgreSQL.
  */
-export class InMemoryAdventRepository implements AdventRepository, IdentityRepository {
+export class InMemoryAdventRepository implements AdventRepository, IdentityRepository, ReminderRepository {
   private readonly participants = new Map<string, ParticipantRecord>();
   /** Хеш ключа cookie → участник (ключ создателя и ключи дополнительных устройств). */
   private readonly keyOwners = new Map<string, string>();
@@ -30,6 +36,8 @@ export class InMemoryAdventRepository implements AdventRepository, IdentityRepos
   private readonly results = new Map<string, DayBlockResultRecord>();
   private readonly grants = new Map<string, RewardGrantRecord>();
   private readonly tokens = new Map<string, LoginTokenRecord>();
+  /** Доставки напоминаний: ключ `участник:день`. */
+  private readonly deliveries = new Map<string, ReminderDeliveryRecord>();
   /** Пул кодов: ключ `кампания|код` (уникальность, как `@@unique([campaignSlug, code])`). */
   private readonly codes = new Map<string, { campaignSlug: string; rewardId: string; code: string; grantId: string | null }>();
   /** Остатки: ключ `кампания|награда`. */
@@ -302,7 +310,130 @@ export class InMemoryAdventRepository implements AdventRepository, IdentityRepos
     for (const [hash, token] of [...this.tokens]) {
       if (token.participantId === fromId) this.tokens.delete(hash);
     }
+    for (const [key, delivery] of [...this.deliveries]) {
+      if (delivery.participantId === fromId) this.deliveries.delete(key);
+    }
     this.participants.delete(fromId);
+  }
+
+  private canRemind(participant: ParticipantRecord, day: number): boolean {
+    return (
+      participant.reminderOptIn &&
+      participant.normalizedEmail !== null &&
+      participant.consentAt !== null &&
+      !this.opens.has(`${participant.id}:${day}`)
+    );
+  }
+
+  private retryable(delivery: ReminderDeliveryRecord, retryBefore: Date, maxAttempts: number): boolean {
+    return delivery.status === "failed" && delivery.attempts < maxAttempts && delivery.lastAttemptAt.getTime() < retryBefore.getTime();
+  }
+
+  async listReminderCandidates(query: ReminderCandidateQuery): Promise<ParticipantRecord[]> {
+    return [...this.participants.values()]
+      .filter((participant) => participant.campaignSlug === query.campaignSlug && this.canRemind(participant, query.day))
+      .filter((participant) => {
+        const delivery = this.deliveries.get(`${participant.id}:${query.day}`);
+        return !delivery || this.retryable(delivery, query.retryBefore, query.maxAttempts);
+      })
+      .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime() || a.id.localeCompare(b.id))
+      .slice(0, query.limit)
+      .map((participant) => structuredClone(participant));
+  }
+
+  async claimReminder(input: ReminderClaimInput): Promise<ReminderDeliveryRecord | null> {
+    const participant = this.participants.get(input.participantId);
+    if (!participant || !this.canRemind(participant, input.day)) return null;
+    const key = `${input.participantId}:${input.day}`;
+    const existing = this.deliveries.get(key);
+    let delivery: ReminderDeliveryRecord;
+    if (!existing) {
+      delivery = {
+        id: createId(),
+        participantId: input.participantId,
+        day: input.day,
+        status: "sending",
+        attempts: 1,
+        lastError: null,
+        claimedAt: input.now,
+        lastAttemptAt: input.now,
+        sentAt: null,
+        clickedAt: null,
+        unsubscribeHash: input.unsubscribeHash
+      };
+    } else if (this.retryable(existing, input.retryBefore, input.maxAttempts)) {
+      delivery = { ...existing, status: "sending", attempts: existing.attempts + 1, lastError: null, claimedAt: input.now, lastAttemptAt: input.now, unsubscribeHash: input.unsubscribeHash };
+    } else {
+      return null;
+    }
+    this.deliveries.set(key, delivery);
+    participant.unsubscribeHash = input.unsubscribeHash;
+    return structuredClone(delivery);
+  }
+
+  private deliveryById(deliveryId: string): ReminderDeliveryRecord | undefined {
+    return [...this.deliveries.values()].find((delivery) => delivery.id === deliveryId);
+  }
+
+  async markReminderSent(deliveryId: string, now: Date): Promise<void> {
+    const delivery = this.deliveryById(deliveryId);
+    if (delivery?.status === "sending") Object.assign(delivery, { status: "sent", sentAt: now, lastError: null });
+  }
+
+  async markReminderFailed(deliveryId: string, errorCode: string): Promise<void> {
+    const delivery = this.deliveryById(deliveryId);
+    if (delivery?.status === "sending") Object.assign(delivery, { status: "failed", lastError: errorCode.slice(0, 64) });
+  }
+
+  async getReminderDelivery(deliveryId: string): Promise<ReminderDeliveryRecord | null> {
+    const delivery = this.deliveryById(deliveryId);
+    return delivery ? structuredClone(delivery) : null;
+  }
+
+  async recordReminderClick(deliveryId: string, now: Date): Promise<ReminderDeliveryRecord | null> {
+    const delivery = this.deliveryById(deliveryId);
+    if (!delivery) return null;
+    delivery.clickedAt ??= now;
+    return structuredClone(delivery);
+  }
+
+  async findParticipantByUnsubscribeHash(hash: string): Promise<ParticipantRecord | null> {
+    const direct = [...this.participants.values()].find((participant) => participant.unsubscribeHash === hash);
+    const owner = direct ?? this.participants.get([...this.deliveries.values()].find((delivery) => delivery.unsubscribeHash === hash)?.participantId ?? "");
+    return owner ? structuredClone(owner) : null;
+  }
+
+  async setReminderOptIn(participantId: string, enabled: boolean, now: Date): Promise<ParticipantRecord | null> {
+    const participant = this.participants.get(participantId);
+    if (!participant) return null;
+    if (enabled) {
+      participant.reminderOptIn = true;
+      participant.unsubscribedAt = null;
+    } else if (participant.reminderOptIn) {
+      participant.reminderOptIn = false;
+      participant.unsubscribedAt = now;
+    }
+    return structuredClone(participant);
+  }
+
+  async reminderStats(campaignSlug: string): Promise<ReminderStats> {
+    const byDay = new Map<number, ReminderStats["days"][number]>();
+    for (const delivery of this.deliveries.values()) {
+      if (this.participants.get(delivery.participantId)?.campaignSlug !== campaignSlug) continue;
+      const row = byDay.get(delivery.day) ?? { day: delivery.day, sent: 0, failed: 0, clicked: 0, openedAfter: 0 };
+      if (delivery.status === "sent") row.sent += 1;
+      else row.failed += 1;
+      if (delivery.clickedAt) row.clicked += 1;
+      const open = this.opens.get(`${delivery.participantId}:${delivery.day}`);
+      if (delivery.status === "sent" && delivery.sentAt && open && open.openedAt.getTime() >= delivery.sentAt.getTime()) row.openedAfter += 1;
+      byDay.set(delivery.day, row);
+    }
+    const people = [...this.participants.values()].filter((participant) => participant.campaignSlug === campaignSlug);
+    return {
+      days: [...byDay.values()].sort((a, b) => a.day - b.day),
+      subscribed: people.filter((participant) => participant.reminderOptIn && participant.normalizedEmail !== null).length,
+      unsubscribed: people.filter((participant) => !participant.reminderOptIn && participant.unsubscribedAt !== null).length
+    };
   }
 
   async createLoginToken(token: LoginTokenRecord): Promise<void> {
@@ -324,12 +455,15 @@ export class InMemoryAdventRepository implements AdventRepository, IdentityRepos
     for (const [hash, token] of [...this.tokens]) {
       if (this.participants.get(token.participantId)?.campaignSlug === campaignSlug) this.tokens.delete(hash);
     }
+    for (const delivery of this.deliveries.values()) {
+      if (this.participants.get(delivery.participantId)?.campaignSlug === campaignSlug) delivery.unsubscribeHash = null;
+    }
     let count = 0;
     for (const participant of this.participants.values()) {
       if (participant.campaignSlug !== campaignSlug) continue;
-      const { normalizedEmail, consentAt, marketingConsentAt, reminderOptIn, unsubscribeHash } = participant;
-      if (normalizedEmail === null && consentAt === null && marketingConsentAt === null && !reminderOptIn && unsubscribeHash === null) continue;
-      Object.assign(participant, { normalizedEmail: null, consentAt: null, marketingConsentAt: null, reminderOptIn: false, unsubscribeHash: null });
+      const { normalizedEmail, consentAt, marketingConsentAt, reminderOptIn, unsubscribeHash, unsubscribedAt } = participant;
+      if (normalizedEmail === null && consentAt === null && marketingConsentAt === null && !reminderOptIn && unsubscribeHash === null && unsubscribedAt === null) continue;
+      Object.assign(participant, { normalizedEmail: null, consentAt: null, marketingConsentAt: null, reminderOptIn: false, unsubscribeHash: null, unsubscribedAt: null });
       count += 1;
     }
     return count;
@@ -353,10 +487,11 @@ export class InMemoryAdventRepository implements AdventRepository, IdentityRepos
     target.normalizedEmail = token.normalizedEmail;
     target.consentAt = target.consentAt ?? token.consentAt;
     target.marketingConsentAt = target.marketingConsentAt ?? token.marketingConsentAt;
+    if (token.reminderOptIn && !target.reminderOptIn) target.unsubscribedAt = null;
     target.reminderOptIn = target.reminderOptIn || token.reminderOptIn;
 
     const current = input.currentParticipantId ? this.participants.get(input.currentParticipantId) : undefined;
-    const sameDevice = input.currentParticipantId === requester.id;
+    const sameDevice = token.trusted || input.currentParticipantId === requester.id;
     if (!sameDevice && target.id === requester.id) {
       // Ссылку открыли не на запросившем устройстве: его ключи отзываются (до слияния, чтобы не задеть ключи
       // вливаемого устройства), ключ создателя — ключ этого устройства.

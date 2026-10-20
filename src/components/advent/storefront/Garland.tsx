@@ -19,13 +19,16 @@ export function lowerFirst(text: string): string {
   return /^\p{Lu}\p{Ll}/u.test(text) ? text[0].toLowerCase() + text.slice(1) : text;
 }
 
-/** Подпись под гирляндой: «Ещё 2 огонька — и <награда>», либо «Горит k из n», либо «Все цели достигнуты». */
+/**
+ * Подпись под гирляндой: «Ещё 3 окна — и <награда>», либо «Горит k из n», либо «Все цели достигнуты».
+ * Считаем окна (дни), а не огоньки: при N > 16 один огонёк покрывает несколько дней.
+ */
 export function garlandCaption(state: AdventState, copy: AdventCopy): string {
   const { streak, nextGoal, goals, totalDays } = state;
-  const model = garlandModel(totalDays, streak.progress, nextGoal?.opened ?? null);
-  if (nextGoal && model.left > 0) {
-    const bulbs = pluralForm(model.left, [copy.garlandBulbOne, copy.garlandBulbFew, copy.garlandBulbMany]);
-    return fill(copy.garlandLeft, { left: model.left, bulbs, label: lowerFirst(nextGoal.label) });
+  const windowsLeft = nextGoal ? Math.max(0, nextGoal.opened - Math.min(streak.progress, totalDays)) : 0;
+  if (nextGoal && windowsLeft > 0) {
+    const windows = pluralForm(windowsLeft, [copy.garlandBulbOne, copy.garlandBulbFew, copy.garlandBulbMany]);
+    return fill(copy.garlandLeft, { left: windowsLeft, bulbs: windows, label: lowerFirst(nextGoal.label) });
   }
   if (goals.length > 0) return copy.garlandDone;
   return fill(copy.garlandProgress, { k: Math.min(streak.progress, totalDays), n: totalDays });

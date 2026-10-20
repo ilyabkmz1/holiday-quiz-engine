@@ -22,6 +22,7 @@
     "db:migrate": "prisma migrate deploy",
     "db:seed": "tsx prisma/seed.ts",
     "cleanup:pii": "tsx scripts/cleanup-pii.ts",
+    "advent:remind": "tsx scripts/advent-remind.ts",
     "quiz:new": "tsx scripts/quiz-new.ts",
     "quiz:check": "tsx scripts/quiz-check.ts",
     "quiz:rules": "tsx scripts/quiz-rules.ts",

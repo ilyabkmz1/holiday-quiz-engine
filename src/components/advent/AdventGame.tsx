@@ -9,6 +9,7 @@ import { ComebackBanner } from "@/components/advent/ComebackBanner";
 import { Countdown } from "@/components/advent/Countdown";
 import { DaySheet } from "@/components/advent/DaySheet";
 import { fill } from "@/components/advent/format";
+import { RemindersToggle } from "@/components/advent/RemindersToggle";
 import { SaveProgressCard, type SaveProgressInput } from "@/components/advent/SaveProgressCard";
 import { AdventSheet } from "@/components/advent/AdventSheet";
 import { StreakHud } from "@/components/advent/StreakHud";
@@ -192,6 +193,23 @@ export function AdventGame({ advent, world, api = adventApi }: { advent: PublicA
     [adopt, api, onError, sound, state]
   );
 
+  // Кнопка письма-напоминания ведёт на `/?day=N`: после загрузки открываем этот день (один раз) и убираем параметр из адреса.
+  const emailDay = useRef<number | null | undefined>(undefined);
+  useEffect(() => {
+    if (!state || emailDay.current !== undefined) return;
+    const raw = new URLSearchParams(window.location.search).get("day");
+    emailDay.current = raw && /^\d{1,2}$/.test(raw) ? Number(raw) : null;
+    if (raw === null) return;
+    try {
+      const url = new URL(window.location.href);
+      url.searchParams.delete("day");
+      window.history.replaceState(null, "", url.pathname + url.search + url.hash);
+    } catch {
+      // Адресная строка не обязательна.
+    }
+    const door = emailDay.current === null ? undefined : state.doors.find((candidate) => candidate.n === emailDay.current);
+    if (door && (door.status === "today" || door.status === "catchup" || door.status === "opened")) void openDoor(door.n);
+  }, [state, openDoor]);
   function closeSheet() {
     const n = openN;
     setOpenN(null);
@@ -213,6 +231,10 @@ export function AdventGame({ advent, world, api = adventApi }: { advent: PublicA
 
   async function requestLink(input: SaveProgressInput) {
     await api.requestLink(input);
+  }
+
+  async function changeReminders(enabled: boolean): Promise<AdventState> {
+    return (await api.setReminders(enabled)).state;
   }
 
   const storefront = advent.presentation === "storefront" && advent.facade !== null;
@@ -300,7 +322,10 @@ export function AdventGame({ advent, world, api = adventApi }: { advent: PublicA
         <h2 className="adv-section-title">{copy.calendarTitle}</h2>
         <CalendarView doors={current.doors} copy={copy} timezone={advent.schedule.timezone} phase={current.phase} busy={busyDoor} onOpen={(n) => void openDoor(n)} onHint={showHint} />
         {current.participant.email ? (
-          <p className="adv-saved"><span className="adv-dot" aria-hidden="true" /> {fill(copy.saveDone, { email: current.participant.email })}</p>
+          <>
+            <p className="adv-saved"><span className="adv-dot" aria-hidden="true" /> {fill(copy.saveDone, { email: current.participant.email })}</p>
+            <RemindersToggle copy={copy} state={current} onChange={changeReminders} onState={adopt} />
+          </>
         ) : (
           anyDone && !finished && openN === null && <SaveProgressCard copy={copy} consentText={advent.legal.consentText} reason="after-day" onSubmit={requestLink} />
         )}
@@ -340,7 +365,10 @@ export function AdventGame({ advent, world, api = adventApi }: { advent: PublicA
               </header>
               <StreakHud state={state} copy={copy} />
               {state.participant.email ? (
-                <p className="adv-saved"><span className="adv-dot" aria-hidden="true" /> {fill(copy.saveDone, { email: state.participant.email })}</p>
+                <>
+                  <p className="adv-saved"><span className="adv-dot" aria-hidden="true" /> {fill(copy.saveDone, { email: state.participant.email })}</p>
+                  <RemindersToggle copy={copy} state={state} onChange={changeReminders} onState={adopt} />
+                </>
               ) : (
                 anyDoorDone && <SaveProgressCard copy={copy} consentText={advent.legal.consentText} reason="after-day" onSubmit={requestLink} />
               )}

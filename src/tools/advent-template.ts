@@ -260,6 +260,19 @@ export function applyAdventBrief(pack: AdventPackDraft, fields: BriefFields): st
   if (fields.adventReminderTime && /^([01]\d|2[0-3]):[0-5]\d$/.test(fields.adventReminderTime.trim())) {
     set("reminders.sendAtLocal", () => { reminders.sendAtLocal = fields.adventReminderTime!.trim(); });
   }
+  // Тексты писем: подстановки {day} и {teaser}; пустое значение оставляет тон профиля и значения по умолчанию.
+  for (const [field, key] of [
+    ["adventReminderSubject", "subject"],
+    ["adventReminderComebackSubject", "comebackSubject"],
+    ["adventReminderComebackText", "comebackText"]
+  ] as const) {
+    const value = fields[field]?.trim();
+    if (value) set(`reminders.${key}`, () => { reminders[key] = value; });
+  }
+  if (fields.adventOperatorDetails?.trim()) {
+    const details = fields.adventOperatorDetails.trim();
+    set("legal.operatorDetails", () => { advent.legal.operatorDetails = details; });
+  }
   const audienceKind = fields.adventAudience?.trim().toLowerCase();
   if (audienceKind === "customers" || audienceKind === "employees") set("audience.kind", () => { audience.kind = audienceKind; });
   const board = fields.adventLeaderboard?.trim().toLowerCase();

@@ -65,6 +65,7 @@ export class IdentityService {
       marketingConsentAt: input.marketingConsent ? now : null,
       // Напоминания возможны, только если кампания их включила.
       reminderOptIn: input.reminderOptIn && advent.reminders.channel === "email",
+      trusted: false,
       createdAt: now,
       expiresAt: new Date(now.getTime() + LOGIN_TOKEN_TTL_MS),
       usedAt: null

@@ -99,7 +99,7 @@ describe("IdentityService.verify", () => {
     expect(verified.marketingConsentAt).toBeNull();
     expect((await service.identify(accessKey))?.id).toBe(participant.id);
     const state = await service.state(participant.id, at(1, 11));
-    expect(state.participant).toEqual({ id: participant.id, email: "a***@example.test", consent: true, marketingConsent: false, reminderOptIn: true });
+    expect(state.participant).toEqual({ id: participant.id, email: "a***@example.test", consent: true, marketingConsent: false, reminderOptIn: true, canRemind: true });
   });
 
   it("согласие на рассылку записывается отдельно, с временем", async () => {
