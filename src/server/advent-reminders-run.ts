@@ -5,7 +5,10 @@ import { tenantBaseUrl, type AdventTenant } from "@/server/tenants";
 
 export type { ReminderRunResult };
 
-export type TenantRunReport = { tenant: string } & (ReminderRunResult | { skipped: "demo"; day: null; claimed: 0; sent: 0; failed: 0; lostClaims: 0 });
+type Untouched = { day: null; claimed: 0; sent: 0; failed: 0; lostClaims: 0 };
+
+/** `error` — запуск арендатора упал (БД, конфиг): остальные арендаторы всё равно обрабатываются. */
+export type TenantRunReport = { tenant: string } & (ReminderRunResult | ({ skipped: "demo" } & Untouched) | ({ skipped: "error" } & Untouched));
 
 type RunEnv = Record<string, string | undefined>;
 
@@ -45,16 +48,23 @@ export async function runAdventReminders(input: {
       reports.push({ tenant: tenant.tenant, skipped: "demo", day: null, claimed: 0, sent: 0, failed: 0, lostClaims: 0 });
       continue;
     }
+    // Неверный ADVENT_REMIND_AS_OF — ошибка настройки всего запуска: падаем сразу и громко.
     const now = runTime(input.env.ADVENT_REMIND_AS_OF, tenant, input.env.NODE_ENV, input.now);
-    const service = new ReminderService({
-      repository: input.repositoryFor(tenant),
-      advent: tenant.advent,
-      baseUrl: tenantBaseUrl(tenant, input.appUrl),
-      send: input.send,
-      options: input.options,
-      sleep: input.sleep
-    });
-    reports.push({ tenant: tenant.tenant, ...(await service.run(now)) });
+    try {
+      const service = new ReminderService({
+        repository: input.repositoryFor(tenant),
+        advent: tenant.advent,
+        baseUrl: tenantBaseUrl(tenant, input.appUrl),
+        send: input.send,
+        options: input.options,
+        sleep: input.sleep
+      });
+      reports.push({ tenant: tenant.tenant, ...(await service.run(now)) });
+    } catch {
+      // Сбой одного арендатора (БД, SMTP-обвязка) не должен оставлять без писем остальных. Текст ошибки
+      // не пишем: в сообщении драйвера или SMTP может оказаться адрес. Доставка, заявленная до сбоя, остаётся `sending`.
+      reports.push({ tenant: tenant.tenant, skipped: "error", day: null, claimed: 0, sent: 0, failed: 0, lostClaims: 0 });
+    }
   }
   return reports;
 }

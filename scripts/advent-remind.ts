@@ -30,6 +30,7 @@ try {
   });
   for (const report of reports) {
     failed += report.failed;
+    if (report.skipped === "error") process.exitCode = 1;
     console.info(JSON.stringify({ event: "advent_reminders_run", ...report }));
   }
   if (reports.length === 0) console.info(JSON.stringify({ event: "advent_reminders_run", tenants: 0 }));

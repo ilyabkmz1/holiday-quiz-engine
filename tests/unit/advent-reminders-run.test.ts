@@ -103,6 +103,34 @@ describe("runAdventReminders", () => {
     expect(demoRun.sent).toEqual(["demo@example.test|4"]);
   });
 
+  it("сбой одного арендатора не оставляет без писем остальных; в отчёте только `error` без текста ошибки", async () => {
+    const broken = tenantOf((pack) => {
+      pack.tenant = "broken-advent";
+    });
+    const healthy = tenantOf();
+    const brokenBase = await world(broken);
+    const healthyBase = await world(healthy);
+    vi.spyOn(brokenBase.repository, "listReminderCandidates").mockRejectedValue(new Error("connect ECONNREFUSED demo@example.test"));
+    const sent: string[] = [];
+    const reports = await runAdventReminders({
+      tenants: [broken, healthy],
+      env: {},
+      now: () => at(2, 9),
+      appUrl: "https://advent.test",
+      options: OPTIONS,
+      repositoryFor: (tenant) => (tenant.tenant === "broken-advent" ? brokenBase.repository : healthyBase.repository),
+      send: async (email: string, vars: MailVars["reminder"]) => {
+        sent.push(`${email}|${vars.dayNumber}`);
+      }
+    });
+    expect(reports).toEqual([
+      { tenant: "broken-advent", skipped: "error", day: null, claimed: 0, sent: 0, failed: 0, lostClaims: 0 },
+      { tenant: "zerno-advent", skipped: null, day: 2, claimed: 1, sent: 1, failed: 0, lostClaims: 0 }
+    ]);
+    expect(sent).toEqual(["demo@example.test|2"]);
+    expect(JSON.stringify(reports)).not.toContain("@");
+  });
+
   it("дата без смещения отвергается", async () => {
     const tenant = tenantOf();
     const base = await world(tenant);
