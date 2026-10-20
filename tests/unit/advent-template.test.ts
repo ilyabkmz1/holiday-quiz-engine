@@ -67,6 +67,13 @@ describe("buildAdventTemplate", () => {
     expect(noLuck.days.some((day) => day.blocks.some((block) => block.type === "luck"))).toBe(false);
   });
 
+  it("награды с погашением на сайте получают адрес-маркер TODO (retail, beauty)", () => {
+    for (const profile of ["retail", "beauty"] as const) {
+      const rewards = (buildAdventTemplate({ tenant: "shop", days: 12, profile }) as { advent: { rewards: Array<{ redeem: string; url?: string }> } }).advent.rewards;
+      for (const reward of rewards.filter((item) => item.redeem === "online" || item.redeem === "both")) expect(reward.url, profile).toMatch(MARKER);
+    }
+  });
+
   it("corporate: команды для рейтинга заготовлены (TODO), промокодов нет", () => {
     const { advent } = adventPackSchema.parse(buildAdventTemplate({ tenant: "acme", days: 12, profile: "corporate" }));
     expect(advent.audience).toMatchObject({ kind: "employees", leaderboard: "teams" });

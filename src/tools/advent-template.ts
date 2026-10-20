@@ -153,6 +153,10 @@ export function buildAdventTemplate({ tenant, days, profile: profileId, startDat
   };
 
   const advent = applyProfile(profile, draft);
+  // Награды профиля с погашением на сайте приходят без адреса: ставим маркер, чтобы quiz:check сразу показал, что заполнить.
+  for (const reward of (advent as { rewards?: Array<{ redeem?: string; url?: string }> }).rewards ?? []) {
+    if ((reward.redeem === "online" || reward.redeem === "both") && !reward.url) reward.url = "https://TODO.example/";
+  }
   return { experience: "advent", tenant, hosts: [], worldId, profile: profileId, demo: false, advent };
 }
 
