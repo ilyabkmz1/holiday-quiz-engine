@@ -183,6 +183,21 @@ describe("AdventGame: двери и лист", () => {
     await waitFor(() => expect(getState).toHaveBeenCalled());
   });
 
+  it("ошибка ответа на блок при открытом листе видна и озвучивается: подсказка вне inert-фона", async () => {
+    const harness = memoryAdventApi({ start: at(3) });
+    mount(harness.api);
+    await waitFor(() => expect(door(3)).toBeTruthy());
+    fireEvent.click(door(3));
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.click(within(dialog).getByRole("button", { name: copy.chapterNext }));
+    vi.spyOn(harness.api, "submitBlock").mockRejectedValueOnce(new ApiError(409, "Слишком много попыток."));
+    fireEvent.click(within(dialog).getByRole("button", { name: copy.storyNext }));
+    const hint = await screen.findByText("Слишком много попыток.");
+    expect(hint).toHaveAttribute("role", "status");
+    expect(hint.closest("[inert]")).toBeNull();
+    expect(document.querySelector("main")).toHaveAttribute("inert");
+  });
+
   it("401 посреди игры (cookie пропала): участник создаётся заново, страница не падает", async () => {
     const harness = memoryAdventApi({ start: at(3) });
     mount(harness.api);

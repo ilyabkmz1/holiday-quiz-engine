@@ -279,11 +279,12 @@ export function AdventGame({ advent, world, api = adventApi }: { advent: PublicA
             <p className="adv-intro">{advent.intro}</p>
           </section>
           {body}
-          <p className="adv-hint" role="status" aria-live="polite" data-visible={hint ? "true" : "false"}>{hint ?? ""}</p>
         </main>
         {state && openN !== null && (
           <DaySheet advent={advent} state={state} n={openN} reduced={reduced} nowMs={nowMs} api={api} onClose={closeSheet} onState={adopt} onError={onError} />
         )}
+        {/* Вне inert-фона и поверх листа: ошибки ответа на блок дня должны быть видны и озвучены при открытом листе. */}
+        <p className="adv-hint" role="status" aria-live="polite" data-visible={hint ? "true" : "false"}>{hint ?? ""}</p>
       </div>
     </WorldProvider>
   );
