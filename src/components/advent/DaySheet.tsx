@@ -173,9 +173,10 @@ export function DaySheet({ advent, state, n, reduced, nowMs, api, onClose, onSta
       return;
     }
     setActed(true);
-    setPinned(index);
+    // Догнанный день при rewardOnlyOnDay: блок отмечен, но подарка нет — сразу итог дня, а не снова «Открыть подарок».
+    setPinned(res.block.reward ? index : null);
     setPromo(res.block.reward);
-    sound.effect("lit");
+    if (res.block.reward) sound.effect("lit");
     onState(res.state);
   }
 
