@@ -86,6 +86,40 @@ describe("buildAdventTemplate", () => {
   });
 });
 
+describe("«Витрина» в заготовке адвента", () => {
+  it.each([["horeca", "cafe"], ["retail", "shop"], ["b2b", "office"], ["corporate", "office"], ["beauty", "salon"], ["custom", "shop"]] as const)(
+    "профиль %s: вид storefront, фасад %s и хозяин у двери — первый герой",
+    (profile, template) => {
+      const { advent } = adventPackSchema.parse(buildAdventTemplate({ tenant: "acme", days: 12, profile }));
+      expect(advent.presentation).toBe("storefront");
+      expect(advent.facade).toEqual({ templateId: template, hostHeroId: "hero-1" });
+    }
+  );
+
+  it("quiz:check пропускает фасад заготовки и ловит неизвестный шаблон", async () => {
+    const pack = buildAdventTemplate({ tenant: "acme", days: 12, profile: "horeca" }) as { advent: Record<string, any> }; // eslint-disable-line @typescript-eslint/no-explicit-any
+    expect((await checkPack(structuredClone(pack))).errors.join("\n")).not.toMatch(/facade/);
+    pack.advent.facade.templateId = "castle";
+    expect((await checkPack(pack)).errors.join("\n")).toMatch(/facade\.templateId «castle»: такого фасада нет \(доступны: .*cafe/);
+  });
+
+  it("бриф: «Вид», «Фасад» и «Вывеска» переопределяют профиль", () => {
+    const pack = buildAdventTemplate({ tenant: "acme", days: 12, profile: "horeca" }) as { hosts: string[]; advent: Record<string, any> }; // eslint-disable-line @typescript-eslint/no-explicit-any
+    const applied = applyAdventBrief(pack, parseBrief("- Вид (storefront / calendar): storefront\n- Фасад (cafe, shop, office, salon): salon\n- Вывеска (до 28 символов): Белый лотос"));
+    expect(applied).toEqual(expect.arrayContaining(["presentation", "facade.templateId", "facade.signText"]));
+    expect(adventPackSchema.parse(pack).advent.facade).toEqual({ templateId: "salon", hostHeroId: "hero-1", signText: "Белый лотос" });
+  });
+
+  it("шаблон брифа знает поля «Фасад» и «Вывеска»", () => {
+    const template = readFileSync("docs/brief-template.md", "utf8")
+      .replace(/^- Фасад \(([^\n]*)\):\s*$/m, "- Фасад ($1): office")
+      .replace(/^- Вывеска \(([^\n]*)\):\s*$/m, "- Вывеска ($1): Маяк");
+    const fields = parseBrief(template);
+    expect(fields.adventFacade?.trim()).toBe("office");
+    expect(fields.adventSign?.trim()).toBe("Маяк");
+  });
+});
+
 describe("перенос брифа в заготовку адвента", () => {
   const brief = `
 - Название бизнеса: Кофейня «Зерно»

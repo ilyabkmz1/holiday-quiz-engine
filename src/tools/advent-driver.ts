@@ -15,9 +15,44 @@ function control(page: Page, group: string, title: string, role: "button" | "swi
   return page.getByRole("group", { name: group }).getByRole(role, { name: title, exact: true });
 }
 
+/**
+ * Названия элементов «Витрины» (обложки заданий и листание реплик): берутся из `copy` пакета. Без них драйвер ведёт игрока
+ * по штатным механикам календаря.
+ */
+export type StorefrontNames = { pickTitle: string; buildTitle: string; buildSubmit: string; bubbleNext: string };
+
+/** Копия пакета → названия элементов «Витрины» для драйвера. */
+export function storefrontNames(copy: { skinPickTitle: string; skinBuildTitle: string; skinBuildSubmit: string; bubbleNext: string }): StorefrontNames {
+  return { pickTitle: copy.skinPickTitle, buildTitle: copy.skinBuildTitle, buildSubmit: copy.skinBuildSubmit, bubbleNext: copy.bubbleNext };
+}
+
+/**
+ * Дослушать реплики героя и нажать завершающую кнопку шага (`doneLabel`). В «Витрине» реплики листаются кнопкой «Листать дальше»
+ * (`names.bubbleNext`), в календаре реплик-страниц нет: сразу завершающая кнопка.
+ */
+export async function finishSpeech(page: Page, doneLabel: string, lines: number, names?: StorefrontNames): Promise<void> {
+  const dialog = page.getByRole("dialog");
+  if (names) for (let index = 1; index < lines; index += 1) await dialog.getByRole("button", { name: names.bubbleNext, exact: true }).click();
+  await dialog.getByRole("button", { name: doneLabel, exact: true }).click();
+}
+
 /** Верный ответ на задание вместе с отправкой (кнопка подтверждения, если она у механики есть). */
-export async function fillTask(page: Page, task: Task): Promise<void> {
+export async function fillTask(page: Page, task: Task, names?: StorefrontNames): Promise<void> {
   const payload = correctPayload(task);
+  if (names && (task.type === "pick" || task.type === "build" || task.type === "order")) {
+    // Обложки «Витрины»: предметы на прилавке (pick) и «собери» с чипами-ингредиентами и кнопкой «Готово» (build, order).
+    const dialog = page.getByRole("dialog");
+    if (task.type === "pick") {
+      const id = (payload as { optionId: string }).optionId;
+      await dialog.getByRole("list", { name: names.pickTitle }).getByRole("button", { name: task.options.find((option) => option.id === id)!.title, exact: true }).click();
+      return;
+    }
+    const ids = task.type === "build" ? (payload as { optionIds: string[] }).optionIds : (payload as { orderedIds: string[] }).orderedIds;
+    const entries = task.type === "build" ? task.options : task.items;
+    for (const id of ids) await dialog.getByRole("list", { name: names.buildTitle }).getByRole("button", { name: entries.find((entry) => entry.id === id)!.title, exact: true }).click();
+    await dialog.getByRole("button", { name: names.buildSubmit, exact: true }).click();
+    return;
+  }
   switch (task.type) {
     case "pick": {
       const id = (payload as { optionId: string }).optionId;

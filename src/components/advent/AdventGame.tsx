@@ -206,6 +206,11 @@ export function AdventGame({ advent, world, api = adventApi }: { advent: PublicA
     preStatus.current = null;
   }
 
+  function closeStreak() {
+    setStreakOpen(false);
+    window.requestAnimationFrame(() => document.querySelector<HTMLElement>(".adv-garland-btn")?.focus());
+  }
+
   async function requestLink(input: SaveProgressInput) {
     await api.requestLink(input);
   }
@@ -328,7 +333,7 @@ export function AdventGame({ advent, world, api = adventApi }: { advent: PublicA
           <DaySheet advent={advent} state={state} n={openN} reduced={reduced} nowMs={nowMs} api={api} onClose={closeSheet} onState={adopt} onError={onError} />
         )}
         {state && streakOpen && (
-          <AdventSheet label={copy.garlandSheetTitle} closeLabel={copy.sheetClose} onClose={() => setStreakOpen(false)}>
+          <AdventSheet label={copy.garlandSheetTitle} closeLabel={copy.garlandSheetClose} onClose={closeStreak}>
             <div>
               <header className="adv-sheet-head">
                 <h2 className="adv-sheet-title">{copy.garlandSheetTitle}</h2>

@@ -5,6 +5,8 @@ import {
   door,
   fillTask,
   gotoDay,
+  passChapter,
+  passStory,
   loginFromSaveCard,
   luckItemName,
   rewardByLabel,
@@ -25,10 +27,10 @@ async function reachBlock(page: import("@playwright/test").Page, day: NonNullabl
   await door(page, day.n).click();
   const dialog = sheet(page);
   await expect(dialog).toBeVisible();
-  await dialog.getByRole("button", { name: copy.chapterNext, exact: true }).click();
+  await passChapter(page, day.n);
   for (const block of day.blocks) {
     if (block.type === type) return;
-    if (block.type === "story") await dialog.getByRole("button", { name: copy.storyNext, exact: true }).click();
+    if (block.type === "story") await passStory(page, block.lines.length);
     if (block.type === "task") {
       await fillTask(page, (block as { task: PackTask }).task);
       await dialog.getByRole("button", { name: copy.outcomeNext, exact: true }).click();

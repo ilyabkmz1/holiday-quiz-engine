@@ -2,7 +2,7 @@ import { expect, test as base, type APIRequestContext, type BrowserContext, type
 
 import { adventPackSchema } from "../../../src/config/pack";
 import { asOfForDay } from "../../../src/tools/advent-asof";
-import { escapeRegExp, fillTask } from "../../../src/tools/advent-driver";
+import { escapeRegExp, fillTask as driveTask, finishSpeech, storefrontNames } from "../../../src/tools/advent-driver";
 import { packs } from "../../../tenants/index";
 import { localEnv, mailpitUrl } from "../../e2e/support/env";
 
@@ -44,7 +44,23 @@ export const asOfClosed = new Date(new Date(schedule.claimEndsAt).getTime() + 3_
 /** За сутки до старта. */
 export const asOfBeforeStart = new Date(new Date(asOfDay(1, 0)).getTime() - 24 * 3_600_000).toISOString();
 
+/** «Витрина» (фасад с окнами) или календарь дверей: от вида зависят селекторы и то, как листаются реплики. */
+export const storefront = advent.presentation === "storefront";
+const names = storefront ? storefrontNames(copy) : undefined;
+/** Окно или дверь дня n: у обоих видов одинаковый `data-door`. */
 export const door = (page: Page, n: number): Locator => page.locator(`[data-door="${n}"]`);
+/** Все окна (двери) адвента. */
+export const doorsOf = (page: Page): Locator => page.locator(storefront ? ".adv-window" : ".adv-door");
+/** Контейнер окон: список окон фасада или сетка дверей. */
+export const doorsGrid = (page: Page): Locator => page.locator(storefront ? ".adv-facade" : ".adv-doors");
+
+/** Верный ответ на задание (по штатной механике или по обложке «Витрины»). */
+export const fillTask = (page: Page, task: PackTask) => driveTask(page, task, names);
+/** Глава дня: реплики до конца и «Дальше». */
+export const passChapter = (page: Page, dayN: number) =>
+  finishSpeech(page, copy.chapterNext, advent.days.find((day) => day.n === dayN)!.chapter.lines.length, names);
+/** Блок «история»: реплики до конца и «Понятно, дальше». */
+export const passStory = (page: Page, lines: number) => finishSpeech(page, copy.storyNext, lines, names);
 export const sheet = (page: Page): Locator => page.getByRole("dialog");
 
 /** Главная адвента «как в этот момент». */
@@ -55,10 +71,10 @@ export async function gotoAt(page: Page, asOf: string) {
 
 export async function gotoDay(page: Page, n: number) {
   await gotoAt(page, asOfDay(n));
-  await expect(page.locator(".adv-doors")).toBeVisible();
+  await expect(doorsGrid(page)).toBeVisible();
 }
 
-export { escapeRegExp, fillTask };
+export { escapeRegExp };
 
 /** Имя элемента удачи с номером `i` (1…): коробка, сектор или карточка — по скину пакета. */
 export function luckItemName(i: number): RegExp {
@@ -84,11 +100,11 @@ export async function playDay(page: Page, n: number) {
   await door(page, n).click();
   await expect(sheet(page)).toBeVisible();
   const dialog = sheet(page);
-  await dialog.getByRole("button", { name: copy.chapterNext, exact: true }).click();
+  await passChapter(page, n);
   for (const block of day.blocks) {
     switch (block.type) {
       case "story":
-        await dialog.getByRole("button", { name: copy.storyNext, exact: true }).click();
+        await passStory(page, block.lines.length);
         break;
       case "task":
         await fillTask(page, block.task);

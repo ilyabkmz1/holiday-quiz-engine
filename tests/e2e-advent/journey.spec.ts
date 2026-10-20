@@ -4,6 +4,7 @@ import {
   asOfFinale,
   copy,
   door,
+  doorsOf,
   needsIdentity,
   dayOneReward,
   gotoAt,
@@ -14,6 +15,7 @@ import {
   schedule,
   sheet,
   stateOf,
+  storefront,
   submitSaveProgress,
   uniqueEmail,
   expect,
@@ -45,9 +47,18 @@ test.describe("путь участника", () => {
     }
 
     await gotoDay(page, schedule.days);
-    await expect(page.locator('.adv-door[data-status="opened"]')).toHaveCount(schedule.days);
-    if (signedIn) await expect(page.getByText(/Прогресс сохранён: /)).toBeVisible();
-    await expect(page.getByText(new RegExp(`Открыто ${schedule.days} из ${schedule.days}`))).toBeAttached();
+    await expect(doorsOf(page).and(page.locator('[data-status="opened"]'))).toHaveCount(schedule.days);
+    if (!storefront && signedIn) await expect(page.getByText(/Прогресс сохранён: /)).toBeVisible();
+    if (storefront) {
+      // «Витрина»: подробная серия — в листе по нажатию на гирлянду; на самой гирлянде горят все огоньки.
+      await expect(page.locator('.adv-bulb[data-lit="true"]')).toHaveCount(Math.min(schedule.days, 16));
+      await page.getByRole("button", { name: /Подробнее о серии/ }).click();
+      await expect(sheet(page).getByText(new RegExp(`Открыто ${schedule.days} из ${schedule.days}`))).toBeAttached();
+      if (signedIn) await expect(sheet(page).getByText(/Прогресс сохранён: /)).toBeVisible();
+      await page.keyboard.press("Escape");
+    } else {
+      await expect(page.getByText(new RegExp(`Открыто ${schedule.days} из ${schedule.days}`))).toBeAttached();
+    }
 
     const state = await stateOf(page, asOfDay(schedule.days));
     expect(state.doors.every((item) => item.completed)).toBe(true);

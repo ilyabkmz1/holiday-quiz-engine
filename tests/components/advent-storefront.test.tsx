@@ -522,8 +522,11 @@ describe("AdventGame: «Витрина»", () => {
     const sheet = await screen.findByRole("dialog", { name: copy.garlandSheetTitle });
     expect(within(sheet).getByText(new RegExp(copy.streakFreezes))).toBeInTheDocument();
     expect(within(sheet).getByRole("progressbar")).toBeInTheDocument();
+    expect(within(sheet).getByRole("button", { name: copy.garlandSheetClose })).toBeInTheDocument();
     fireEvent.keyDown(sheet, { key: "Escape" });
     await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    // Фокус возвращается на гирлянду.
+    await waitFor(() => expect(document.querySelector(".adv-garland-btn")).toHaveFocus());
   });
 
   it("кнопка плашки открывает сегодняшнее окно; по возвращении оно загорается, а кнопка меняется на «До завтра» после прохождения", async () => {

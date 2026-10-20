@@ -230,6 +230,7 @@ export const adventCopySchema = copySchema.extend({
   garlandDone: z.string().min(1).default("Все цели достигнуты"),
   garlandAria: z.string().min(1).default("{caption}. Подробнее о серии"),
   garlandSheetTitle: z.string().min(1).default("Серия и заморозки"),
+  garlandSheetClose: z.string().min(1).default("Закрыть"),
   dayEyebrow: z.string().min(1).default("Окно {n} · {date}"),
   dayBack: z.string().min(1).default("Назад к фасаду"),
   stepsLabel: z.string().min(1).default("Шаги дня"),
