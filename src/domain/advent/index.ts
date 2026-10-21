@@ -6,3 +6,6 @@ export * from "./streak";
 export * from "./facade-layout";
 export * from "./garland";
 export * from "./reminders";
+export * from "./analytics";
+export * from "./insights";
+export * from "./report-theme";

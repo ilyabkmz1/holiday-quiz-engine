@@ -1,4 +1,5 @@
 import { ApiError } from "@/components/game/api";
+import type { TeamLeaderboard } from "@/types/advent-analytics";
 import type {
   AdventState,
   CreateParticipantResponse,
@@ -75,6 +76,10 @@ export const adventApi = {
     request<SubmitBlockResponse>(`${dayPath(n)}/blocks/${index}`, "POST", payload ? { payload } : {}),
   /** Переключатель напоминаний на почту (после подтверждения адреса); включение — только с согласием на рассылку. */
   setReminders: (input: { enabled: boolean; marketingConsent: boolean }) => request<OpenDayResponse>("/api/advent/reminders", "POST", input),
+  /** Выбор команды для рейтинга (`null` снимает выбор). */
+  setTeam: (teamId: string | null) => request<OpenDayResponse>("/api/advent/team", "POST", { teamId }),
+  /** Публичный рейтинг команд (кэшируется на сервере на несколько минут). */
+  getLeaderboard: () => request<TeamLeaderboard>("/api/advent/leaderboard", "GET"),
   requestLink: (input: { email: string; consent: boolean; marketingConsent: boolean; reminderOptIn: boolean }) =>
     request<IdentityRequestResponse>("/api/advent/identity/request", "POST", input)
 };

@@ -40,3 +40,10 @@ export function resolveNow(request: RequestLike, tenant: AdventTenant, options: 
   if (!parsed.success) throw new DomainError("invalid", "asOf: ожидается дата и время ISO 8601 со смещением, например 2026-12-26T12:00:00+03:00.");
   return new Date(parsed.data);
 }
+
+/** Адрес для `resolveNow` на страницах оператора (там нет объекта запроса): `?asOf=` из адреса страницы. */
+export function adminUrl(asOf: string | undefined): string {
+  const url = new URL("http://admin.local/");
+  if (asOf) url.searchParams.set(AS_OF_QUERY, asOf);
+  return url.toString();
+}

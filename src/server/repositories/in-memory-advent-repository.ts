@@ -1,7 +1,13 @@
+import { localDateAt } from "@/domain/advent/calendar";
 import { DomainError } from "@/domain/errors";
 import {
   GENERATED_CODE_ATTEMPTS,
+  SYNTHETIC_EMAIL_DOMAIN,
   type AdventRepository,
+  type AnalyticsQuery,
+  type AnalyticsRaw,
+  type AnalyticsRepository,
+  type TeamRaw,
   type AssignCodeResult,
   type CodeSource,
   MAX_SOURCE_LABELS,
@@ -31,7 +37,7 @@ import {
  * Реализация в памяти для тестов и `quiz:check`. Методы не содержат `await` между чтением и записью,
  * поэтому в однопоточном Node каждый из них атомарен — как транзакция в PostgreSQL.
  */
-export class InMemoryAdventRepository implements AdventRepository, IdentityRepository, ReminderRepository {
+export class InMemoryAdventRepository implements AdventRepository, IdentityRepository, ReminderRepository, AnalyticsRepository {
   private readonly participants = new Map<string, ParticipantRecord>();
   /** Хеш ключа cookie → участник (ключ создателя и ключи дополнительных устройств). */
   private readonly keyOwners = new Map<string, string>();
@@ -319,6 +325,7 @@ export class InMemoryAdventRepository implements AdventRepository, IdentityRepos
     const into = this.requireParticipant(intoId);
     if (from.campaignSlug !== into.campaignSlug) throw new DomainError("invalid", "Участники из разных кампаний.");
     if (from.normalizedEmail !== null) throw new DomainError("invalid", "Нельзя влить участника, привязанного к email.");
+    if (into.teamId === null && from.teamId !== null) into.teamId = from.teamId;
 
     for (const [key, open] of [...this.opens]) {
       if (open.participantId !== fromId) continue;
@@ -376,6 +383,7 @@ export class InMemoryAdventRepository implements AdventRepository, IdentityRepos
   async listReminderCandidates(query: ReminderCandidateQuery): Promise<ParticipantRecord[]> {
     return [...this.participants.values()]
       .filter((participant) => participant.campaignSlug === query.campaignSlug && this.canRemind(participant, query.day))
+      .filter((participant) => !participant.normalizedEmail?.endsWith(`@${SYNTHETIC_EMAIL_DOMAIN}`))
       .filter((participant) => {
         const delivery = this.deliveries.get(`${participant.id}:${query.day}`);
         return !delivery || this.retryable(delivery, query.retryBefore, query.maxAttempts);
@@ -480,6 +488,124 @@ export class InMemoryAdventRepository implements AdventRepository, IdentityRepos
       subscribed: people.filter((participant) => participant.reminderOptIn && participant.normalizedEmail !== null && participant.marketingConsentAt !== null).length,
       unsubscribed: people.filter((participant) => !participant.reminderOptIn && participant.unsubscribedAt !== null).length
     };
+  }
+
+  async setParticipantTeam(participantId: string, teamId: string | null): Promise<ParticipantRecord | null> {
+    const participant = this.participants.get(participantId);
+    if (!participant) return null;
+    participant.teamId = teamId;
+    return structuredClone(participant);
+  }
+
+  async analyticsRaw(query: AnalyticsQuery): Promise<AnalyticsRaw> {
+    const people = [...this.participants.values()].filter((participant) => participant.campaignSlug === query.campaignSlug);
+    const ids = new Set(people.map((participant) => participant.id));
+    const opens = [...this.opens.values()].filter((open) => ids.has(open.participantId));
+    const opensBy = new Map<string, DayOpenRecord[]>();
+    for (const open of opens) opensBy.set(open.participantId, [...(opensBy.get(open.participantId) ?? []), open]);
+    const sortedOpens = (id: string) => (opensBy.get(id) ?? []).sort((a, b) => a.day - b.day);
+    const firstOpenAt = (id: string): number => Math.min(...sortedOpens(id).map((open) => open.openedAt.getTime()));
+
+    const perDay = new Map<number, { onTime: number; caughtUp: number }>();
+    for (const open of opens) {
+      const row = perDay.get(open.day) ?? { onTime: 0, caughtUp: 0 };
+      if (open.onTime) row.onTime += 1;
+      else row.caughtUp += 1;
+      perDay.set(open.day, row);
+    }
+
+    const blocksBy = new Map<string, number>();
+    for (const result of this.results.values()) {
+      if (ids.has(result.participantId)) blocksBy.set(`${result.participantId}:${result.day}`, (blocksBy.get(`${result.participantId}:${result.day}`) ?? 0) + 1);
+    }
+    const completed = new Map<number, number>();
+    for (const [key, count] of blocksBy) {
+      const day = Number(key.split(":")[1]);
+      if (query.windows.some((window) => window.day === day && window.blocks === count)) completed.set(day, (completed.get(day) ?? 0) + 1);
+    }
+
+    const players = people.filter((participant) => opensBy.has(participant.id));
+    const histogram = new Map<number, number>();
+    const patterns = new Map<string, { days: number[]; count: number }>();
+    for (const participant of players) {
+      const own = sortedOpens(participant.id);
+      histogram.set(own.length, (histogram.get(own.length) ?? 0) + 1);
+      const days = own.filter((open) => open.onTime).map((open) => open.day);
+      const key = days.join(",");
+      patterns.set(key, { days, count: (patterns.get(key)?.count ?? 0) + 1 });
+    }
+
+    const cohorts = new Map<string, { size: number; returned: Map<number, number> }>();
+    for (const participant of people) {
+      const date = localDateAt(participant.createdAt, query.timezone);
+      const cohort = cohorts.get(date) ?? { size: 0, returned: new Map<number, number>() };
+      cohort.size += 1;
+      const openDates = new Set(sortedOpens(participant.id).map((open) => localDateAt(open.openedAt, query.timezone)));
+      for (const offset of query.retentionOffsets) {
+        const target = new Date(`${date}T00:00:00Z`);
+        target.setUTCDate(target.getUTCDate() + offset);
+        if (openDates.has(target.toISOString().slice(0, 10))) cohort.returned.set(offset, (cohort.returned.get(offset) ?? 0) + 1);
+      }
+      cohorts.set(date, cohort);
+    }
+
+    const grants = new Map<string, AnalyticsRaw["grants"][number]>();
+    for (const grant of this.grants.values()) {
+      if (!ids.has(grant.participantId)) continue;
+      const key = `${grant.rewardId}|${grant.source}`;
+      const row = grants.get(key) ?? { rewardId: grant.rewardId, source: grant.source, issued: 0, redeemed: 0, expired: 0, withoutCode: 0 };
+      row.issued += 1;
+      if (grant.status === "redeemed") row.redeemed += 1;
+      if (grant.status === "issued" && grant.expiresAt !== null && grant.expiresAt.getTime() <= query.now.getTime()) row.expired += 1;
+      if (grant.code === null) row.withoutCode += 1;
+      grants.set(key, row);
+    }
+
+    return {
+      participants: people.length,
+      players: players.length,
+      withEmail: people.filter((participant) => participant.normalizedEmail !== null).length,
+      withConsent: people.filter((participant) => participant.consentAt !== null).length,
+      withMarketing: people.filter((participant) => participant.marketingConsentAt !== null).length,
+      withReminders: people.filter((participant) => participant.reminderOptIn && participant.normalizedEmail !== null && participant.marketingConsentAt !== null).length,
+      opens: [...perDay].sort((a, b) => a[0] - b[0]).map(([day, row]) => ({ day, ...row })),
+      completed: [...completed].sort((a, b) => a[0] - b[0]).map(([day, count]) => ({ day, count })),
+      activeByDay: query.windows.map((window) => {
+        const active = players.filter((participant) => firstOpenAt(participant.id) < window.end.getTime());
+        const returning = active.filter((participant) => firstOpenAt(participant.id) < window.start.getTime());
+        return {
+          day: window.day,
+          active: active.length,
+          opened: active.filter((participant) => sortedOpens(participant.id).some((open) => open.day === window.day)).length,
+          returning: returning.length,
+          returningOnTime: returning.filter((participant) => sortedOpens(participant.id).some((open) => open.day === window.day && open.onTime)).length
+        };
+      }),
+      doorsHistogram: [...histogram].sort((a, b) => a[0] - b[0]).map(([doors, count]) => ({ doors, count })),
+      onTimePatterns: [...patterns.values()],
+      cohorts: [...cohorts].sort((a, b) => (a[0] < b[0] ? -1 : 1)).map(([date, cohort]) => ({
+        date,
+        size: cohort.size,
+        returned: [...cohort.returned].sort((a, b) => a[0] - b[0]).map(([offset, count]) => ({ offset, count }))
+      })),
+      activeToday: players.filter((participant) => sortedOpens(participant.id).some((open) => localDateAt(open.openedAt, query.timezone) === query.today)).length,
+      grants: [...grants.values()].sort((a, b) => (a.rewardId + a.source < b.rewardId + b.source ? -1 : 1))
+    };
+  }
+
+  async teamStats(campaignSlug: string): Promise<TeamRaw[]> {
+    const teams = new Map<string, TeamRaw>();
+    for (const participant of this.participants.values()) {
+      if (participant.campaignSlug !== campaignSlug || participant.teamId === null) continue;
+      const row = teams.get(participant.teamId) ?? { teamId: participant.teamId, members: 0, players: 0, doors: 0, points: 0 };
+      const doors = [...this.opens.values()].filter((open) => open.participantId === participant.id).length;
+      row.members += 1;
+      if (doors > 0) row.players += 1;
+      row.doors += doors;
+      row.points += [...this.results.values()].filter((result) => result.participantId === participant.id).reduce((sum, result) => sum + result.points, 0);
+      teams.set(participant.teamId, row);
+    }
+    return [...teams.values()].sort((a, b) => (a.teamId < b.teamId ? -1 : 1));
   }
 
   async createLoginToken(token: LoginTokenRecord): Promise<void> {

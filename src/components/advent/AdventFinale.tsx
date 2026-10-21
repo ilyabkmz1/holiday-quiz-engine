@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 
 import { AdventIcon } from "@/components/advent/icons";
 import { Burst } from "@/components/advent/Burst";
@@ -15,7 +15,7 @@ import type { AdventState, PublicAdvent } from "@/types/advent";
  * Финал и закрытие: итоги (открытые двери, лучшая серия), цели с наградами, главный приз по самой дальней цели и «поделиться».
  * «Поделиться» открывает системное окно (Web Share), а без него копирует ссылку на адвент.
  */
-export function AdventFinale({ advent, state, reduced, nowMs }: { advent: PublicAdvent; state: AdventState; reduced: boolean; nowMs: number }) {
+export function AdventFinale({ advent, state, reduced, nowMs, extra = null }: { advent: PublicAdvent; state: AdventState; reduced: boolean; nowMs: number; extra?: ReactNode }) {
   const { copy } = advent;
   const platform = usePlatformBridge();
   const closed = state.phase === "closed";
@@ -99,6 +99,8 @@ export function AdventFinale({ advent, state, reduced, nowMs }: { advent: Public
           )}
         </div>
       )}
+
+      {extra}
 
       <button type="button" className="adv-btn adv-btn-primary" onClick={() => void share()}>
         <AdventIcon name="share" size={16} /> {platform.kind === "telegram" ? copy.telegramShare : copy.finaleShare}

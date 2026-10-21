@@ -221,6 +221,8 @@ model Participant {
 
   @@unique([campaignSlug, normalizedEmail])
   @@index([campaignSlug])
+  /// Рейтинг команд (A7): участники команды кампании.
+  @@index([campaignSlug, teamId])
 }
 
 /// Платформенная идентичность участника (Telegram). Сырой идентификатор, имя, username и фото не хранятся:

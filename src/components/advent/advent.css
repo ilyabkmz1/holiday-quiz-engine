@@ -337,3 +337,26 @@
 .adv-tg-consent-title { font-size: clamp(26px, 7.5vw, 34px); line-height: 1.08; font-weight: 800; letter-spacing: -0.02em; color: var(--ink); text-wrap: balance; }
 .adv-tg-consent-form { display: flex; flex-direction: column; gap: 12px; padding: 16px; border-radius: 20px; border: 1px solid var(--line); background: var(--card); }
 .adv-tg-consent-form a { color: var(--gold-soft, var(--ink)); }
+/* ——— Командный зачёт (A7) ——— */
+.adv-team { display: grid; gap: 12px; padding: 16px; border-radius: 22px; border: 1px solid var(--line); background: color-mix(in srgb, var(--panel) 78%, transparent); }
+.adv-team-title { font-size: 13px; font-weight: 800; letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); }
+.adv-team-pick { display: grid; gap: 8px; border: 0; padding: 0; margin: 0; min-width: 0; }
+.adv-team-pick legend { font-weight: 700; color: var(--ink); padding: 0; margin-bottom: 4px; }
+.adv-team-options { display: grid; gap: 8px; }
+.adv-team-option { display: flex; align-items: center; gap: 10px; min-height: 48px; padding: 0 14px; border-radius: 14px; border: 1.5px solid var(--line); background: var(--card); color: var(--ink); cursor: pointer; }
+.adv-team-option input { width: 20px; height: 20px; accent-color: var(--blue); flex: none; }
+.adv-team-option[data-checked="true"] { border-color: var(--cyan); background: color-mix(in srgb, var(--cyan) 12%, var(--card)); }
+.adv-team-option:has(input:focus-visible) { outline: 3px solid var(--cyan); outline-offset: 2px; }
+.adv-team-leave { width: auto; justify-self: start; }
+.adv-team-list { display: grid; gap: 10px; list-style: none; margin: 0; padding: 0; }
+.adv-team-row { display: grid; gap: 6px; padding: 12px 14px; border-radius: 16px; border: 1px solid var(--line); background: var(--card); }
+.adv-team-row[data-mine="true"] { border-color: var(--cyan); box-shadow: inset 0 0 0 1px var(--cyan); }
+.adv-team-row[data-hidden="true"] { opacity: 0.85; }
+.adv-team-head { display: flex; align-items: center; gap: 10px; }
+.adv-team-rank { display: grid; place-items: center; flex: none; width: 30px; height: 30px; border-radius: 10px; background: color-mix(in srgb, var(--gold) 20%, transparent); color: var(--gold-soft); font-weight: 800; font-variant-numeric: tabular-nums; }
+.adv-team-name { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-weight: 700; color: var(--ink); }
+.adv-team-mine { font-size: 11px; padding: 2px 8px; }
+.adv-team-bar { display: block; height: 8px; border-radius: 99px; background: color-mix(in srgb, var(--ink) 10%, transparent); overflow: hidden; }
+.adv-team-bar span { display: block; height: 100%; border-radius: 99px; background: linear-gradient(90deg, var(--blue), var(--cyan)); }
+.adv-team-stats { display: flex; flex-wrap: wrap; gap: 4px 14px; margin: 0; font-size: 13px; color: var(--muted-2); font-variant-numeric: tabular-nums; }
+.adv-team-stats b { color: var(--ink); }

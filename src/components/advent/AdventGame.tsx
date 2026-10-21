@@ -16,6 +16,7 @@ import { RemindersToggle } from "@/components/advent/RemindersToggle";
 import { SaveProgressCard, type SaveProgressInput } from "@/components/advent/SaveProgressCard";
 import { AdventSheet } from "@/components/advent/AdventSheet";
 import { StreakHud } from "@/components/advent/StreakHud";
+import { TeamBoard } from "@/components/advent/TeamBoard";
 import { Storefront, StoreHeader, storeSubtitle } from "@/components/advent/storefront/Storefront";
 import { BrandMark } from "@/components/game/BrandMark";
 import { Snow } from "@/components/game/ambient";
@@ -356,7 +357,7 @@ export function AdventGame({ advent, world, api = adventApi }: { advent: PublicA
       current.phase === "upcoming" ? (
         <Countdown advent={advent} targetIso={current.doors[0].unlocksAt} nowMs={nowMs} />
       ) : finished ? (
-        <AdventFinale advent={advent} state={current} reduced={reduced} nowMs={nowMs} />
+        <AdventFinale advent={advent} state={current} reduced={reduced} nowMs={nowMs} extra={current.team ? <TeamBoard copy={copy} state={current} api={api} onState={adopt} /> : null} />
       ) : (
         comeback
       );
@@ -371,6 +372,7 @@ export function AdventGame({ advent, world, api = adventApi }: { advent: PublicA
           <>
             {comeback}
             <StreakHud state={current} copy={copy} />
+            {current.team && <TeamBoard copy={copy} state={current} api={api} onState={adopt} />}
           </>
         ) : (
           lead
@@ -431,6 +433,7 @@ export function AdventGame({ advent, world, api = adventApi }: { advent: PublicA
                 <h2 className="adv-sheet-title">{copy.garlandSheetTitle}</h2>
               </header>
               <StreakHud state={state} copy={copy} />
+              {state.team && <TeamBoard copy={copy} state={state} api={api} onState={adopt} />}
               {telegram ? null : state.participant.email ? (
                 <>
                   <p className="adv-saved"><span className="adv-dot" aria-hidden="true" /> {fill(copy.saveDone, { email: state.participant.email })}</p>

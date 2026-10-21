@@ -31,9 +31,9 @@ export function formatDay(day: string): string {
   return `${date}.${month}.${year}`;
 }
 
-export function formatDateTime(iso: string): string {
+export function formatDateTime(iso: string, timeZone: string = REPORT_TIME_ZONE): string {
   return new Intl.DateTimeFormat("ru-RU", {
-    timeZone: REPORT_TIME_ZONE,
+    timeZone,
     day: "2-digit",
     month: "2-digit",
     year: "numeric",

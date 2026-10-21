@@ -6,7 +6,12 @@ import {
   OTHER_SOURCE,
   type PlatformId,
   type SourceVisitRow,
+  SYNTHETIC_EMAIL_DOMAIN,
   type AdventRepository,
+  type AnalyticsQuery,
+  type AnalyticsRaw,
+  type AnalyticsRepository,
+  type TeamRaw,
   type AssignCodeResult,
   type CodeSource,
   type CompleteLoginInput,
@@ -133,6 +138,13 @@ function utc(value: Date): Prisma.Sql {
   return Prisma.sql`(${value.toISOString()}::timestamptz AT TIME ZONE 'UTC')`;
 }
 
+/** Локальная календарная дата столбца `timestamp(3)` (UTC) в часовом поясе кампании. */
+function localDate(column: string, timezone: string): Prisma.Sql {
+  return Prisma.sql`((${Prisma.raw(column)} AT TIME ZONE 'UTC') AT TIME ZONE ${timezone})::date`;
+}
+
+const num = (value: bigint | number | string | null | undefined): number => Number(value ?? 0);
+
 type DeliveryRow = Omit<ReminderDeliveryRecord, "status"> & { status: string };
 
 function mapDelivery(row: DeliveryRow): ReminderDeliveryRecord {
@@ -173,6 +185,8 @@ async function mergeInTx(tx: Tx, fromId: string, intoId: string, moveKeys = true
   if (!from || !into) throw participantMissing();
   if (from.campaignSlug !== into.campaignSlug) throw new DomainError("invalid", "Участники из разных кампаний.");
   if (from.normalizedEmail !== null) throw new DomainError("invalid", "Нельзя влить участника, привязанного к email.");
+  // Команда поглощённого не пропадает, если итоговый свою ещё не выбрал.
+  if (into.teamId === null && from.teamId !== null) await tx.participant.update({ where: { id: intoId }, data: { teamId: from.teamId } });
 
   // Совпавшие дни: самое раннее openedAt и onTime по ИЛИ. Остальное переносится обновлением владельца.
   await tx.$executeRaw`
@@ -206,7 +220,7 @@ async function mergeInTx(tx: Tx, fromId: string, intoId: string, moveKeys = true
   await tx.participant.delete({ where: { id: fromId } });
 }
 
-export class PrismaAdventRepository implements AdventRepository, IdentityRepository, ReminderRepository {
+export class PrismaAdventRepository implements AdventRepository, IdentityRepository, ReminderRepository, AnalyticsRepository {
   constructor(private readonly prisma: PrismaClient) {}
 
   async createParticipant(participant: ParticipantRecord): Promise<ParticipantRecord> {
@@ -457,6 +471,7 @@ export class PrismaAdventRepository implements AdventRepository, IdentityReposit
         campaignSlug: query.campaignSlug,
         reminderOptIn: true,
         normalizedEmail: { not: null },
+        NOT: { normalizedEmail: { endsWith: `@${SYNTHETIC_EMAIL_DOMAIN}` } },
         consentAt: { not: null },
         // Напоминание — рассылка: без согласия на неё (ст. 18 38-ФЗ) не шлём.
         marketingConsentAt: { not: null },
@@ -564,6 +579,135 @@ export class PrismaAdventRepository implements AdventRepository, IdentityReposit
       subscribed,
       unsubscribed
     };
+  }
+
+  async setParticipantTeam(participantId: string, teamId: string | null): Promise<ParticipantRecord | null> {
+    try {
+      return mapParticipant(await this.prisma.participant.update({ where: { id: participantId }, data: { teamId } }));
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2025") return null;
+      throw error;
+    }
+  }
+
+  async analyticsRaw(query: AnalyticsQuery): Promise<AnalyticsRaw> {
+    const { campaignSlug: slug, timezone, now } = query;
+    const days = query.windows.map((window) => window.day);
+    const blocks = query.windows.map((window) => window.blocks);
+    const starts = query.windows.map((window) => window.start.toISOString());
+    const ends = query.windows.map((window) => window.end.toISOString());
+    const offsets = [...query.retentionOffsets];
+    const [totals, opens, completed, active, doors, patterns, cohortSizes, returns, today, grants] = await Promise.all([
+      this.prisma.$queryRaw<Array<Record<string, bigint>>>`
+        SELECT COUNT(*) AS participants,
+          COUNT(*) FILTER (WHERE EXISTS (SELECT 1 FROM "DayOpen" o WHERE o."participantId" = p."id")) AS players,
+          COUNT(p."normalizedEmail") AS email, COUNT(p."consentAt") AS consent, COUNT(p."marketingConsentAt") AS marketing,
+          COUNT(*) FILTER (WHERE p."reminderOptIn" AND p."normalizedEmail" IS NOT NULL AND p."marketingConsentAt" IS NOT NULL) AS reminders
+        FROM "Participant" p WHERE p."campaignSlug" = ${slug}`,
+      this.prisma.$queryRaw<Array<{ day: number; on_time: bigint; caught: bigint }>>`
+        SELECT o."day", COUNT(*) FILTER (WHERE o."onTime") AS on_time, COUNT(*) FILTER (WHERE NOT o."onTime") AS caught
+        FROM "DayOpen" o JOIN "Participant" p ON p."id" = o."participantId"
+        WHERE p."campaignSlug" = ${slug} GROUP BY o."day" ORDER BY o."day"`,
+      this.prisma.$queryRaw<Array<{ day: number; count: bigint }>>`
+        SELECT r."day", COUNT(*) AS count FROM (
+          SELECT b."participantId", b."day", COUNT(*) AS n
+          FROM "DayBlockResult" b JOIN "Participant" p ON p."id" = b."participantId"
+          WHERE p."campaignSlug" = ${slug} GROUP BY b."participantId", b."day") r
+        JOIN unnest(${days}::int[], ${blocks}::int[]) AS w("day", "blocks") ON w."day" = r."day" AND w."blocks" = r.n
+        GROUP BY r."day" ORDER BY r."day"`,
+      this.prisma.$queryRaw<Array<{ day: number; active: bigint; opened: bigint; returning: bigint; returning_on_time: bigint }>>`
+        WITH first_open AS (
+          SELECT o."participantId" AS pid, MIN(o."openedAt") AS first_at
+          FROM "DayOpen" o JOIN "Participant" p ON p."id" = o."participantId"
+          WHERE p."campaignSlug" = ${slug} GROUP BY o."participantId"),
+        w AS (SELECT * FROM unnest(${days}::int[], ${starts}::timestamptz[], ${ends}::timestamptz[]) AS t("day", "start_at", "end_at"))
+        SELECT w."day", COUNT(f.pid) AS active, COUNT(o."participantId") AS opened,
+          COUNT(f.pid) FILTER (WHERE f.first_at < (w."start_at" AT TIME ZONE 'UTC')) AS returning,
+          COUNT(o."participantId") FILTER (WHERE f.first_at < (w."start_at" AT TIME ZONE 'UTC') AND o."onTime") AS returning_on_time
+        FROM w
+        LEFT JOIN first_open f ON f.first_at < (w."end_at" AT TIME ZONE 'UTC')
+        LEFT JOIN "DayOpen" o ON o."participantId" = f.pid AND o."day" = w."day"
+        GROUP BY w."day" ORDER BY w."day"`,
+      this.prisma.$queryRaw<Array<{ doors: bigint; count: bigint }>>`
+        SELECT d.n AS doors, COUNT(*) AS count FROM (
+          SELECT o."participantId", COUNT(*) AS n
+          FROM "DayOpen" o JOIN "Participant" p ON p."id" = o."participantId"
+          WHERE p."campaignSlug" = ${slug} GROUP BY o."participantId") d
+        GROUP BY d.n ORDER BY d.n`,
+      this.prisma.$queryRaw<Array<{ days: number[]; count: bigint }>>`
+        SELECT pat.days, COUNT(*) AS count FROM (
+          SELECT COALESCE(array_agg(o."day" ORDER BY o."day") FILTER (WHERE o."onTime"), '{}') AS days
+          FROM "DayOpen" o JOIN "Participant" p ON p."id" = o."participantId"
+          WHERE p."campaignSlug" = ${slug} GROUP BY o."participantId") pat
+        GROUP BY pat.days`,
+      this.prisma.$queryRaw<Array<{ date: string; size: bigint }>>`
+        SELECT to_char(${localDate('p."createdAt"', timezone)}, 'YYYY-MM-DD') AS date, COUNT(*) AS size
+        FROM "Participant" p WHERE p."campaignSlug" = ${slug} GROUP BY 1 ORDER BY 1`,
+      // Сначала уникальные пары «участник — локальная дата открытия», потом смещение от даты первого визита: соединение по
+      // равенству id, без фильтра по вычисляемой дате на каждой паре (на 100 тыс. участников вдвое быстрее).
+      this.prisma.$queryRaw<Array<{ date: string; offset: number; count: bigint }>>`
+        WITH c AS (SELECT p."id", ${localDate('p."createdAt"', timezone)} AS d0 FROM "Participant" p WHERE p."campaignSlug" = ${slug}),
+        od AS (SELECT DISTINCT o."participantId" AS pid, ${localDate('o."openedAt"', timezone)} AS d FROM "DayOpen" o JOIN c ON c."id" = o."participantId")
+        SELECT to_char(c.d0, 'YYYY-MM-DD') AS date, (od.d - c.d0) AS "offset", COUNT(*) AS count
+        FROM c JOIN od ON od.pid = c."id"
+        WHERE (od.d - c.d0) = ANY(${offsets}::int[])
+        GROUP BY 1, 2 ORDER BY 1, 2`,
+      this.prisma.$queryRaw<Array<{ count: bigint }>>`
+        SELECT COUNT(DISTINCT o."participantId") AS count
+        FROM "DayOpen" o JOIN "Participant" p ON p."id" = o."participantId"
+        WHERE p."campaignSlug" = ${slug} AND ${localDate('o."openedAt"', timezone)} = ${query.today}::date`,
+      this.prisma.$queryRaw<Array<{ rewardId: string; source: string; issued: bigint; redeemed: bigint; expired: bigint; no_code: bigint }>>`
+        SELECT g."rewardId", g."source"::text AS source, COUNT(*) AS issued,
+          COUNT(*) FILTER (WHERE g."status" = 'redeemed') AS redeemed,
+          COUNT(*) FILTER (WHERE g."status" = 'issued' AND g."expiresAt" IS NOT NULL AND g."expiresAt" <= ${utc(now)}) AS expired,
+          COUNT(*) FILTER (WHERE g."code" IS NULL) AS no_code
+        FROM "RewardGrant" g JOIN "Participant" p ON p."id" = g."participantId"
+        WHERE p."campaignSlug" = ${slug} GROUP BY g."rewardId", g."source" ORDER BY g."rewardId", g."source"::text`
+    ]);
+    const total = totals[0] ?? {};
+    const returnsByDate = new Map<string, Array<{ offset: number; count: number }>>();
+    for (const row of returns) returnsByDate.set(row.date, [...(returnsByDate.get(row.date) ?? []), { offset: Number(row.offset), count: num(row.count) }]);
+    return {
+      participants: num(total.participants),
+      players: num(total.players),
+      withEmail: num(total.email),
+      withConsent: num(total.consent),
+      withMarketing: num(total.marketing),
+      withReminders: num(total.reminders),
+      opens: opens.map((row) => ({ day: Number(row.day), onTime: num(row.on_time), caughtUp: num(row.caught) })),
+      completed: completed.map((row) => ({ day: Number(row.day), count: num(row.count) })),
+      activeByDay: active.map((row) => ({
+        day: Number(row.day),
+        active: num(row.active),
+        opened: num(row.opened),
+        returning: num(row.returning),
+        returningOnTime: num(row.returning_on_time)
+      })),
+      doorsHistogram: doors.map((row) => ({ doors: num(row.doors), count: num(row.count) })),
+      onTimePatterns: patterns.map((row) => ({ days: row.days.map(Number), count: num(row.count) })),
+      cohorts: cohortSizes.map((row) => ({ date: row.date, size: num(row.size), returned: returnsByDate.get(row.date) ?? [] })),
+      activeToday: num(today[0]?.count),
+      grants: grants.map((row) => ({
+        rewardId: row.rewardId,
+        source: row.source as RewardGrantRecord["source"],
+        issued: num(row.issued),
+        redeemed: num(row.redeemed),
+        expired: num(row.expired),
+        withoutCode: num(row.no_code)
+      }))
+    };
+  }
+
+  async teamStats(campaignSlug: string): Promise<TeamRaw[]> {
+    const rows = await this.prisma.$queryRaw<Array<{ teamId: string; members: bigint; players: bigint; doors: bigint; points: bigint }>>`
+      SELECT p."teamId", COUNT(*) AS members, COUNT(*) FILTER (WHERE d.doors > 0) AS players,
+        COALESCE(SUM(d.doors), 0) AS doors, COALESCE(SUM(s.points), 0) AS points
+      FROM "Participant" p
+      LEFT JOIN LATERAL (SELECT COUNT(*) AS doors FROM "DayOpen" o WHERE o."participantId" = p."id") d ON true
+      LEFT JOIN LATERAL (SELECT SUM(b."points") AS points FROM "DayBlockResult" b WHERE b."participantId" = p."id") s ON true
+      WHERE p."campaignSlug" = ${campaignSlug} AND p."teamId" IS NOT NULL
+      GROUP BY p."teamId" ORDER BY p."teamId"`;
+    return rows.map((row) => ({ teamId: row.teamId, members: num(row.members), players: num(row.players), doors: num(row.doors), points: num(row.points) }));
   }
 
   async createLoginToken(token: LoginTokenRecord): Promise<void> {

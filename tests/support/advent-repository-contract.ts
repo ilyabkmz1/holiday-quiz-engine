@@ -5,6 +5,7 @@ import { createId, hashToken } from "@/server/crypto";
 import {
   MAX_SOURCE_LABELS,
   OTHER_SOURCE,
+  SYNTHETIC_EMAIL_DOMAIN,
   type AdventRepository,
   type CodeSource,
   type IdentityRepository,
@@ -921,6 +922,15 @@ export function describeAdventRepositoryContract(name: string, create: () => Pro
         const ids = (await repo.listReminderCandidates(query(5))).map((participant) => participant.id);
 
         expect(ids.sort()).toEqual([good.id, otherDayOpened.id].sort());
+      });
+
+      it("синтетические участники демо-данных не попадают в кандидаты, но доставку им можно записать", async () => {
+        const real = await subscriber({ createdAt: minutes(5) });
+        const synthetic = await subscriber({ normalizedEmail: `demo-1-1@${SYNTHETIC_EMAIL_DOMAIN}`, createdAt: minutes(1) });
+        // Старший синтетический участник не занимает место в пачке.
+        expect((await repo.listReminderCandidates(query(2, { limit: 1 }))).map((participant) => participant.id)).toEqual([real.id]);
+        // История доставок демо-данных пишется напрямую (seed-demo), а не через рассылку.
+        expect(await repo.claimReminder(claimInput(synthetic.id, 2))).not.toBeNull();
       });
 
       it("лимит и стабильный порядок кандидатов", async () => {
