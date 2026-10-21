@@ -17,7 +17,7 @@ const REALM = "Quiz";
 
 describe("adminGate", () => {
   it("распознаёт страницы оператора с учётом регистра, кодирования и слэшей", () => {
-    for (const path of ["/admin", "/admin/", "/admin/x", "/Admin", "/%61dmin", "//admin", "/admin//x"]) {
+    for (const path of ["/admin", "/admin/", "/admin/x", "/admin/report", "/Admin/Report", "/%61dmin/report", "//admin", "/admin//x"]) {
       expect(isAdminPagePath(path), path).toBe(true);
     }
     for (const path of ["/", "/administrator", "/admin-x", "/api/admin/metrics", "/share/admin", "/x/admin"]) {

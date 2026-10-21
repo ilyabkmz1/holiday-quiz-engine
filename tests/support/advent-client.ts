@@ -1,6 +1,7 @@
 import { ApiError, type AdventApi } from "@/components/advent/api";
 import type { AdventConfig } from "@/config/advent-schema";
-import { isDomainError } from "@/domain/errors";
+import { DomainError, isDomainError } from "@/domain/errors";
+import { clearLeaderboardCache, loadTeamLeaderboard } from "@/server/advent-metrics";
 import { IdentityService } from "@/server/services/identity-service";
 import type { AdventState } from "@/types/advent";
 
@@ -13,6 +14,7 @@ const STATUS = { not_found: 404, conflict: 409, invalid: 400, expired: 410 } as 
  * `identity_required`, остатки удачи и коды. Время задаёт `clock.now` — так «сегодня» для теста любой день.
  */
 export function memoryAdventApi(options: { advent?: AdventConfig; start?: Date } = {}) {
+  clearLeaderboardCache();
   const ctx = newAdventService(options.advent ?? adventConfig());
   const clock = { now: options.start ?? new Date("2026-12-22T12:00:00+03:00") };
   let participantId: string | null = null;
@@ -52,6 +54,13 @@ export function memoryAdventApi(options: { advent?: AdventConfig; start?: Date }
     openDay: (n) => call(async () => timed({ state: await ctx.service.openDay(require(), n, clock.now) })),
     submitBlock: (n, index, payload) => call(async () => timed(await ctx.service.submitBlock(require(), n, index, payload ?? {}, clock.now))),
     setReminders: (input) => call(async () => timed({ state: await ctx.service.setReminders(require(), input, clock.now) })),
+    setTeam: (teamId) => call(async () => timed({ state: await ctx.service.setTeam(require(), teamId, clock.now) })),
+    getLeaderboard: () =>
+      call(async () => {
+        const board = await loadTeamLeaderboard(ctx.repository, ctx.advent, clock.now, (await ctx.repository.getParticipant(require()))?.teamId ?? null);
+        if (!board) throw new DomainError("not_found", "Рейтинга команд в этой кампании нет.");
+        return timed(board);
+      }),
     requestLink: (input) =>
       call(async () => {
         await identity.requestLink(require(), input, clock.now);

@@ -1,6 +1,8 @@
 import { afterAll, afterEach, beforeEach, expect, vi } from "vitest";
 import pg from "pg";
 
+import { clearAnalyticsCache } from "@/server/advent-report";
+import { clearLeaderboardCache } from "@/server/advent-metrics";
 import { resetServiceOverrides } from "@/server/container";
 import { resetRuntimeEnvCache } from "@/server/env";
 import {
@@ -61,6 +63,8 @@ beforeEach(async () => {
   await truncateAll();
   resetServiceOverrides();
   resetRuntimeEnvCache();
+  clearAnalyticsCache();
+  clearLeaderboardCache();
   publicApiRateLimiter.reset();
   publicApiRateLimiter.setLimit(600);
   sessionCreationRateLimiter.reset();

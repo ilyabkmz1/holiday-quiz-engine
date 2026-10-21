@@ -60,3 +60,40 @@
   .funnel li, .levels li, .tasks li { grid-template-columns: 1fr auto; }
   .funnel li .a-bar, .levels li .a-bar, .tasks li .a-bar { grid-column: 1 / -1; order: 3; }
 }
+
+/* ——— Метрики адвента (A7): плитки, графики, когорты. Цвета — токены бренда; серии различаются светлотой и штриховкой. ——— */
+.kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; margin: 0; padding: 0; list-style: none; }
+.kpi { padding: 14px 16px; border-radius: 14px; background: var(--a-card); border: 1px solid var(--a-line); }
+.kpi dt { font-size: 12px; color: var(--a-muted); }
+.kpi dd { margin: 4px 0 0; font-size: 28px; font-weight: 800; font-variant-numeric: tabular-nums; line-height: 1.1; }
+.kpi small { display: block; margin-top: 4px; font-size: 12px; font-weight: 500; color: var(--a-muted); }
+.ac-figure { margin: 0; display: grid; gap: 8px; }
+.ac-figure figcaption { font-size: 14px; font-weight: 700; }
+.ac-svg { width: 100%; height: auto; max-height: 300px; overflow: visible; }
+.ac-grid { stroke: var(--a-line); stroke-width: 1; }
+.ac-base { stroke: var(--a-muted); stroke-width: 1; }
+.ac-tick { font-size: 11px; fill: var(--a-muted); font-variant-numeric: tabular-nums; }
+.ac-title { font-size: 11px; fill: var(--a-muted); }
+.ac-s1 { fill: var(--a-cyan); }
+.ac-s2 { fill: color-mix(in srgb, var(--a-cyan) 42%, var(--a-panel)); }
+.ac-s3 { fill: none; stroke: var(--a-muted); stroke-width: 1; }
+.ac-hatch-bg { fill: var(--a-panel); }
+.ac-hatch-line { stroke: var(--a-muted); stroke-width: 2; }
+.ac-bar:hover .ac-s1, .ac-bar:focus-within .ac-s1 { filter: brightness(1.15); }
+.ac-legend { display: flex; flex-wrap: wrap; gap: 6px 16px; margin: 0; padding: 0; list-style: none; font-size: 13px; color: var(--a-muted); }
+.ac-legend li { display: inline-flex; align-items: center; gap: 6px; }
+.ac-legend .ac-s1 { fill: var(--a-cyan); } .ac-legend .ac-s2 { fill: color-mix(in srgb, var(--a-cyan) 42%, var(--a-panel)); }
+.ac-table summary { cursor: pointer; font-size: 13px; color: var(--a-cyan); width: fit-content; }
+.ac-table summary:focus-visible { outline: 3px solid var(--a-cyan); outline-offset: 2px; }
+.ac-table .table-scroll { margin-top: 8px; }
+.cohort td, .cohort thead th { text-align: center; }
+.cohort thead th:first-child { text-align: left; }
+.cohort small { font-size: 11px; }
+.cohort td[data-share] { background: color-mix(in srgb, var(--a-cyan) calc(var(--share, 0) * 60%), transparent); }
+.cohort-mute { color: var(--a-muted); }
+.insights { margin: 0; padding: 0; list-style: none; display: grid; gap: 8px; }
+.insights li { padding: 10px 14px; border-radius: 12px; background: var(--a-card); border-left: 4px solid var(--a-muted); line-height: 1.45; font-size: 14px; }
+.insights li[data-tone="good"] { border-left-color: var(--a-green); }
+.insights li[data-tone="watch"] { border-left-color: var(--a-gold); }
+.admin-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.admin-button.ghost { background: transparent; color: var(--a-ink); border: 1px solid var(--a-line); }

@@ -1,0 +1,49 @@
+/* Отчёт клиенту: светлая «бумага» с акцентом бренда на экране и в печати (A4). Токены --r-* задаёт страница по бренду. */
+.report {
+  --a-bg: var(--r-paper); --a-panel: var(--r-paper); --a-card: color-mix(in srgb, var(--r-accent) 7%, var(--r-paper)); --a-ink: var(--r-ink); --a-muted: var(--r-muted);
+  --a-line: var(--r-line); --a-cyan: var(--r-accent); --a-gold: var(--r-accent); --a-blue: var(--r-accent); --a-green: var(--r-accent); --a-coral: var(--r-muted);
+  --on-accent: #fff;
+  max-width: 900px; margin: 0 auto; padding: 24px 24px 48px; background: var(--r-paper); color: var(--r-ink); display: flex; flex-direction: column; gap: 24px;
+}
+.report .admin-button { background: var(--r-accent); color: #fff; }
+.report .admin-button.ghost { background: transparent; color: var(--r-ink); }
+.report-toolbar { display: flex; justify-content: space-between; gap: 8px; }
+.report-head { border-bottom: 3px solid var(--r-accent); padding-bottom: 14px; }
+.report-brand { display: flex; align-items: center; gap: 10px; font-size: 18px; margin-bottom: 14px; }
+.report-brand img { max-height: 36px; width: auto; }
+.report-mark { display: inline-grid; place-items: center; min-width: 34px; height: 34px; padding: 0 6px; border-radius: 10px; background: var(--r-accent); color: #fff; font-weight: 800; }
+.report-eyebrow { margin: 0; font-size: 12px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: var(--r-accent); }
+.report h1 { margin: 4px 0 6px; font-size: 30px; }
+.report h2 { margin: 0 0 12px; font-size: 18px; color: var(--r-accent); }
+.report h3 { margin: 0 0 8px; font-size: 15px; }
+.report-sub, .report-note { margin: 0; font-size: 13px; color: var(--r-muted); line-height: 1.5; }
+.report-note { margin-bottom: 8px; }
+.report h3 { margin-top: 14px; }
+.report-pair { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px; }
+.report section, .report .report-pair > div { min-width: 0; }
+.report .kpi { background: var(--a-card); }
+.report .insights li { background: var(--a-card); color: var(--r-ink); }
+.report .insights li[data-tone="good"], .report .insights li[data-tone="watch"] { border-left-color: var(--r-accent); }
+.report .insights li[data-tone="info"] { border-left-color: var(--r-muted); }
+.report .a-fill, .report .a-fill.gold { background: var(--r-accent); }
+.report .ac-s2 { fill: color-mix(in srgb, var(--r-accent) 40%, var(--r-paper)); }
+.report-method { border-top: 1px solid var(--r-line); padding-top: 14px; font-size: 12px; color: var(--r-muted); line-height: 1.5; }
+.report-method h2 { font-size: 14px; }
+.report-method ul { margin: 0; padding-left: 18px; display: grid; gap: 4px; }
+
+@media print {
+  @page { size: A4; margin: 14mm; }
+  html, body, .admin { background: #fff !important; min-height: 0; }
+  .no-print { display: none !important; }
+  .report { max-width: none; padding: 0; gap: 12px; font-size: 10pt; }
+  .report table { font-size: 9pt; }
+  .report th, .report td { padding: 4px 6px; }
+  .report .kpi dd { font-size: 20px; }
+  .report section, .report .kpi, .report .ac-figure, .report-method, .report table { break-inside: avoid; }
+  .report h2 { break-after: avoid; }
+  .report .table-scroll { overflow: visible; }
+  .report-pair { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  .report th, .report td { white-space: normal; }
+  .report .a-bar, .report .a-fill, .report .ac-svg *, .report .kpi, .report .cohort td { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .report a { color: inherit; text-decoration: none; }
+}

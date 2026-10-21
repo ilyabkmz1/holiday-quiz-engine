@@ -33,3 +33,13 @@ describe("claimsToCsv", () => {
     expect(csv).not.toContain("\n=HYPERLINK");
   });
 });
+
+describe("защита CSV от формул в выгрузках метрик адвента", () => {
+  it("текст из пакета клиента не исполняется как формула: =, +, -, @, табуляция и пробелы перед ними", async () => {
+    const { neutralizeFormula } = await import("@/server/csv");
+    for (const value of ["=1+1", "+1", "-1", "@SUM(A1)", "\tx", "\rx", " =cmd", "  @x"]) {
+      expect(neutralizeFormula(value), value).toBe(`'${value}`);
+    }
+    for (const value of ["День 1", "Кофе =)", "5 - 3", ""]) expect(neutralizeFormula(value), value).toBe(value);
+  });
+});

@@ -8,6 +8,13 @@ export type GrantStatus = "issued" | "redeemed";
  */
 export const CAMPAIGN_GRANT_DAY = 0;
 
+/**
+ * Адреса синтетических участников демо-данных (`advent:seed-demo`) лежат на этом домене (поддомен зарезервированного `example.test`).
+ * Напоминания им не отправляются и в кандидаты не попадают: письма не должны уходить даже в «чёрную дыру», а тысячи демо-адресов
+ * не должны занимать пачки рассылки реальных участников.
+ */
+export const SYNTHETIC_EMAIL_DOMAIN = "seed.example.test";
+
 export type ParticipantRecord = {
   id: string;
   campaignSlug: string;
@@ -109,6 +116,12 @@ export interface AdventRepository {
   getParticipant(participantId: string): Promise<ParticipantRecord | null>;
   /** Участник по хешу ключа cookie: ключ создателя или ключ дополнительного устройства. */
   findParticipantByAccessKeyHash(accessKeyHash: string): Promise<ParticipantRecord | null>;
+
+  /**
+   * Команда участника (рейтинг `audience.leaderboard = "teams"`); `null` снимает выбор. Допустимость id команды проверяет сервис.
+   * Участника нет — `null`.
+   */
+  setParticipantTeam(participantId: string, teamId: string | null): Promise<ParticipantRecord | null>;
 
   /** Идемпотентно: при повторном открытии остаётся первая запись (время и `onTime`). */
   openDayOnce(participantId: string, day: number, openedAt: Date, onTime: boolean): Promise<{ open: DayOpenRecord; created: boolean }>;
@@ -298,4 +311,65 @@ export interface ReminderRepository {
    */
   setReminderOptIn(participantId: string, enabled: boolean, now: Date): Promise<ParticipantRecord | null>;
   reminderStats(campaignSlug: string): Promise<ReminderStats>;
+}
+
+/** Параметры сводки метрик. Всё, что зависит от расписания и часов, считает вызывающий: репозиторий не знает конфигурации. */
+export type AnalyticsQuery = {
+  campaignSlug: string;
+  /** Часовой пояс кампании (IANA): по нему делятся сутки в когортах и «активных сегодня». */
+  timezone: string;
+  /** Локальная дата «сегодня» (`YYYY-MM-DD`) в часовом поясе кампании. */
+  today: string;
+  now: Date;
+  /**
+   * По окну на день кампании: `start` — открытие дня, `end` — конец окна дня (открытие следующего дня; у последнего — финал),
+   * `blocks` — блоков в дне.
+   */
+  windows: ReadonlyArray<{ day: number; start: Date; end: Date; blocks: number }>;
+  /** Смещения возврата в сутках от даты первого визита (например, 1 и 7). */
+  retentionOffsets: readonly number[];
+};
+
+/**
+ * Сырые агрегаты кампании (без персональных данных): числа и небольшие группы. Реализации в PostgreSQL (SQL) и в памяти
+ * обязаны давать одно и то же (общий контракт тестов); дальше их превращает в метрики `loadAdventAnalytics`.
+ */
+export type AnalyticsRaw = {
+  /** Все участники и те, кто открыл хотя бы одну дверь. */
+  participants: number;
+  players: number;
+  /** Подтвердили email; дали согласие на данные; дали согласие на рассылку; включили напоминания (с email и согласием на рассылку). */
+  withEmail: number;
+  withConsent: number;
+  withMarketing: number;
+  withReminders: number;
+  /** Открытий по дням: вовремя и догнанных. Дни без открытий в списке могут отсутствовать. */
+  opens: Array<{ day: number; onTime: number; caughtUp: number }>;
+  /** Сколько участников закрыли день целиком (есть результаты всех блоков дня). */
+  completed: Array<{ day: number; count: number }>;
+  /**
+   * «Активные» на конец окна дня: первый визит с открытой дверью раньше конца окна (`active`) и из них открывшие этот день
+   * когда угодно (`opened`). Пропустили = `active − opened`. `returning` — игроки, открывшие первую дверь ещё до начала окна
+   * (без новичков этого дня), `returningOnTime` — из них открывшие этот день вовремя.
+   */
+  activeByDay: Array<{ day: number; active: number; opened: number; returning: number; returningOnTime: number }>;
+  /** Сколько участников открыли столько-то дверей (только игроки, `doors ≥ 1`). */
+  doorsHistogram: Array<{ doors: number; count: number }>;
+  /** Игроки по рисунку открытых вовремя дней (отсортированные номера); из рисунка считается лучшая серия. */
+  onTimePatterns: Array<{ days: number[]; count: number }>;
+  /** Когорты по локальной дате первого визита: размер и сколько вернулось (открыло дверь) в день `дата + offset`. */
+  cohorts: Array<{ date: string; size: number; returned: Array<{ offset: number; count: number }> }>;
+  /** Открывали дверь в локальную дату `today`. */
+  activeToday: number;
+  /** Выдачи наград: выдано, погашено, истекли к `now` (выдана, не погашена, срок вышел), без кода (ещё не назначен). */
+  grants: Array<{ rewardId: string; source: GrantSource; issued: number; redeemed: number; expired: number; withoutCode: number }>;
+};
+
+/** Участие и очки команды (только у кампаний с командами): без имён и идентификаторов участников. */
+export type TeamRaw = { teamId: string; members: number; players: number; doors: number; points: number };
+
+export interface AnalyticsRepository {
+  analyticsRaw(query: AnalyticsQuery): Promise<AnalyticsRaw>;
+  /** Команды, в которых кто-то состоит: участники, игроки (≥1 дверь), открыто дверей и набрано очков (блоки заданий). */
+  teamStats(campaignSlug: string): Promise<TeamRaw[]>;
 }

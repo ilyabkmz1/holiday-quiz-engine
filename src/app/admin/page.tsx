@@ -5,6 +5,7 @@ import { adminAuthorized } from "@/server/admin";
 import { getPrisma } from "@/server/db";
 import { loadAdminClaims, loadDashboardMetrics } from "@/server/metrics";
 import { anyTenantForPage } from "@/server/page-tenant";
+import { adminUrl, resolveNow } from "@/server/advent-time";
 import { isAdventTenant } from "@/server/tenants";
 
 import { AdventAdmin } from "./AdventAdmin";
@@ -22,12 +23,12 @@ export const dynamic = "force-dynamic";
 
 const widthOf = (value: number, max: number) => `${max ? Math.max(value ? 2 : 0, (value / max) * 100) : 0}%`;
 
-export default async function AdminPage() {
+export default async function AdminPage({ searchParams }: { searchParams: Promise<{ asOf?: string }> }) {
   // Основной замок — proxy (src/proxy.ts); проверка здесь на случай, если страницу отдали в обход него.
   if (!(await adminAuthorized(await headers()))) notFound();
 
   const tenant = await anyTenantForPage();
-  if (isAdventTenant(tenant)) return <AdventAdmin tenant={tenant} />;
+  if (isAdventTenant(tenant)) return <AdventAdmin tenant={tenant} now={resolveNow({ headers: await headers(), url: adminUrl((await searchParams).asOf) }, tenant)} asOf={(await searchParams).asOf} />;
   const { campaign } = tenant;
   const prisma = getPrisma();
   const [metrics, claims] = await Promise.all([loadDashboardMetrics(prisma, campaign), loadAdminClaims(prisma, campaign)]);
