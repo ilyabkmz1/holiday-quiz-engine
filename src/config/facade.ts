@@ -81,7 +81,9 @@ export const facadeChoiceSchema = z.strictObject({
   /** Герой, который стоит в двери; без поля — первый герой пакета. */
   hostHeroId: z.string().min(1).max(64).optional(),
   /** Текст вывески; без поля — название бренда. */
-  signText: z.string().trim().min(1).max(28).optional()
+  signText: z.string().trim().min(1).max(28).optional(),
+  /** Хозяин ходит по улице перед фасадом (выходит к сегодняшнему окну, идёт к тапнутому). `false` — стоит в двери, как раньше. */
+  hostWalks: z.boolean().default(true)
 });
 export type FacadeChoice = z.infer<typeof facadeChoiceSchema>;
 

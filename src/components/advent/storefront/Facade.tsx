@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useId, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent } from "react";
+import { useEffect, useId, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent, type ReactNode } from "react";
 
 import { AdventIcon } from "@/components/advent/icons";
 import { dayLabel, fill } from "@/components/advent/format";
@@ -30,6 +30,10 @@ type Props = {
   onOpen: (n: number) => void;
   /** Подсказка для окна, которое нельзя открыть. */
   onHint: (text: string) => void;
+  /** Хозяин на улице (`StreetHost`): рисуется поверх стены, а в двери его уже нет. Без него хозяин стоит в двери. */
+  street?: ReactNode;
+  /** Действие окна идёт через ходьбу хозяина: `immediate` — с клавиатуры, без ожидания. Без него действие выполняется сразу. */
+  walk?: (n: number, act: () => void, immediate: boolean) => void;
 };
 
 /** Цвета фасада: роли шаблона превращаются в CSS-переменные со ссылками на токены бренда (в компонентах нет ни одного hex). */
@@ -93,12 +97,14 @@ function Roof({ template, signText }: { template: FacadeTemplate; signText: stri
  * Каждое окно — кнопка со статусом, который читается формой и значком, а не только цветом.
  * Клавиатура: Tab заходит одной остановкой, стрелки двигают фокус по окнам в порядке дней, Home и End — к краям.
  */
-export function Facade({ template, signText, host, doors, grants, today, copy, timezone, phase, busy, lit, reduced, onOpen, onHint }: Props) {
+export function Facade({ template, signText, host, doors, grants, today, copy, timezone, phase, busy, lit, reduced, onOpen, onHint, street, walk }: Props) {
   const layout = useMemo(() => facadeLayout(doors.length, today, template), [doors.length, today, template]);
   const wallRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const todayDoor = doors.find((door) => door.n === today) ?? doors.find((door) => door.status === "today") ?? doors.find((door) => door.status === "catchup") ?? doors[0];
   const [active, setActive] = useState<number | null>(null);
+  // Enter и пробел на окне: действие выполняется сразу, а не после ходьбы хозяина (флаг снимает указатель или сам клик).
+  const viaKeyRef = useRef(false);
   const tabStop = active ?? todayDoor?.n ?? 1;
   const doorByN = useMemo(() => new Map(doors.map((door) => [door.n, door])), [doors]);
 
@@ -116,6 +122,7 @@ export function Facade({ template, signText, host, doors, grants, today, copy, t
   }
 
   function onKeyDown(event: KeyboardEvent<HTMLElement>) {
+    if (event.key === "Enter" || event.key === " ") viaKeyRef.current = true;
     if (event.altKey || event.ctrlKey || event.metaKey) return;
     const current = Number((event.target as HTMLElement).closest<HTMLElement>("[data-door]")?.dataset.door);
     if (!Number.isInteger(current)) return;
@@ -131,10 +138,16 @@ export function Facade({ template, signText, host, doors, grants, today, copy, t
   }
 
   function activate(door: AdventDoor) {
-    if (door.status === "locked") onHint(fill(copy.doorLockedHint, { date: dayLabel(door.unlocksAt, timezone) }));
-    else if (door.status === "missed") onHint(copy.doorMissedHint);
-    else if (door.status !== "opened" && phase !== "running") onHint(copy.doorFinaleHint);
-    else onOpen(door.n);
+    const immediate = viaKeyRef.current;
+    viaKeyRef.current = false;
+    const act = () => {
+      if (door.status === "locked") onHint(fill(copy.doorLockedHint, { date: dayLabel(door.unlocksAt, timezone) }));
+      else if (door.status === "missed") onHint(copy.doorMissedHint);
+      else if (door.status !== "opened" && phase !== "running") onHint(copy.doorFinaleHint);
+      else onOpen(door.n);
+    };
+    if (walk) walk(door.n, act, immediate);
+    else act();
   }
 
   const windowNode = (cell: FacadeCell) => {
@@ -169,6 +182,7 @@ export function Facade({ template, signText, host, doors, grants, today, copy, t
           aria-busy={busy === door.n || undefined}
           aria-disabled={status === "locked" || status === "missed" || undefined}
           onFocus={() => setActive(door.n)}
+          onPointerDown={() => { viaKeyRef.current = false; }}
           onClick={() => activate(door)}
         >
           <span className="adv-window-glass" aria-hidden="true" />
@@ -199,10 +213,11 @@ export function Facade({ template, signText, host, doors, grants, today, copy, t
             <div key="door" className="adv-cell" style={{ "--col": cell.col, "--row": cell.row, "--cs": cell.colSpan, "--rs": cell.rowSpan } as CSSProperties} data-cell="door">
               <div className="adv-front-door">
                 <span className="adv-front-light" aria-hidden="true" />
-                <span className="adv-host"><HeroSprite hero={host} mood="happy" pose="wave" facing={1} marker={null} /></span>
+                {!street && <span className="adv-host"><HeroSprite hero={host} mood="happy" pose="wave" facing={1} marker={null} /></span>}
               </div>
             </div>
           ))}
+          {street}
         </div>
         <div className="adv-ground" aria-hidden="true"><i /><i /><i /></div>
       </div>

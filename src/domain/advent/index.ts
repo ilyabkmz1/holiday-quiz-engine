@@ -9,3 +9,4 @@ export * from "./reminders";
 export * from "./analytics";
 export * from "./insights";
 export * from "./report-theme";
+export * from "./street-walk";

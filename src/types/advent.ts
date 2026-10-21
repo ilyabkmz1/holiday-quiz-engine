@@ -147,7 +147,7 @@ export type SubmitBlockResponse =
 export type IdentityRequestResponse = { sent: true };
 
 /** Фасад для клиента: шаблон из `facades/`, герой-хозяин у двери и текст вывески. */
-export type PublicFacade = { template: Facade; hostHeroId: string; signText: string };
+export type PublicFacade = { template: Facade; hostHeroId: string; signText: string; hostWalks: boolean };
 
 /**
  * Публичный срез адвент-пакета для страницы: бренд, тексты интерфейса, герои и расписание. Ни заданий, ни наград,

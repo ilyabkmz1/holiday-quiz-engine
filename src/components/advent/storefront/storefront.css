@@ -151,6 +151,16 @@
 .adv-host { position: relative; display: block; height: 96%; aspect-ratio: 40 / 64; }
 .adv-host svg { display: block; width: 100%; height: 100%; overflow: visible; }
 
+/* Хозяин на улице: слой внутри стены, высота героя — доля ряда окон (масштаб следует за фасадом); ноги стоят на снегу под стеной. Двигает хук через transform дорожки. */
+.adv-street { position: absolute; z-index: 4; left: 0; right: 0; bottom: -9px; height: calc(var(--ch) * 0.8); pointer-events: none; }
+.adv-street-track { position: absolute; inset: 0; transform: translate3d(50%, 0, 0); will-change: transform; }
+.adv-street-host { position: absolute; left: 0; bottom: 0; height: 100%; aspect-ratio: 40 / 64; transform: translateX(-50%); filter: drop-shadow(0 3px 4px color-mix(in srgb, var(--void) 45%, transparent)); }
+.adv-street-host svg { display: block; width: 100%; height: 100%; overflow: visible; }
+/* Стоит: дышит (из спрайта), раз в восемь секунд машет рукой. */
+.adv-street-host[data-pose="idle"] .qs-armR { animation: advHostWave 8s ease-in-out infinite; }
+/* Окно отвечает на стук хозяина: короткое покачивание и вспышка. */
+.adv-window[data-knock="true"] { animation: advKnock 0.9s ease-out 1; z-index: 3; }
+
 .adv-ground { position: absolute; left: -2%; right: -2%; bottom: 0; height: 26px; pointer-events: none; z-index: 3; }
 .adv-ground::before { content: ""; position: absolute; inset: 8px 0 0; border-radius: 12px 12px 0 0; background: var(--fc-ground); }
 .adv-ground i { position: absolute; bottom: 14px; width: 30%; height: 18px; border-radius: 50% 50% 0 0; background: var(--fc-ground); }
@@ -171,6 +181,8 @@
   .adv-app[data-sheet="true"] .adv-main.adv-main-store { margin-left: max(12px, calc((100vw - 524px - 520px) / 2)); margin-right: auto; }
 }
 
+@keyframes advHostWave { 0%, 76%, 100% { transform: none; } 80%, 88% { transform: rotate(150deg); } 84%, 92% { transform: rotate(120deg); } }
+@keyframes advKnock { 0%, 100% { transform: none; filter: none; } 15% { transform: translateY(-3px) rotate(-2deg); filter: brightness(1.35); } 30% { transform: translateY(0) rotate(2deg); } 45% { transform: translateY(-2px) rotate(-1.5deg); filter: brightness(1.25); } 60% { transform: rotate(1deg); } 80% { transform: none; filter: brightness(1.1); } }
 @keyframes advBulbTwinkle { 0%, 100% { opacity: 1; } 50% { opacity: 0.72; } }
 @keyframes advBulbFlash { 0% { opacity: 0.9; transform: translateY(8px) scale(0.6); } 100% { opacity: 0; transform: translateY(8px) scale(3.2); } }
 @keyframes advBulbPop { 0% { transform: scale(0.4); } 60% { transform: scale(1.6); } 100% { transform: scale(1); } }
@@ -284,5 +296,5 @@
 /* Без движения: огоньки, свечение и кольцо сегодняшнего окна, пар над чашкой и облачка не анимируются (дублирует общее правило advent.css на случай изменения структуры). */
 @media (prefers-reduced-motion: reduce) {
   .adv-window:hover, .adv-prop:hover:not(:disabled) { transform: none; filter: none; }
-  .adv-eave i, .adv-bulb *, .adv-window, .adv-window::before, .adv-window-glass, .adv-steam path, .adv-says-bubble, .adv-says-line { animation: none !important; }
+  .adv-street-host .qs-armR, .adv-window[data-knock="true"], .adv-eave i, .adv-bulb *, .adv-window, .adv-window::before, .adv-window-glass, .adv-steam path, .adv-says-bubble, .adv-says-line { animation: none !important; }
 }

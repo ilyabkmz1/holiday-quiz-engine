@@ -109,7 +109,8 @@ function publicFacade(advent: AdventConfig): PublicFacade {
   return {
     template: loadFacade(choice.templateId),
     hostHeroId: choice.hostHeroId ?? advent.heroes[0].id,
-    signText: choice.signText ?? advent.brand.name
+    signText: choice.signText ?? advent.brand.name,
+    hostWalks: choice.hostWalks
   };
 }
 
