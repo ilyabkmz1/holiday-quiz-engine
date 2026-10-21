@@ -241,6 +241,23 @@ describe("команды (corporate)", () => {
     expect(fresh!.teams[0].members).toBe(6);
   });
 
+  it("одновременные запросы после истечения кэша ждут один пересчёт; ошибка в кэше не застревает", async () => {
+    const ctx = newAdventService(config());
+    await join(ctx, "t-north", 3, 1);
+    let calls = 0;
+    const counting = { teamStats: (slug: string) => { calls += 1; return ctx.repository.teamStats(slug); } };
+    const now = at(2, 12);
+    const boards = await Promise.all(Array.from({ length: 5 }, () => loadTeamLeaderboard(counting, ctx.advent, now, null)));
+    expect(calls).toBe(1);
+    expect(new Set(boards.map((board) => board!.teams[0].members))).toEqual(new Set([3]));
+
+    clearLeaderboardCache();
+    let failNext = true;
+    const flaky = { teamStats: async (slug: string) => { if (failNext) { failNext = false; throw new Error("db down"); } return ctx.repository.teamStats(slug); } };
+    await expect(loadTeamLeaderboard(flaky, ctx.advent, now, null)).rejects.toThrow("db down");
+    expect((await loadTeamLeaderboard(flaky, ctx.advent, now, null))!.teams[0].members).toBe(3);
+  });
+
   it("без рейтинга по командам загрузчик возвращает null", async () => {
     const ctx = newAdventService();
     expect(await loadTeamLeaderboard(ctx.repository, ctx.advent, at(2, 12), null)).toBeNull();
