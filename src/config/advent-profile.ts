@@ -51,7 +51,7 @@ export const adventProfileSchema = z.strictObject({
   /** Подсказки по тону текстов для автора пакета и агента `quiz:new`. */
   toneHints: z.array(z.string().min(1)).min(1),
   presentation: presentationSchema.optional(),
-  /** Фасад «Витрины» по умолчанию для этого типа бизнеса: кофейни — cafe, магазины — shop, B2B и команды — office, салоны — salon. */
+  /** Фасад «Витрины» по умолчанию для этого типа бизнеса: кофейни — cafe, магазины — shop, B2B и команды — office, салоны — salon (IT и облако выбирают datacenter вручную). */
   facade: z.strictObject({ templateId: facadeChoiceSchema.shape.templateId }).optional(),
   schedule: z
     .strictObject({

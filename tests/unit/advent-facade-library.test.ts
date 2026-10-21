@@ -16,8 +16,8 @@ import { adventConfig } from "../support/advent";
 afterEach(() => overrideFacades(null));
 
 describe("библиотека фасадов", () => {
-  it("в манифесте четыре шаблона: cafe, shop, office, salon", () => {
-    expect(facadeIds().sort()).toEqual(["cafe", "office", "salon", "shop"]);
+  it("в манифесте пять шаблонов: cafe, shop, office, salon, datacenter", () => {
+    expect(facadeIds().sort()).toEqual(["cafe", "datacenter", "office", "salon", "shop"]);
   });
 
   it("каждая папка facades/<id>/ внесена в манифест и наоборот", () => {
@@ -33,11 +33,22 @@ describe("библиотека фасадов", () => {
     }
   });
 
-  it("формы: cafe — двускатная и арки, shop — плоская с маркизой и прямоугольные витрины, office — плоская и панорама, salon — купол и круглые окна", () => {
+  it("формы: cafe — двускатная и арки, shop — плоская с маркизой и прямоугольные витрины, office — плоская и панорама, salon — купол и круглые окна, datacenter — охлаждение, юниты и гермодверь", () => {
     expect(loadFacade("cafe")).toMatchObject({ roof: { shape: "gable" }, windows: { shape: "arch" }, vessel: "cup" });
     expect(loadFacade("shop")).toMatchObject({ roof: { shape: "flat", awning: true }, windows: { shape: "square" } });
     expect(loadFacade("office")).toMatchObject({ roof: { shape: "flat", awning: false }, windows: { shape: "square", panes: "panorama" } });
     expect(loadFacade("salon")).toMatchObject({ roof: { shape: "dome" }, windows: { shape: "round" }, door: { shape: "round" } });
+    expect(loadFacade("datacenter")).toMatchObject({ roof: { shape: "cooling" }, windows: { shape: "unit" }, door: { shape: "hatch" }, layout: { columns: 2 }, vessel: "stack" });
+  });
+
+  it("datacenter: общий шаблон без бренда, колонок по умолчанию 4, лишние значения колонок отвергаются", () => {
+    const text = readFileSync(path.join(process.cwd(), "facades", "datacenter", "facade.json"), "utf8");
+    expect(text).not.toMatch(/https?:|vk|mail\.ru|yandex|selectel/i);
+    expect(loadFacade("cafe").layout.columns).toBe(4);
+    const draft = structuredClone(rawFacades.datacenter) as Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any
+    expect(facadeSchema.safeParse(draft).success).toBe(true);
+    draft.layout.columns = 3;
+    expect(facadeSchema.safeParse(draft).success).toBe(false);
   });
 
   it("цвета — только имена токенов бренда: в шаблонах нет ни hex, ни rgb()", () => {
@@ -96,6 +107,17 @@ describe("библиотека фасадов", () => {
         expect(facadeContrastIssues(loadFacade(id), deriveTheme(colors as never, (derived ?? {}) as never)), `${name} × ${id}`).toEqual([]);
       }
     }
+  });
+
+  it("datacenter: цифра на плашке юнита читается на палитрах всех демо-пакетов, а светлая цифра на светящейся плашке ловится", () => {
+    const datacenter = loadFacade("datacenter");
+    for (const pack of packs as Array<{ tenant: string; advent?: { brand: { colors: Record<string, string>; derived?: object } }; campaign?: { brand: { colors: Record<string, string>; derived?: object } } }>) {
+      const brand = pack.advent?.brand ?? pack.campaign?.brand;
+      if (brand) expect(facadeContrastIssues(datacenter, deriveTheme(brand.colors as never, (brand.derived ?? {}) as never)), pack.tenant).toEqual([]);
+    }
+    const theme = deriveTheme({ bg: "#061024", panel: "#0b1836", ink: "#eef3ff", accent: "#1a62e8", accent2: "#62e0ff", highlight: "#ffcb5c", danger: "#ff8a7a", success: "#6ee7a8" });
+    const washedOut = { ...datacenter, colors: { ...datacenter.colors, glowInk: "ink" as const } };
+    expect(facadeContrastIssues(washedOut, theme).join("\n")).toMatch(/цифра на свете открытого окна/);
   });
 
   it("контраст-проверка ловит светлое стекло под светлой цифрой", () => {

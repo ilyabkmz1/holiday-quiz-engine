@@ -47,8 +47,8 @@
 .adv-facade-scroll[data-fit="true"][data-scroll="true"] { overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; }
 .adv-facade { --ch-ratio: 0.92; --roof-k: 0.155; --ground-h: 22px; --roof-extra: 0px; position: relative; flex: none; container-type: inline-size; width: min(100%, 520px); padding-bottom: var(--ground-h); }
 .adv-facade:has(.adv-roof[data-awning="true"]) { --roof-extra: 18px; }
-.adv-facade-scroll[data-fit="true"]:not([data-scroll="true"]) .adv-facade { width: min(100%, 520px, calc((100cqh - var(--ground-h) - var(--roof-extra)) / (var(--roof-k) + var(--rows) * 0.25 * var(--ch-ratio)))); }
-.adv-facade-scroll[data-fit="true"]:not([data-scroll="true"]) .adv-wall { --ch: clamp(calc(var(--cw) * var(--ch-ratio)), calc((100cqh - var(--ground-h) - var(--roof-extra) - 100cqw * var(--roof-k)) / var(--rows)), calc(var(--cw) * 1.12)); }
+.adv-facade-scroll[data-fit="true"]:not([data-scroll="true"]) .adv-facade { width: min(100%, 520px, calc((100cqh - var(--ground-h) - var(--roof-extra)) / (var(--roof-k) + var(--rows) / var(--cols, 4) * var(--ch-ratio)))); }
+.adv-facade-scroll[data-fit="true"]:not([data-scroll="true"]) .adv-wall { --ch: clamp(calc(var(--cw) * var(--ch-ratio)), calc((100cqh - var(--ground-h) - var(--roof-extra) - 100cqw * var(--roof-k)) / var(--rows)), calc(var(--cw) * var(--ch-max, 1.12))); }
 
 .adv-roof { position: relative; height: calc(100cqw * var(--roof-k)); margin-inline: -2%; z-index: 2; }
 .adv-roof-svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
@@ -67,7 +67,7 @@
 .adv-awning-a { fill: var(--fc-roof); }
 .adv-awning-b { fill: var(--fc-sign); }
 
-.adv-wall { --cw: 25cqw; --ch: calc(var(--cw) * var(--ch-ratio)); position: relative; height: calc(var(--rows) * var(--ch)); background:
+.adv-wall { --cw: calc(100cqw / var(--cols, 4)); --ch: calc(var(--cw) * var(--ch-ratio)); position: relative; height: calc(var(--rows) * var(--ch)); background:
     repeating-linear-gradient(0deg, transparent 0 calc(var(--ch) - 1px), color-mix(in srgb, var(--fc-trim) 18%, transparent) calc(var(--ch) - 1px) var(--ch)),
     var(--fc-wall);
   border-inline: 3px solid var(--fc-trim); box-shadow: inset 0 -26px 40px -20px color-mix(in srgb, var(--void) 45%, transparent); }
@@ -166,6 +166,76 @@
 .adv-ground i { position: absolute; bottom: 14px; width: 30%; height: 18px; border-radius: 50% 50% 0 0; background: var(--fc-ground); }
 .adv-ground i:nth-child(1) { left: 4%; } .adv-ground i:nth-child(2) { left: 36%; width: 26%; height: 14px; } .adv-ground i:nth-child(3) { right: 4%; }
 
+/* ——— Дата-центр: крыша с блоками охлаждения, юниты стойки, гермодверь ——— */
+.adv-facade[data-roof="cooling"] { --roof-k: 0.2; }
+.adv-roof-unit { fill: var(--fc-wall); stroke: var(--fc-trim); stroke-width: 1.5; }
+.adv-roof-vent { fill: none; stroke: var(--fc-trim); stroke-width: 1.2; stroke-linecap: round; opacity: 0.7; }
+.adv-roof-fan-ring { fill: var(--fc-glass); stroke: var(--fc-trim); stroke-width: 1.5; }
+.adv-roof-blade { fill: var(--fc-trim); }
+.adv-roof-hub { fill: var(--fc-glow); }
+.adv-roof-fan { transform-box: fill-box; transform-origin: center; animation: advFanSpin 3.2s linear infinite; }
+.adv-roof[data-roof="cooling"] .adv-sign { bottom: 14%; }
+/* Гирлянда на крыше дата-центра — кабель со светодиодами. */
+.adv-roof[data-roof="cooling"] .adv-eave { bottom: 3px; }
+.adv-roof[data-roof="cooling"] .adv-eave::before { content: ""; position: absolute; left: 0; right: 0; top: 50%; height: 2px; transform: translateY(-50%); background: var(--fc-trim); }
+.adv-roof[data-roof="cooling"] .adv-eave i { border-radius: 1px; }
+
+/* Стойка: узкие юниты по два в ряду, направляющие с отверстиями по краям стены. */
+.adv-facade[data-windows="unit"] { --ch-ratio: 0.3; --ch-max: 0.42; }
+.adv-facade[data-windows="unit"] .adv-wall { background:
+    radial-gradient(circle, var(--fc-trim) 0 1.6px, transparent 2.2px) 1px 0 / 6px var(--ch) repeat-y,
+    radial-gradient(circle, var(--fc-trim) 0 1.6px, transparent 2.2px) right 1px top 0 / 6px var(--ch) repeat-y,
+    var(--fc-wall); }
+.adv-facade[data-windows="unit"] .adv-cell:not([data-cell="door"]) { padding: 3px 9px; }
+.adv-facade[data-windows="unit"] .adv-window { flex-direction: row; justify-content: flex-start; gap: 8px; padding: 0 9px; border-radius: 4px; }
+/* Решётка вентиляции только на юнитах во всю ширину: в узкой паре ей не хватает места. */
+.adv-facade[data-windows="unit"] .adv-window[data-wide="true"] .adv-window-glass::after { content: ""; position: absolute; left: 52%; right: 26%; top: 26%; bottom: 26%; background: repeating-linear-gradient(90deg, color-mix(in srgb, var(--fc-trim) 40%, transparent) 0 2px, transparent 2px 6px); }
+.adv-facade[data-windows="unit"] .adv-window-num { min-width: 2ch; padding: 1px 6px; border-radius: 3px; text-align: center; font-size: clamp(16px, 5.6cqw, 22px); }
+.adv-facade[data-windows="unit"] .adv-window-locked::after { display: none; }
+.adv-facade[data-windows="unit"] .adv-ribbon { display: none; }
+
+/* Диоды юнита: у закрытого тусклые, у открытого горят, у сегодняшнего первый («активность») мигает. */
+.adv-window-leds { position: relative; z-index: 2; display: flex; gap: 4px; margin-left: auto; }
+.adv-window-leds i { width: 7px; height: 7px; border-radius: 1px; background: color-mix(in srgb, var(--fc-trim) 45%, var(--fc-glass)); }
+.adv-facade[data-windows="unit"] .adv-window-pips { order: 3; margin: 0; }
+.adv-facade[data-windows="unit"] .adv-window-opened .adv-window-icon { order: 0; }
+
+/* Открытый и сегодняшний юнит светится: номер на светящейся плашке, диоды горят цветами бренда. */
+.adv-facade[data-windows="unit"] .adv-window-opened, .adv-facade[data-windows="unit"] .adv-window-today { color: var(--ink); box-shadow: 0 0 14px color-mix(in srgb, var(--fc-glow) 45%, transparent); }
+.adv-facade[data-windows="unit"] .adv-window-opened .adv-window-glass, .adv-facade[data-windows="unit"] .adv-window-today .adv-window-glass { background: linear-gradient(90deg, color-mix(in srgb, var(--fc-glow) 30%, var(--fc-glass)), var(--fc-glass) 70%); }
+.adv-facade[data-windows="unit"] .adv-window-opened .adv-window-num, .adv-facade[data-windows="unit"] .adv-window-today .adv-window-num { background: var(--fc-glow); color: var(--fc-glowInk); }
+.adv-facade[data-windows="unit"] .adv-window-opened .adv-window-icon { color: var(--fc-glow); }
+.adv-facade[data-windows="unit"] .adv-window-pips i { background: color-mix(in srgb, var(--fc-glow) 30%, transparent); }
+.adv-facade[data-windows="unit"] .adv-window-pips i.on { background: var(--fc-glow); }
+.adv-facade[data-windows="unit"] .adv-window-opened .adv-window-leds i:nth-child(1), .adv-facade[data-windows="unit"] .adv-window-today .adv-window-leds i:nth-child(1) { background: var(--green); box-shadow: 0 0 6px var(--green); }
+.adv-facade[data-windows="unit"] .adv-window-opened .adv-window-leds i:nth-child(2), .adv-facade[data-windows="unit"] .adv-window-today .adv-window-leds i:nth-child(2) { background: var(--fc-glow); box-shadow: 0 0 6px var(--fc-glow); }
+.adv-facade[data-windows="unit"] .adv-window-opened .adv-window-leds i:nth-child(3), .adv-facade[data-windows="unit"] .adv-window-today .adv-window-leds i:nth-child(3) { background: var(--gold); box-shadow: 0 0 6px var(--gold); }
+.adv-facade[data-windows="unit"] .adv-window-catchup .adv-window-leds i:nth-child(1) { background: var(--cyan); box-shadow: 0 0 6px var(--cyan); }
+.adv-facade[data-windows="unit"] .adv-window-today .adv-window-leds i:nth-child(1) { animation: advLedActivity 0.9s ease-in-out infinite alternate; }
+.adv-facade[data-windows="unit"] .adv-window-today .adv-window-leds i:nth-child(3) { animation: advLedActivity 1.7s ease-in-out -0.6s infinite alternate; }
+.adv-facade[data-windows="unit"] .adv-window-today::before { inset: -3px; }
+
+/* Сегодня: юнит на всю ширину в два ряда, номер и подпись в строку. */
+.adv-facade[data-windows="unit"] .adv-window[data-big="true"] { flex-direction: row; align-items: center; gap: 12px; padding: 0 14px; }
+.adv-facade[data-windows="unit"] .adv-window[data-big="true"] .adv-window-num { position: relative; left: auto; top: auto; padding: 2px 14px; font-size: clamp(30px, 10cqw, 44px); }
+.adv-facade[data-windows="unit"] .adv-window[data-big="true"] .adv-window-icon { position: relative; right: auto; top: auto; }
+.adv-facade[data-windows="unit"] .adv-window[data-big="true"] .adv-window-tag { position: relative; right: auto; bottom: auto; max-width: none; color: var(--fc-glowInk); }
+.adv-facade[data-windows="unit"] .adv-window[data-big="true"] .adv-window-leds { gap: 6px; }
+.adv-facade[data-windows="unit"] .adv-window[data-big="true"] .adv-window-leds i { width: 10px; height: 10px; }
+
+/* Финал: верхний юнит стойки с золотой рамкой и звездой. */
+.adv-facade[data-windows="unit"] .adv-window[data-finale="true"], .adv-facade[data-windows="unit"] .adv-window[data-finale="true"][data-big="true"] { flex-direction: row; padding-top: 0; }
+.adv-facade[data-windows="unit"] .adv-window[data-finale="true"][data-big="true"] { padding-inline: 14px; }
+
+/* Гермодверь: жёлто-чёрная окантовка сверху, заклёпки по бокам. */
+.adv-facade[data-door-shape="hatch"] .adv-cell[data-cell="door"] { padding: 0 4px; }
+.adv-facade[data-door-shape="hatch"] .adv-front-door { border-width: 4px; border-radius: 16px 16px 0 0; background:
+    radial-gradient(circle, var(--fc-trim) 0 1.6px, transparent 2.2px) 2px 0 / 6px 22px repeat-y,
+    radial-gradient(circle, var(--fc-trim) 0 1.6px, transparent 2.2px) right 2px top 0 / 6px 22px repeat-y,
+    var(--fc-door); }
+.adv-facade[data-door-shape="hatch"] .adv-front-door::before { content: ""; position: absolute; left: 0; right: 0; top: 0; height: 12px; background: repeating-linear-gradient(135deg, var(--gold) 0 7px, var(--void) 7px 14px); }
+.adv-facade[data-windows="unit"] .adv-ground i { display: none; }
+
 /* ——— Нижняя плашка ——— */
 .adv-bar { position: relative; flex: none; display: flex; flex-direction: column; gap: 8px; padding: 12px 12px 12px; border-radius: 22px; border: 1px solid var(--line); background: linear-gradient(180deg, color-mix(in srgb, var(--ice) 16%, var(--panel)), var(--panel)); }
 .adv-bar::before { content: ""; position: absolute; left: 14px; right: 14px; top: -7px; height: 12px; border-radius: 12px 12px 4px 4px; background: var(--fc-ground, var(--ice)); opacity: 0.9; z-index: -1; }
@@ -186,6 +256,8 @@
 @keyframes advBulbTwinkle { 0%, 100% { opacity: 1; } 50% { opacity: 0.72; } }
 @keyframes advBulbFlash { 0% { opacity: 0.9; transform: translateY(8px) scale(0.6); } 100% { opacity: 0; transform: translateY(8px) scale(3.2); } }
 @keyframes advBulbPop { 0% { transform: scale(0.4); } 60% { transform: scale(1.6); } 100% { transform: scale(1); } }
+@keyframes advFanSpin { to { transform: rotate(360deg); } }
+@keyframes advLedActivity { from { opacity: 1; } to { opacity: 0.2; } }
 @keyframes advGlowPulse { 0%, 100% { filter: brightness(1); } 50% { filter: brightness(1.18); } }
 @keyframes advIgnite { 0% { filter: brightness(0.5); box-shadow: 0 0 0 0 transparent; transform: scale(0.94); } 40% { filter: brightness(1.5); box-shadow: 0 0 40px 8px color-mix(in srgb, var(--fc-glow) 75%, transparent); transform: scale(1.06); } 100% { filter: brightness(1); transform: none; } }
 
@@ -296,5 +368,5 @@
 /* Без движения: огоньки, свечение и кольцо сегодняшнего окна, пар над чашкой и облачка не анимируются (дублирует общее правило advent.css на случай изменения структуры). */
 @media (prefers-reduced-motion: reduce) {
   .adv-window:hover, .adv-prop:hover:not(:disabled) { transform: none; filter: none; }
-  .adv-street-host .qs-armR, .adv-window[data-knock="true"], .adv-eave i, .adv-bulb *, .adv-window, .adv-window::before, .adv-window-glass, .adv-steam path, .adv-says-bubble, .adv-says-line { animation: none !important; }
+  .adv-street-host .qs-armR, .adv-window[data-knock="true"], .adv-eave i, .adv-bulb *, .adv-window, .adv-window::before, .adv-window-glass, .adv-window-leds i, .adv-roof-fan, .adv-steam path, .adv-says-bubble, .adv-says-line { animation: none !important; }
 }

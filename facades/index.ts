@@ -1,4 +1,5 @@
 import cafe from "./cafe/facade.json" with { type: "json" };
+import datacenter from "./datacenter/facade.json" with { type: "json" };
 import office from "./office/facade.json" with { type: "json" };
 import salon from "./salon/facade.json" with { type: "json" };
 import shop from "./shop/facade.json" with { type: "json" };
@@ -11,5 +12,6 @@ export const rawFacades: Record<string, unknown> = {
   cafe,
   shop,
   office,
-  salon
+  salon,
+  datacenter
 };
