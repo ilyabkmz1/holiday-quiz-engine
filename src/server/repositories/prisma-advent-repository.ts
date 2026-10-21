@@ -538,6 +538,7 @@ export class PrismaAdventRepository implements AdventRepository, IdentityReposit
     const { campaignSlug: slug, timezone, now } = query;
     const days = query.windows.map((window) => window.day);
     const blocks = query.windows.map((window) => window.blocks);
+    const starts = query.windows.map((window) => window.start.toISOString());
     const ends = query.windows.map((window) => window.end.toISOString());
     const offsets = [...query.retentionOffsets];
     const [totals, opens, completed, active, doors, patterns, cohortSizes, returns, today, grants] = await Promise.all([
@@ -558,13 +559,15 @@ export class PrismaAdventRepository implements AdventRepository, IdentityReposit
           WHERE p."campaignSlug" = ${slug} GROUP BY b."participantId", b."day") r
         JOIN unnest(${days}::int[], ${blocks}::int[]) AS w("day", "blocks") ON w."day" = r."day" AND w."blocks" = r.n
         GROUP BY r."day" ORDER BY r."day"`,
-      this.prisma.$queryRaw<Array<{ day: number; active: bigint; opened: bigint }>>`
+      this.prisma.$queryRaw<Array<{ day: number; active: bigint; opened: bigint; returning: bigint; returning_on_time: bigint }>>`
         WITH first_open AS (
           SELECT o."participantId" AS pid, MIN(o."openedAt") AS first_at
           FROM "DayOpen" o JOIN "Participant" p ON p."id" = o."participantId"
           WHERE p."campaignSlug" = ${slug} GROUP BY o."participantId"),
-        w AS (SELECT * FROM unnest(${days}::int[], ${ends}::timestamptz[]) AS t("day", "end_at"))
-        SELECT w."day", COUNT(f.pid) AS active, COUNT(o."participantId") AS opened
+        w AS (SELECT * FROM unnest(${days}::int[], ${starts}::timestamptz[], ${ends}::timestamptz[]) AS t("day", "start_at", "end_at"))
+        SELECT w."day", COUNT(f.pid) AS active, COUNT(o."participantId") AS opened,
+          COUNT(f.pid) FILTER (WHERE f.first_at < (w."start_at" AT TIME ZONE 'UTC')) AS returning,
+          COUNT(o."participantId") FILTER (WHERE f.first_at < (w."start_at" AT TIME ZONE 'UTC') AND o."onTime") AS returning_on_time
         FROM w
         LEFT JOIN first_open f ON f.first_at < (w."end_at" AT TIME ZONE 'UTC')
         LEFT JOIN "DayOpen" o ON o."participantId" = f.pid AND o."day" = w."day"
@@ -615,7 +618,13 @@ export class PrismaAdventRepository implements AdventRepository, IdentityReposit
       withReminders: num(total.reminders),
       opens: opens.map((row) => ({ day: Number(row.day), onTime: num(row.on_time), caughtUp: num(row.caught) })),
       completed: completed.map((row) => ({ day: Number(row.day), count: num(row.count) })),
-      activeByDay: active.map((row) => ({ day: Number(row.day), active: num(row.active), opened: num(row.opened) })),
+      activeByDay: active.map((row) => ({
+        day: Number(row.day),
+        active: num(row.active),
+        opened: num(row.opened),
+        returning: num(row.returning),
+        returningOnTime: num(row.returning_on_time)
+      })),
       doorsHistogram: doors.map((row) => ({ doors: num(row.doors), count: num(row.count) })),
       onTimePatterns: patterns.map((row) => ({ days: row.days.map(Number), count: num(row.count) })),
       cohorts: cohortSizes.map((row) => ({ date: row.date, size: num(row.size), returned: returnsByDate.get(row.date) ?? [] })),

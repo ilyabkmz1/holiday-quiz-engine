@@ -15,9 +15,9 @@ export const QUERY: AnalyticsQuery = {
   today: "2026-12-22",
   now: iso("2026-12-23T00:00:00Z"),
   windows: [
-    { day: 1, end: iso("2026-12-20T21:00:00Z"), blocks: 2 },
-    { day: 2, end: iso("2026-12-21T21:00:00Z"), blocks: 2 },
-    { day: 3, end: iso("2026-12-22T21:00:00Z"), blocks: 1 }
+    { day: 1, start: iso("2026-12-19T21:00:00Z"), end: iso("2026-12-20T21:00:00Z"), blocks: 2 },
+    { day: 2, start: iso("2026-12-20T21:00:00Z"), end: iso("2026-12-21T21:00:00Z"), blocks: 2 },
+    { day: 3, start: iso("2026-12-21T21:00:00Z"), end: iso("2026-12-22T21:00:00Z"), blocks: 1 }
   ],
   retentionOffsets: [1, 3, 7]
 };
@@ -42,7 +42,7 @@ export function describeAnalyticsContract(name: string, create: () => Promise<An
       expect(raw.onTimePatterns).toEqual([]);
       expect(raw.cohorts).toEqual([]);
       expect(raw.grants).toEqual([]);
-      expect(raw.activeByDay).toEqual([1, 2, 3].map((day) => ({ day, active: 0, opened: 0 })));
+      expect(raw.activeByDay).toEqual([1, 2, 3].map((day) => ({ day, active: 0, opened: 0, returning: 0, returningOnTime: 0 })));
       expect(await repo.teamStats(CAMPAIGN)).toEqual([]);
     });
 
@@ -113,10 +113,12 @@ export function describeAnalyticsContract(name: string, create: () => Promise<An
       it("активные на конец окна и открывшие день: граница — первое открытие строго до конца окна", async () => {
         const raw = await repo.analyticsRaw(QUERY);
         expect(raw.activeByDay).toEqual([
-          // P1 (20:59:59Z < 21:00:00Z) и P4 активны, P2 пришёл позже.
-          { day: 1, active: 2, opened: 2 },
-          { day: 2, active: 3, opened: 3 },
-          { day: 3, active: 3, opened: 2 }
+          // P1 (20:59:59Z < 21:00:00Z) и P4 активны, P2 пришёл позже. В день 1 «игравших раньше» нет.
+          { day: 1, active: 2, opened: 2, returning: 0, returningOnTime: 0 },
+          // До начала дня 2 (21:00Z) играли P1 (на секунду раньше) и P4; вовремя день 2 открыла только P1 (P4 догнал).
+          { day: 2, active: 3, opened: 3, returning: 2, returningOnTime: 1 },
+          // До дня 3 играли все трое; вовремя — только P1 (P2 догнал 24.12, P4 день 3 не открывал).
+          { day: 3, active: 3, opened: 2, returning: 3, returningOnTime: 1 }
         ]);
       });
 

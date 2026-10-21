@@ -158,6 +158,7 @@ export default async function ReportPage({ searchParams }: { searchParams: Promi
           <li><b>Участник</b> — устройство или аккаунт, зашедший в кампанию; <b>игрок</b> — открывший хотя бы одну дверь.</li>
           <li><b>Дни</b> делятся по времени кампании ({data.timezone}). «В свой день» — дверь открыта, пока её день не закончился; «догнали» — открыта позже по правилам догоняния.</li>
           <li><b>Активные</b> в день — те, кто открыл любую дверь до конца этого дня; <b>пропустили</b> — активные, не открывшие этот день вовсе. Текущий день считается предварительно.</li>
+          <li><b>Лучшие и слабые дни</b> сравниваются по тем, кто играл и раньше (открыл первую дверь до начала дня): новички почти всегда открывают текущую дверь, и без этого первые дни выглядели бы лучше, чем есть.</li>
           <li><b>D1 / D3 / D7</b> — доля участников, открывших дверь через 1 / 3 / 7 суток после первого визита; в расчёт входят только когорты, у которых срок наступил и пришёлся на дни кампании (после финала двери не открываются). Когорты меньше {data.minGroup} человек не показываются.</li>
           <li><b>Серия</b> — дни подряд, открытые вовремя; пропуск прощают заморозки по правилам кампании.</li>
           <li><b>Погашение</b> считается только по наградам с кодом для кассы или сайта; баллы и участие в финале не погашаются.</li>
@@ -168,16 +169,16 @@ export default async function ReportPage({ searchParams }: { searchParams: Promi
   );
 }
 
-function DayRank({ days }: { days: Array<{ day: number; title: string; onTime: number; active: number; onTimeShare: number | null }> }) {
+function DayRank({ days }: { days: Array<{ day: number; title: string; returningOnTime: number; returning: number; returningShare: number | null }> }) {
   return (
     <table className="left">
-      <thead><tr><th scope="col">День</th><th scope="col">Открыли в свой день</th><th scope="col">Доля активных</th></tr></thead>
+      <thead><tr><th scope="col">День</th><th scope="col">Открыли в свой день</th><th scope="col">Доля игравших раньше</th></tr></thead>
       <tbody>
         {days.map((day) => (
           <tr key={day.day}>
             <th scope="row">{day.day}. {day.title}</th>
-            <td>{formatCount(day.onTime)} из {formatCount(day.active)}</td>
-            <td>{formatPercent(day.onTimeShare)}</td>
+            <td>{formatCount(day.returningOnTime)} из {formatCount(day.returning)}</td>
+            <td>{formatPercent(day.returningShare)}</td>
           </tr>
         ))}
       </tbody>

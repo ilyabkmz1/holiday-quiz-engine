@@ -528,7 +528,14 @@ export class InMemoryAdventRepository implements AdventRepository, IdentityRepos
       completed: [...completed].sort((a, b) => a[0] - b[0]).map(([day, count]) => ({ day, count })),
       activeByDay: query.windows.map((window) => {
         const active = players.filter((participant) => firstOpenAt(participant.id) < window.end.getTime());
-        return { day: window.day, active: active.length, opened: active.filter((participant) => sortedOpens(participant.id).some((open) => open.day === window.day)).length };
+        const returning = active.filter((participant) => firstOpenAt(participant.id) < window.start.getTime());
+        return {
+          day: window.day,
+          active: active.length,
+          opened: active.filter((participant) => sortedOpens(participant.id).some((open) => open.day === window.day)).length,
+          returning: returning.length,
+          returningOnTime: returning.filter((participant) => sortedOpens(participant.id).some((open) => open.day === window.day && open.onTime)).length
+        };
       }),
       doorsHistogram: [...histogram].sort((a, b) => a[0] - b[0]).map(([doors, count]) => ({ doors, count })),
       onTimePatterns: [...patterns.values()],

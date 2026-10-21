@@ -111,6 +111,7 @@ export async function loadAdventAnalytics(
   const finale = new Date(schedule.finaleAt);
   const windows = advent.days.map((day) => ({
     day: day.n,
+    start: dayUnlockAt(day.n, schedule),
     end: day.n < schedule.days ? dayUnlockAt(day.n + 1, schedule) : finale,
     blocks: day.blocks.length
   }));
@@ -127,7 +128,8 @@ export async function loadAdventAnalytics(
     const window = windows.find((candidate) => candidate.day === day.n)!;
     const status = now.getTime() < dayUnlockAt(day.n, schedule).getTime() ? "future" : now.getTime() < window.end.getTime() ? "running" : "closed";
     const row = opens.get(day.n) ?? { onTime: 0, caughtUp: 0 };
-    const base = active.get(day.n) ?? { active: 0, opened: 0 };
+    const base = active.get(day.n) ?? { active: 0, opened: 0, returning: 0, returningOnTime: 0 };
+    const future = status === "future";
     return {
       day: day.n,
       title: day.title,
@@ -139,7 +141,10 @@ export async function loadAdventAnalytics(
       active: status === "future" ? 0 : base.active,
       missed: status === "future" ? null : base.active - base.opened,
       completed: completed.get(day.n) ?? 0,
-      onTimeShare: status === "future" ? null : share(row.onTime, base.active)
+      onTimeShare: status === "future" ? null : share(row.onTime, base.active),
+      returning: future ? 0 : base.returning,
+      returningOnTime: future ? 0 : base.returningOnTime,
+      returningShare: future ? null : share(base.returningOnTime, base.returning)
     };
   });
 
@@ -230,8 +235,9 @@ export async function loadAdventAnalytics(
     }));
   }
 
-  const measured = days.filter((day) => day.status === "closed" && day.onTimeShare !== null && day.active >= MIN_GROUP);
-  const byShare = [...measured].sort((a, b) => b.onTimeShare! - a.onTimeShare! || a.day - b.day);
+  // Сравниваются дни по тем, кто играл и раньше: новички дня завышали бы ранние дни (у дня 1 доля среди активных всегда 100%).
+  const measured = days.filter((day) => day.status === "closed" && day.returningShare !== null && day.returning >= MIN_GROUP);
+  const byShare = [...measured].sort((a, b) => b.returningShare! - a.returningShare! || a.day - b.day);
   const bestDays = byShare.slice(0, 3);
   const weakDays = [...byShare].reverse().filter((day) => !bestDays.includes(day)).slice(0, 3);
 

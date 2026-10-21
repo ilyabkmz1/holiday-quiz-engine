@@ -321,8 +321,11 @@ export type AnalyticsQuery = {
   /** Локальная дата «сегодня» (`YYYY-MM-DD`) в часовом поясе кампании. */
   today: string;
   now: Date;
-  /** По окну на день кампании: `end` — конец окна дня (открытие следующего дня; у последнего — финал), `blocks` — блоков в дне. */
-  windows: ReadonlyArray<{ day: number; end: Date; blocks: number }>;
+  /**
+   * По окну на день кампании: `start` — открытие дня, `end` — конец окна дня (открытие следующего дня; у последнего — финал),
+   * `blocks` — блоков в дне.
+   */
+  windows: ReadonlyArray<{ day: number; start: Date; end: Date; blocks: number }>;
   /** Смещения возврата в сутках от даты первого визита (например, 1 и 7). */
   retentionOffsets: readonly number[];
 };
@@ -346,9 +349,10 @@ export type AnalyticsRaw = {
   completed: Array<{ day: number; count: number }>;
   /**
    * «Активные» на конец окна дня: первый визит с открытой дверью раньше конца окна (`active`) и из них открывшие этот день
-   * когда угодно (`opened`). Пропустили = `active − opened`.
+   * когда угодно (`opened`). Пропустили = `active − opened`. `returning` — игроки, открывшие первую дверь ещё до начала окна
+   * (без новичков этого дня), `returningOnTime` — из них открывшие этот день вовремя.
    */
-  activeByDay: Array<{ day: number; active: number; opened: number }>;
+  activeByDay: Array<{ day: number; active: number; opened: number; returning: number; returningOnTime: number }>;
   /** Сколько участников открыли столько-то дверей (только игроки, `doors ≥ 1`). */
   doorsHistogram: Array<{ doors: number; count: number }>;
   /** Игроки по рисунку открытых вовремя дней (отсортированные номера); из рисунка считается лучшая серия. */

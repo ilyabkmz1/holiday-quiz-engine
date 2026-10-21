@@ -54,6 +54,10 @@ describe("loadAdventAnalytics: ручной сценарий на фикстур
     // День 3: открыла только A; B — пропустил из двух активных.
     expect(row(3)).toMatchObject({ onTime: 1, active: 2, missed: 1, completed: 1 });
     expect(row(3).onTimeShare).toBe(0.5);
+    // «Играли раньше»: в день 1 таких нет; к дню 2 — только A; к дню 3 — A и B, вовремя день 3 открыла A.
+    expect(row(1)).toMatchObject({ returning: 0, returningOnTime: 0, returningShare: null });
+    expect(row(2)).toMatchObject({ returning: 1, returningOnTime: 1, returningShare: 1 });
+    expect(row(3)).toMatchObject({ returning: 2, returningOnTime: 1, returningShare: 0.5 });
     // День 4 идёт сейчас: пропуск предварительный. Будущие окна без цифр.
     expect(row(4)).toMatchObject({ status: "running", onTime: 1, active: 2, missed: 1 });
     expect(row(5)).toMatchObject({ status: "future", active: 0, missed: null, onTimeShare: null });
@@ -117,6 +121,35 @@ describe("loadAdventAnalytics: ручной сценарий на фикстур
 });
 
 describe("loadAdventAnalytics: пустая кампания и границы", () => {
+  it("день 1 не становится «лучшим» автоматически: дни сравниваются по тем, кто играл и раньше", async () => {
+    const ctx = newAdventService();
+    // Шесть игроков пришли в день 1 и открыли его; день 2 вовремя открыли пятеро, день 3 — трое; ещё шесть новичков пришли
+    // в день 3 и открыли только его. Доля среди активных у дня 1 — всегда 100%, у дня 3 её завышают новички.
+    const veterans = [];
+    for (let index = 0; index < 6; index += 1) {
+      const participant = (await ctx.service.createParticipant(at(1, 9))).participant;
+      await ctx.service.openDay(participant.id, 1, at(1, 10));
+      veterans.push(participant.id);
+    }
+    for (const id of veterans.slice(0, 5)) await ctx.service.openDay(id, 2, at(2, 10));
+    for (const id of veterans.slice(0, 3)) await ctx.service.openDay(id, 3, at(3, 10));
+    for (let index = 0; index < 6; index += 1) {
+      const participant = (await ctx.service.createParticipant(at(3, 9))).participant;
+      await ctx.service.openDay(participant.id, 3, at(3, 10));
+    }
+    const data = await loadAdventAnalytics(ctx.repository, ctx.advent, at(5, 12), await ctx.rewards.overview());
+    const row = (day: number) => data.days.find((candidate) => candidate.day === day)!;
+    expect(row(1).onTimeShare).toBe(1);
+    expect(row(1).returningShare).toBeNull();
+    expect(row(3)).toMatchObject({ onTime: 9, active: 12, returning: 6, returningOnTime: 3, returningShare: 0.5 });
+    // День 4 (закрыт, никто не открыл) — третий по счёту; в «лучшие» попадают максимум три дня.
+    expect(data.bestDays.map((day) => day.day)).toEqual([2, 3, 4]);
+    expect(data.bestDays.some((day) => day.day === 1)).toBe(false);
+    const best = data.insights.find((insight) => insight.key === "best-day");
+    expect(best?.text).toContain("2-й");
+    expect(best?.text).toContain("83%");
+  });
+
   it("после финала когорта последнего дня не тянет D1 вниз: вернуться ей было некуда", async () => {
     const ctx = newAdventService();
     // Шесть человек пришли 31.12 (день 12) и открыли его; 01.01 — уже финал, двери не открываются.

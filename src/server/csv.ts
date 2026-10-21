@@ -86,8 +86,11 @@ const ratio = (value: number | null): Cell => (value === null ? "" : Math.round(
 /** Метрики адвента по дням (без персональных данных); доли — числа от 0 до 1. */
 export function daysMetricsToCsv(days: AnalyticsDay[]): string {
   return tableToCsv(
-    ["День", "Дата", "Название", "Статус окна", "Открыли в свой день", "Догнали", "Открыли всего", "Активных", "Пропустили", "Закрыли день целиком", "Доля в свой день"],
-    days.map((day) => [day.day, day.date, day.title, day.status, day.onTime, day.caughtUp, day.opened, day.status === "future" ? "" : day.active, day.missed, day.completed, ratio(day.onTimeShare)])
+    ["День", "Дата", "Название", "Статус окна", "Открыли в свой день", "Догнали", "Открыли всего", "Активных", "Пропустили", "Закрыли день целиком", "Доля в свой день", "Играли раньше", "Из них в свой день", "Доля игравших раньше"],
+    days.map((day) => {
+      const future = day.status === "future";
+      return [day.day, day.date, day.title, day.status, day.onTime, day.caughtUp, day.opened, future ? "" : day.active, day.missed, day.completed, ratio(day.onTimeShare), future ? "" : day.returning, future ? "" : day.returningOnTime, ratio(day.returningShare)];
+    })
   );
 }
 

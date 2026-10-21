@@ -21,6 +21,14 @@ export type AnalyticsDay = {
   completed: number;
   /** Доля открывших в свой день среди активных; `null`, пока активных нет. */
   onTimeShare: number | null;
+  /**
+   * Играли раньше — игроки, открывшие первую дверь до начала этого дня, и сколько из них открыли этот день вовремя. Новички дня
+   * не входят: они почти всегда открывают текущую дверь и завышали бы ранние дни (у дня 1 доля среди активных всегда 100%).
+   * По этой доле выбираются лучшие и слабые дни и считается тренд.
+   */
+  returning: number;
+  returningOnTime: number;
+  returningShare: number | null;
 };
 
 export type AnalyticsBucket = { value: number; count: number };

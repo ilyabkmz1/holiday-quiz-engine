@@ -50,24 +50,25 @@ export function buildInsights(data: AdventAnalytics): AnalyticsInsight[] {
     text: `В кампании ${kpis.participants} ${plural(kpis.participants, "участник", "участника", "участников")}, дверь открыли ${kpis.players} (${percent(kpis.players / kpis.participants)}). В среднем открыто ${kpis.doorsAvg?.toFixed(1).replace(".", ",") ?? "—"} из ${data.totalDays}.`
   });
 
-  const measured = data.days.filter((day) => day.status === "closed" && day.onTimeShare !== null && day.active >= MIN_GROUP);
+  // Тренд и лучшие дни — по тем, кто играл и до этого дня: новички дня почти всегда открывают текущую дверь и завышают начало.
+  const measured = data.days.filter((day) => day.status === "closed" && day.returningShare !== null && day.returning >= MIN_GROUP);
   if (measured.length >= 3) {
     const third = Math.max(1, Math.floor(measured.length / 3));
-    const first = mean(measured.slice(0, third).map((day) => day.onTimeShare!));
-    const last = mean(measured.slice(-third).map((day) => day.onTimeShare!));
+    const first = mean(measured.slice(0, third).map((day) => day.returningShare!));
+    const last = mean(measured.slice(-third).map((day) => day.returningShare!));
     if (first - last >= T.dropOff) {
-      out.push({ key: "trend", tone: "watch", text: `К концу кампании интерес снизился: в свой день дверь открывали ${percent(first)} активных в начале и ${percent(last)} в конце. Напоминания и более яркие призы во второй половине помогают удержать людей.` });
+      out.push({ key: "trend", tone: "watch", text: `К концу кампании интерес снизился: из тех, кто уже играл, в свой день дверь открывали ${percent(first)} в начале и ${percent(last)} в конце. Напоминания и более яркие призы во второй половине могут помочь удержать людей.` });
     } else if (last - first >= -0.05) {
-      out.push({ key: "trend", tone: "good", text: `Интерес держался всю кампанию: в свой день дверь открывали ${percent(first)} активных в начале и ${percent(last)} в конце.` });
+      out.push({ key: "trend", tone: "good", text: `Интерес держался всю кампанию: из тех, кто уже играл, в свой день дверь открывали ${percent(first)} в начале и ${percent(last)} в конце.` });
     }
   }
-  if (data.bestDays[0]?.onTimeShare != null) {
+  if (data.bestDays[0]?.returningShare != null) {
     const best = data.bestDays[0];
-    out.push({ key: "best-day", tone: "good", text: `Лучший день — ${best.day}-й «${best.title}»: в свой день его открыли ${percent(best.onTimeShare!)} активных.` });
+    out.push({ key: "best-day", tone: "good", text: `Лучший день — ${best.day}-й «${best.title}»: в свой день его открыли ${percent(best.returningShare!)} тех, кто играл и раньше.` });
   }
-  if (data.weakDays[0]?.onTimeShare != null && data.weakDays[0].day !== data.bestDays[0]?.day) {
+  if (data.weakDays[0]?.returningShare != null && data.weakDays[0].day !== data.bestDays[0]?.day) {
     const weak = data.weakDays[0];
-    out.push({ key: "weak-day", tone: "watch", text: `Слабее всего прошёл ${weak.day}-й день «${weak.title}»: в свой день его открыли ${percent(weak.onTimeShare!)} активных. Проверьте анонс и сложность задания.` });
+    out.push({ key: "weak-day", tone: "watch", text: `Слабее всего прошёл ${weak.day}-й день «${weak.title}»: в свой день его открыли ${percent(weak.returningShare!)} тех, кто играл и раньше. Проверьте анонс и сложность задания.` });
   }
 
   if (kpis.d1.share !== null && kpis.d1.base >= MIN_GROUP) {

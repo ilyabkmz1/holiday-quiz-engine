@@ -1,7 +1,9 @@
 import type { AdventAnalytics, AnalyticsDay } from "@/types/advent-analytics";
 
+/** Строка дня; «играли раньше» по умолчанию повторяют активных (тесты правил, где новички не важны). */
 export function dayRow(day: number, patch: Partial<AnalyticsDay> = {}): AnalyticsDay {
-  return { day, title: `День ${day}`, date: `2026-12-${String(19 + day).padStart(2, "0")}`, status: "closed", onTime: 0, caughtUp: 0, opened: 0, active: 0, missed: 0, completed: 0, onTimeShare: null, ...patch };
+  const row = { day, title: `День ${day}`, date: `2026-12-${String(19 + day).padStart(2, "0")}`, status: "closed" as const, onTime: 0, caughtUp: 0, opened: 0, active: 0, missed: 0, completed: 0, onTimeShare: null, ...patch };
+  return { returning: row.active, returningOnTime: row.onTime, returningShare: row.onTimeShare, ...row };
 }
 
 /** Метрики с разумными значениями по умолчанию: тесты правил меняют только нужное. */
