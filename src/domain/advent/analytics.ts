@@ -1,9 +1,10 @@
 import { streakState, type StreakPolicy } from "./streak";
 
-/** Группы меньше этого числа участников в клиентских срезах (панель, отчёт, CSV) не детализируются: по ним можно узнать человека. */
+/**
+ * Порог малых групп — один везде: в панели, отчёте и CSV оператора, в публичном рейтинге команд. Группа меньше этого числа
+ * участников показывается без цифр: по ней можно узнать человека.
+ */
 export const MIN_GROUP = 5;
-/** Команда меньше этого размера в публичном рейтинге показывается без цифр. */
-export const MIN_PUBLIC_TEAM = 3;
 
 /** Доля `count / base`; `null`, пока основание нулевое. */
 export function share(count: number, base: number): number | null {
@@ -101,6 +102,45 @@ export function rankTeams(teams: readonly TeamInput[], minMembers: number): Rank
     .filter((row) => !row.hidden)
     .sort((a, b) => b.avgDoors! - a.avgDoors! || b.activeShare! - a.activeShare! || a.title.localeCompare(b.title, "ru"));
   // Равные по среднему и доле делят место (1, 1, 3), чтобы порядок названий не выглядел преимуществом.
+  visible.forEach((row, index) => {
+    const prev = visible[index - 1];
+    row.rank = prev && prev.avgDoors === row.avgDoors && prev.activeShare === row.activeShare ? prev.rank : index + 1;
+  });
+  const hidden = rows.filter((row) => row.hidden).sort((a, b) => a.title.localeCompare(b.title, "ru"));
+  return [...visible, ...hidden];
+}
+
+/** Интервал размера команды в публичном рейтинге: точное число участников наружу не отдаётся. */
+export type TeamSizeBand = "5–9" | "10–24" | "25+";
+
+export type PublicTeam = { id: string; title: string; rank: number | null; hidden: boolean; size: TeamSizeBand | null; avgDoors: number | null; activeShare: number | null };
+
+/** Интервал размера команды не меньше `MIN_GROUP`. */
+export function teamSizeBand(members: number): TeamSizeBand {
+  return members >= 25 ? "25+" : members >= 10 ? "10–24" : "5–9";
+}
+
+/**
+ * Публичный рейтинг команд: порог `MIN_GROUP`, среднее число дверей округлено до 0,5, доля играющих — до 10 п. п., размер — интервалом.
+ * Порядок и места считаются по округлённым значениям, при равенстве — по названию, и равные делят место: по порядку нельзя
+ * восстановить точные цифры. Команды без цифр — в конце, без места.
+ */
+export function rankPublicTeams(teams: readonly TeamInput[]): PublicTeam[] {
+  const rows: PublicTeam[] = teams.map((team) => {
+    const hidden = team.members < MIN_GROUP;
+    return {
+      id: team.id,
+      title: team.title,
+      rank: null,
+      hidden,
+      size: hidden ? null : teamSizeBand(team.members),
+      avgDoors: hidden ? null : Math.round((team.doors / team.members) * 2) / 2,
+      activeShare: hidden ? null : Math.round((team.players / team.members) * 10) / 10
+    };
+  });
+  const visible = rows
+    .filter((row) => !row.hidden)
+    .sort((a, b) => b.avgDoors! - a.avgDoors! || b.activeShare! - a.activeShare! || a.title.localeCompare(b.title, "ru"));
   visible.forEach((row, index) => {
     const prev = visible[index - 1];
     row.rank = prev && prev.avgDoors === row.avgDoors && prev.activeShare === row.activeShare ? prev.rank : index + 1;

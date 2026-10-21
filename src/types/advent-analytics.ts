@@ -1,4 +1,4 @@
-import type { AdventPhase } from "@/domain/advent";
+import type { AdventPhase, PublicTeam } from "@/domain/advent";
 
 /** Доля с основанием: прочерк в интерфейсе, пока основание нулевое. */
 export type Rate = { count: number; base: number; share: number | null };
@@ -125,7 +125,11 @@ export type AdventAnalytics = {
 /** Публичный рейтинг команд: без имён людей; у малых команд цифр нет. */
 export type TeamLeaderboard = {
   generatedAt: string;
-  teams: Array<{ id: string; title: string; rank: number | null; hidden: boolean; members: number | null; avgDoors: number | null; activeShare: number | null }>;
+  /**
+   * Без точных цифр: размер — интервалом, среднее округлено до 0,5, доля играющих — до 0,1; команда меньше порога малых групп
+   * без цифр и без места (`rankPublicTeams`).
+   */
+  teams: PublicTeam[];
   /** Команда участника, если он её выбрал. */
   mine: string | null;
 };

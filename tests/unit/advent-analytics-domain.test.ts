@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { MIN_GROUP, addDays, bestStreakHistogram, buildInsights, histogramStats, rankTeams, reportPaperTheme, retentionRate, share } from "@/domain/advent";
+import { MIN_GROUP, addDays, bestStreakHistogram, buildInsights, histogramStats, rankPublicTeams, rankTeams, reportPaperTheme, retentionRate, share, teamSizeBand } from "@/domain/advent";
 import { contrastRatio } from "@/domain/color";
 
 import { analyticsFixture, dayRow } from "../support/analytics-fixture";
@@ -105,6 +105,32 @@ describe("rankTeams", () => {
   it("порог — именно «меньше»: ровно minMembers уже видна", () => {
     expect(rankTeams([team("x", 5, 1, 1)], 5)[0].hidden).toBe(false);
     expect(rankTeams([team("x", 4, 1, 1)], 5)[0].hidden).toBe(true);
+  });
+});
+
+describe("rankPublicTeams: публичный рейтинг без точных цифр", () => {
+  const team = (id: string, members: number, players: number, doors: number) => ({ id, title: id.toUpperCase(), members, players, doors, points: 0 });
+
+  it("порог — общий MIN_GROUP: команды из 3 и 4 человек без цифр и без места", () => {
+    expect(MIN_GROUP).toBe(5);
+    const ranked = rankPublicTeams([team("three", 3, 3, 30), team("four", 4, 4, 40), team("five", 5, 1, 1)]);
+    expect(ranked.map((row) => [row.id, row.rank, row.hidden])).toEqual([["five", 1, false], ["four", null, true], ["three", null, true]]);
+    for (const row of ranked.slice(1)) expect(row).toMatchObject({ size: null, avgDoors: null, activeShare: null });
+  });
+
+  it("округление: среднее до 0,5, доля до 0,1; в строке нет точных members/players/doors", () => {
+    const [row] = rankPublicTeams([team("a", 7, 3, 12)]);
+    expect(row).toEqual({ id: "a", title: "A", rank: 1, hidden: false, size: "5–9", avgDoors: 1.5, activeShare: 0.4 });
+  });
+
+  it("порядок и места — по округлённым значениям, при равенстве по названию, равные делят место", () => {
+    // Точные средние 1,71 (b) и 1,6 (a) округляются до 1,5: порядок по названию, место общее.
+    const ranked = rankPublicTeams([team("b", 7, 3, 12), team("a", 5, 2, 8), team("c", 5, 5, 15)]);
+    expect(ranked.map((row) => [row.id, row.rank])).toEqual([["c", 1], ["a", 2], ["b", 2]]);
+  });
+
+  it("размер — интервалом", () => {
+    expect([5, 9, 10, 24, 25, 300].map(teamSizeBand)).toEqual(["5–9", "5–9", "10–24", "10–24", "25+", "25+"]);
   });
 });
 

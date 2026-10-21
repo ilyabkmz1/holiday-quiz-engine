@@ -12,8 +12,8 @@ import { adventTenantFromHeaders } from "@/server/tenants";
 export const dynamic = "force-dynamic";
 
 /**
- * Публичный рейтинг команд (`audience.leaderboard = "teams"`): только агрегаты по командам, без имён людей; у команды
- * меньше трёх участников цифр нет. Кэш в процессе на несколько минут. Выбранную команду участника подсвечивает клиент.
+ * Публичный рейтинг команд (`audience.leaderboard = "teams"`): только округлённые агрегаты по командам, без имён людей и точного
+ * числа участников; у команды меньше `MIN_GROUP` участников цифр и места нет. Кэш в процессе на несколько минут. Выбранную команду участника подсвечивает клиент.
  */
 export async function GET(request: NextRequest) {
   const blocked = guardPublicRequest(request);

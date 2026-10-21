@@ -61,18 +61,21 @@ async function mountBoard(plan: Array<[string, number, number]>, start = at(4, 1
 }
 
 describe("TeamBoard", () => {
-  it("рейтинг по среднему: места, цифры, малая команда без цифр; участник ещё не выбрал команду", async () => {
-    await mountBoard([["t-north", 3, 3], ["t-south", 4, 4], ["t-east", 2, 4]]);
+  it("рейтинг по среднему: места, округлённые цифры, размер интервалом; команды из 3 и 4 человек без цифр", async () => {
+    await mountBoard([["t-north", 6, 3], ["t-south", 4, 4], ["t-east", 3, 4], ["t-north", 1, 4]]);
     const list = await screen.findByRole("list", { name: copy.teamTableLabel });
     const rows = within(list).getAllByRole("listitem");
-    // Юг (4,0 на участника) впереди Севера (3,0); Восток — двое, цифр нет.
-    expect(rows.map((row) => row.querySelector(".adv-team-name")?.textContent)).toEqual(["Юг", "Север", "Восток"]);
-    expect(rows[0]).toHaveTextContent("4,0 открытых на участника");
-    expect(rows[0]).toHaveTextContent("Участников: 4");
+    // Север: 7 человек, 22 двери — 3,14 → 3,0; Юг (4) и Восток (3) — меньше порога 5, цифр и места нет.
+    expect(rows.map((row) => row.querySelector(".adv-team-name")?.textContent)).toEqual(["Север", "Восток", "Юг"]);
+    expect(rows[0]).toHaveTextContent("3,0 открытых на участника");
+    expect(rows[0]).toHaveTextContent("Участников: 5–9");
     expect(rows[0]).toHaveTextContent("Играют 100%");
-    expect(rows[1]).toHaveTextContent("3,0 открытых на участника");
-    expect(rows[2]).toHaveTextContent(copy.teamHidden);
-    expect(rows[2]).not.toHaveTextContent("открытых на участника");
+    for (const row of rows.slice(1)) {
+      expect(row).toHaveTextContent(copy.teamHidden);
+      expect(row).not.toHaveTextContent("открытых на участника");
+      expect(row).not.toHaveTextContent("Участников");
+      expect(row.querySelector(".adv-team-rank")).toHaveTextContent("–");
+    }
     // Ни имён людей, ни идентификаторов на экране.
     expect(document.body.textContent).not.toMatch(/[0-9a-f]{8}-[0-9a-f]{4}-/);
     // Выбор — радиогруппа с подписью.
@@ -137,7 +140,7 @@ describe("TeamBoard", () => {
 
   it("prefers-reduced-motion: рейтинг без анимаций (стили не вешают анимации на полоски)", async () => {
     mockReducedMotion(true);
-    await mountBoard([["t-north", 3, 2]]);
+    await mountBoard([["t-north", 5, 2]]);
     const bar = (await screen.findAllByText((_, element) => element?.classList.contains("adv-team-bar") ?? false))[0];
     expect(bar).toBeInTheDocument();
     const { readFileSync } = await import("node:fs");

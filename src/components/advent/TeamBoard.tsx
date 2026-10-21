@@ -19,8 +19,9 @@ const decimal = new Intl.NumberFormat("ru-RU", { minimumFractionDigits: 1, maxim
 
 /**
  * Командный зачёт (`audience.leaderboard = "teams"`): выбор команды и публичный рейтинг. В рейтинге нет имён людей: среднее число
- * открытых дверей на участника и доля играющих; у команды меньше трёх участников цифр нет. Выбор — группа радиокнопок (стрелки,
- * Tab), рейтинг — нумерованный список; полоски статичны, поэтому `prefers-reduced-motion` ничего не меняет.
+ * открытых дверей на участника (до 0,5) и доля играющих (до 10%) округлены, размер команды — интервалом; у команды меньше пяти
+ * участников цифр и места нет. Выбор — группа радиокнопок (стрелки, Tab), рейтинг — нумерованный список; полоски статичны,
+ * поэтому `prefers-reduced-motion` ничего не меняет.
  */
 export function TeamBoard({ copy, state, api, onState }: Props) {
   const team = state.team;
@@ -113,7 +114,7 @@ export function TeamBoard({ copy, state, api, onState }: Props) {
                     <span className="sr-only">{fill(copy.teamRank, { rank: row.rank ?? 0 })}. </span>
                     <b>{fill(copy.teamAvg, { avg: decimal.format(row.avgDoors ?? 0) })}</b>
                     <span>{fill(copy.teamActive, { p: Math.round((row.activeShare ?? 0) * 100) })}</span>
-                    <span>{fill(copy.teamMembers, { k: row.members ?? 0 })}</span>
+                    <span>{fill(copy.teamMembers, { k: row.size ?? "" })}</span>
                   </p>
                 </>
               )}
