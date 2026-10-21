@@ -4,7 +4,7 @@
  * к окну верхнего ряда он идёт по горизонтали до его колонки и показывает вверх (лестниц и прыжков нет).
  * Координаты берутся из раскладки окон (`facadeLayout`), поэтому работают на любом фасаде и при любом числе дней.
  */
-import { FACADE_COLUMNS, type FacadeCell, type FacadeLayout } from "./facade-layout";
+import type { FacadeCell, FacadeLayout } from "./facade-layout";
 
 /** Самый длинный путь по времени: даже через весь фасад хозяин приходит не позже этого. */
 export const WALK_MAX_MS = 900;
@@ -15,9 +15,9 @@ export const WALK_EPSILON = 0.012;
 
 export type WalkFacing = 1 | -1;
 
-/** Точка на улице под ячейкой: середина её колонок. */
-export function standX(cell: Pick<FacadeCell, "col" | "colSpan">): number {
-  return (cell.col + cell.colSpan / 2) / FACADE_COLUMNS;
+/** Точка на улице под ячейкой: середина её колонок в сетке раскладки (4 колонки или 2 у стойки). */
+export function standX(cell: Pick<FacadeCell, "col" | "colSpan">, columns: number): number {
+  return (cell.col + cell.colSpan / 2) / columns;
 }
 
 export type StandPoints = { door: number; byDay: ReadonlyMap<number, number> };
@@ -27,8 +27,8 @@ export function standPoints(layout: FacadeLayout): StandPoints {
   const byDay = new Map<number, number>();
   let door = 0.5;
   for (const cell of layout.cells) {
-    if (cell.kind === "door") door = standX(cell);
-    else if (cell.n !== null) byDay.set(cell.n, standX(cell));
+    if (cell.kind === "door") door = standX(cell, layout.columns);
+    else if (cell.n !== null) byDay.set(cell.n, standX(cell, layout.columns));
   }
   return { door, byDay };
 }

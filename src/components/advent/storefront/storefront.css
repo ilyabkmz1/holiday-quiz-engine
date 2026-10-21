@@ -182,6 +182,8 @@
 
 /* Стойка: узкие юниты по два в ряду, направляющие с отверстиями по краям стены. */
 .adv-facade[data-windows="unit"] { --ch-ratio: 0.3; --ch-max: 0.42; }
+/* Ряд юнита вдвое ниже обычного: рост хозяина на улице считается от гермодвери (три ряда), а не от одного ряда. */
+.adv-facade[data-windows="unit"] .adv-street { height: calc(var(--ch) * 2.5); }
 .adv-facade[data-windows="unit"] .adv-wall { background:
     radial-gradient(circle, var(--fc-trim) 0 1.6px, transparent 2.2px) 1px 0 / 6px var(--ch) repeat-y,
     radial-gradient(circle, var(--fc-trim) 0 1.6px, transparent 2.2px) right 1px top 0 / 6px var(--ch) repeat-y,
@@ -189,7 +191,8 @@
 .adv-facade[data-windows="unit"] .adv-cell:not([data-cell="door"]) { padding: 3px 9px; }
 .adv-facade[data-windows="unit"] .adv-window { flex-direction: row; justify-content: flex-start; gap: 8px; padding: 0 9px; border-radius: 4px; }
 /* Решётка вентиляции только на юнитах во всю ширину: в узкой паре ей не хватает места. */
-.adv-facade[data-windows="unit"] .adv-window[data-wide="true"] .adv-window-glass::after { content: ""; position: absolute; left: 52%; right: 26%; top: 26%; bottom: 26%; background: repeating-linear-gradient(90deg, color-mix(in srgb, var(--fc-trim) 40%, transparent) 0 2px, transparent 2px 6px); }
+/* Решётка — только на обычных юнитах во всю ширину: у финала и сегодняшнего там подписи «Финал» и «Сегодня». */
+.adv-facade[data-windows="unit"] .adv-window[data-wide="true"]:not([data-finale="true"], [data-status="today"]) .adv-window-glass::after { content: ""; position: absolute; left: 52%; right: 26%; top: 26%; bottom: 26%; background: repeating-linear-gradient(90deg, color-mix(in srgb, var(--fc-trim) 40%, transparent) 0 2px, transparent 2px 6px); }
 .adv-facade[data-windows="unit"] .adv-window-num { min-width: 2ch; padding: 1px 6px; border-radius: 3px; text-align: center; font-size: clamp(16px, 5.6cqw, 22px); }
 .adv-facade[data-windows="unit"] .adv-window-locked::after { display: none; }
 .adv-facade[data-windows="unit"] .adv-ribbon { display: none; }

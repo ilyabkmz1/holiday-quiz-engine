@@ -20,16 +20,25 @@ const noAttic = { layout: { attic: false } };
 
 describe("ходьба хозяина: точки под окнами", () => {
   it("точка — середина колонок ячейки, дверь и мансарда по центру", () => {
-    expect(standX({ col: 0, colSpan: 1 })).toBeCloseTo(0.125);
-    expect(standX({ col: 3, colSpan: 1 })).toBeCloseTo(0.875);
-    expect(standX({ col: 1, colSpan: 2 })).toBeCloseTo(0.5);
+    expect(standX({ col: 0, colSpan: 1 }, FACADE_COLUMNS)).toBeCloseTo(0.125);
+    expect(standX({ col: 3, colSpan: 1 }, FACADE_COLUMNS)).toBeCloseTo(0.875);
+    expect(standX({ col: 1, colSpan: 2 }, FACADE_COLUMNS)).toBeCloseTo(0.5);
     const points = standPoints(facadeLayout(12, 4, withAttic));
     expect(points.door).toBeCloseTo(0.5);
     expect(points.byDay.get(12)).toBeCloseTo(0.5);
   });
 
+  it("стойка в 2 колонки: юнит во всю ширину и гермодверь по центру, пара юнитов — у краёв", () => {
+    const points = standPoints(facadeLayout(12, 6, { layout: { attic: true, columns: 2 } }));
+    expect(points.door).toBeCloseTo(0.5);
+    expect(points.byDay.get(6)).toBeCloseTo(0.5);
+    expect(points.byDay.get(12)).toBeCloseTo(0.5);
+    expect(points.byDay.get(7)).toBeCloseTo(0.25);
+    expect(points.byDay.get(8)).toBeCloseTo(0.75);
+  });
+
   it("у каждого дня при любом числе дней и сегодняшнем окне есть точка внутри стены", () => {
-    for (const template of [withAttic, noAttic]) {
+    for (const template of [withAttic, noAttic, { layout: { attic: true, columns: 2 as const } }, { layout: { attic: false, columns: 2 as const } }]) {
       for (let days = 5; days <= 31; days += 1) {
         for (const today of [null, 1, Math.ceil(days / 2), days]) {
           const points = standPoints(facadeLayout(days, today, template));
