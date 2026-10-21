@@ -282,7 +282,9 @@ export const legalSchema = z.object({
    * Согласие на рекламную и информационную рассылку (ст. 18 38-ФЗ) — текст необязательной отметки «напоминания на почту» в адвенте;
    * `{operator}` — `operatorName`. Без него — `DEFAULT_MARKETING_CONSENT_TEXT`, но `quiz:check` при email-напоминаниях требует свой.
    */
-  marketingConsentText: z.string().trim().min(1).max(400).optional()
+  marketingConsentText: z.string().trim().min(1).max(400).optional(),
+  /** Согласие для входа через Telegram (экран первого открытия мини-приложения); без него показывается `consentText`. */
+  telegramConsentText: z.string().trim().min(1).max(600).optional()
 });
 
 /**

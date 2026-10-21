@@ -4,6 +4,8 @@ import {
   type AdventRepository,
   type AssignCodeResult,
   type CodeSource,
+  MAX_SOURCE_LABELS,
+  OTHER_SOURCE,
   type GrantWithCampaign,
   type IssueGrantInput,
   type IssueGrantResult,
@@ -15,6 +17,8 @@ import {
   type IdentityRepository,
   type LoginTokenRecord,
   type ParticipantRecord,
+  type PlatformId,
+  type SourceVisitRow,
   type ReminderCandidateQuery,
   type ReminderClaimInput,
   type ReminderDeliveryRecord,
@@ -39,6 +43,10 @@ export class InMemoryAdventRepository implements AdventRepository, IdentityRepos
   private readonly deliveries = new Map<string, ReminderDeliveryRecord>();
   /** Пул кодов: ключ `кампания|код` (уникальность, как `@@unique([campaignSlug, code])`). */
   private readonly codes = new Map<string, { campaignSlug: string; rewardId: string; code: string; grantId: string | null }>();
+  /** Платформенные идентичности: ключ `кампания|платформа|subjectHash` → участник. */
+  private readonly identities = new Map<string, string>();
+  /** Переходы по источникам: ключ `кампания|источник|дата`. */
+  private readonly sourceVisits = new Map<string, SourceVisitRow & { campaignSlug: string }>();
   /** Остатки: ключ `кампания|награда`. */
   private readonly stock = new Map<string, number>();
 
@@ -57,6 +65,42 @@ export class InMemoryAdventRepository implements AdventRepository, IdentityRepos
   async findParticipantByAccessKeyHash(accessKeyHash: string): Promise<ParticipantRecord | null> {
     const id = this.keyOwners.get(accessKeyHash);
     return id ? this.getParticipant(id) : null;
+  }
+
+  async findParticipantByIdentity(campaignSlug: string, platform: PlatformId, subjectHash: string): Promise<ParticipantRecord | null> {
+    const id = this.identities.get(`${campaignSlug}|${platform}|${subjectHash}`);
+    return id ? this.getParticipant(id) : null;
+  }
+
+  async createParticipantWithIdentity(
+    participant: ParticipantRecord,
+    identity: { campaignSlug: string; platform: PlatformId; subjectHash: string }
+  ): Promise<{ participant: ParticipantRecord; created: boolean }> {
+    const key = `${identity.campaignSlug}|${identity.platform}|${identity.subjectHash}`;
+    const existing = this.identities.get(key);
+    if (existing) return { participant: structuredClone(this.requireParticipant(existing)), created: false };
+    // Без await между проверкой и записью: в однопоточном Node это атомарно, как уникальный индекс.
+    if (this.keyOwners.has(participant.accessKeyHash)) throw new Error("Ключ доступа уже занят");
+    this.participants.set(participant.id, structuredClone(participant));
+    this.keyOwners.set(participant.accessKeyHash, participant.id);
+    this.identities.set(key, participant.id);
+    return { participant: structuredClone(participant), created: true };
+  }
+
+  async recordSourceVisit(campaignSlug: string, source: string, date: string): Promise<void> {
+    const known = new Set([...this.sourceVisits.values()].filter((row) => row.campaignSlug === campaignSlug).map((row) => row.source));
+    const label = known.has(source) || known.size < MAX_SOURCE_LABELS ? source : OTHER_SOURCE;
+    const key = `${campaignSlug}|${label}|${date}`;
+    const row = this.sourceVisits.get(key) ?? { campaignSlug, source: label, date, opens: 0 };
+    row.opens += 1;
+    this.sourceVisits.set(key, row);
+  }
+
+  async listSourceVisits(campaignSlug: string): Promise<SourceVisitRow[]> {
+    return [...this.sourceVisits.values()]
+      .filter((row) => row.campaignSlug === campaignSlug)
+      .map(({ source, date, opens }) => ({ source, date, opens }))
+      .sort((a, b) => (a.date === b.date ? a.source.localeCompare(b.source) : a.date.localeCompare(b.date)));
   }
 
   private requireParticipant(participantId: string): ParticipantRecord {
@@ -454,6 +498,9 @@ export class InMemoryAdventRepository implements AdventRepository, IdentityRepos
   }
 
   async anonymizeCampaignParticipants(campaignSlug: string): Promise<number> {
+    for (const key of [...this.identities.keys()]) {
+      if (key.startsWith(`${campaignSlug}|`)) this.identities.delete(key);
+    }
     for (const [hash, token] of [...this.tokens]) {
       if (this.participants.get(token.participantId)?.campaignSlug === campaignSlug) this.tokens.delete(hash);
     }

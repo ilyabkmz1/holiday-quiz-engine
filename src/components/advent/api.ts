@@ -22,11 +22,22 @@ export function readAsOf(): string | null {
   }
 }
 
+/** Заголовок с подписанными данными запуска Telegram: в Telegram клиент шлёт его в каждом запросе вместо cookie. */
+const INIT_DATA_HEADER = "x-telegram-init-data";
+
+let initData: string | null = null;
+
+/** Включает (строка) или выключает (`null`) подпись запросов данными Telegram. Вызывается один раз при старте игры. */
+export function setTelegramInitData(value: string | null) {
+  initData = value;
+}
+
 export type Timed<T> = T & { serverDate: number | null };
 
 async function request<T>(path: string, method: "GET" | "POST", body?: unknown): Promise<Timed<T>> {
   const headers: Record<string, string> = {};
   if (body !== undefined) headers["content-type"] = "application/json";
+  if (initData) headers[INIT_DATA_HEADER] = initData;
   const asOf = readAsOf();
   if (asOf) headers[AS_OF_HEADER] = asOf;
   let response: Response;
@@ -56,7 +67,8 @@ const dayPath = (n: number) => `/api/advent/days/${n}`;
 
 export const adventApi = {
   getState: () => request<AdventState>("/api/advent/state", "GET"),
-  createParticipant: () => request<CreateParticipantResponse>("/api/advent/participants", "POST"),
+  /** В Telegram участник создаётся только с согласием на обработку данных (`consent: true`). */
+  createParticipant: (input?: { consent: true }) => request<CreateParticipantResponse>("/api/advent/participants", "POST", input),
   openDay: (n: number) => request<OpenDayResponse>(`${dayPath(n)}/open`, "POST"),
   /** Пустое тело — подтверждение истории; для задания и удачи — `payload`. Результат приходит только после записи. */
   submitBlock: (n: number, index: number, payload?: Record<string, unknown>) =>
@@ -66,5 +78,10 @@ export const adventApi = {
   requestLink: (input: { email: string; consent: boolean; marketingConsent: boolean; reminderOptIn: boolean }) =>
     request<IdentityRequestResponse>("/api/advent/identity/request", "POST", input)
 };
+
+/** Открытие мини-приложения: сервер учтёт метку источника из подписанного параметра запуска (счётчик, без участника). */
+export function recordTelegramVisit(): Promise<unknown> {
+  return request("/api/advent/platform/visit", "POST", {});
+}
 
 export type AdventApi = typeof adventApi;

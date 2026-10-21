@@ -63,6 +63,7 @@ describe("публичный срез адвента для страницы", (
     expect(view.legal).toEqual({
       operatorName: advent.legal.operatorName,
       consentText: advent.legal.consentText,
+      telegramConsentText: null,
       marketingConsentText: advent.legal.marketingConsentText!.replace("{operator}", advent.legal.operatorName)
     });
   });
@@ -93,7 +94,7 @@ describe("публичный срез адвента для страницы", (
     }
     // Верхние ключи — явный список: новое поле пакета на клиент не попадёт, пока его не перечислят в `publicAdvent`.
     expect(Object.keys(view).sort()).toEqual(
-      ["brand", "copy", "facade", "heroes", "intro", "legal", "luckSkin", "presentation", "schedule", "slug", "story", "subtitle", "tenant", "title", "worldId"]
+      ["brand", "copy", "facade", "heroes", "intro", "legal", "luckSkin", "platforms", "presentation", "schedule", "slug", "story", "subtitle", "tenant", "title", "worldId"]
     );
     expect(Object.keys(view.schedule).sort()).toEqual(["claimEndsAt", "days", "finaleAt", "startDate", "timezone"]);
     expect(json).not.toContain(advent.legal.policyText);

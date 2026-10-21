@@ -23,7 +23,7 @@ export async function POST(request: NextRequest, context: { params: Promise<{ n:
     const tenant = adventTenantFromHeaders(request.headers);
     const now = resolveNow(request, tenant);
     const { adventService } = getAdventServices(tenant);
-    const participant = await participantFromRequest(request, adventService);
+    const participant = await participantFromRequest(request, adventService, tenant);
     if (!participant) return unauthorized();
     return NextResponse.json(await adventService.submitBlock(participant.id, day, index, body.payload ?? {}, now));
   } catch (error) {

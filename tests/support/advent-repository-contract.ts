@@ -2,15 +2,17 @@ import { beforeEach, describe, expect, it } from "vitest";
 
 import { DomainError } from "@/domain/errors";
 import { createId, hashToken } from "@/server/crypto";
-import type {
-  AdventRepository,
-  CodeSource,
-  IdentityRepository,
-  IssueGrantResult,
-  LoginTokenRecord,
-  ParticipantRecord,
-  ReminderRepository,
-  RewardGrantRecord
+import {
+  MAX_SOURCE_LABELS,
+  OTHER_SOURCE,
+  type AdventRepository,
+  type CodeSource,
+  type IdentityRepository,
+  type IssueGrantResult,
+  type LoginTokenRecord,
+  type ParticipantRecord,
+  type ReminderRepository,
+  type RewardGrantRecord
 } from "@/server/repositories/advent-repository";
 
 export type AdventBackend = AdventRepository & IdentityRepository & ReminderRepository;
@@ -90,6 +92,89 @@ export function describeAdventRepositoryContract(name: string, create: () => Pro
         expect((await repo.findParticipantByAccessKeyHash(created.accessKeyHash))?.id).toBe(created.id);
         expect(await repo.findParticipantByAccessKeyHash(hashToken("нет такого"))).toBeNull();
         expect(await repo.getParticipant(createId())).toBeNull();
+      });
+    });
+
+    describe("платформенные идентичности (Telegram)", () => {
+      const identity = (subjectHash: string, campaignSlug = CAMPAIGN) => ({ campaignSlug, platform: "telegram" as const, subjectHash });
+      const telegramParticipant = (overrides: Partial<ParticipantRecord> = {}) => participantRecord({ platform: "telegram", consentAt: T0, ...overrides });
+
+      it("создаёт участника вместе с идентичностью и находит по псевдониму", async () => {
+        const record = telegramParticipant();
+        const result = await repo.createParticipantWithIdentity(record, identity("hash-1"));
+        expect(result.created).toBe(true);
+        expect(result.participant).toMatchObject({ id: record.id, platform: "telegram", normalizedEmail: null });
+        expect((await repo.findParticipantByIdentity(CAMPAIGN, "telegram", "hash-1"))?.id).toBe(record.id);
+        expect(await repo.findParticipantByIdentity(CAMPAIGN, "telegram", "hash-2")).toBeNull();
+        expect(await repo.findParticipantByIdentity(OTHER_CAMPAIGN, "telegram", "hash-1")).toBeNull();
+      });
+
+      it("обычный участник: platform пуст", async () => {
+        const created = await newParticipant();
+        expect((await repo.getParticipant(created.id))?.platform ?? null).toBeNull();
+      });
+
+      it("повторная идентичность не создаёт второго участника: возвращается первый, лишний не сохраняется", async () => {
+        const first = await repo.createParticipantWithIdentity(telegramParticipant(), identity("hash-1"));
+        const loser = telegramParticipant();
+        const second = await repo.createParticipantWithIdentity(loser, identity("hash-1"));
+        expect(second.created).toBe(false);
+        expect(second.participant.id).toBe(first.participant.id);
+        expect(await repo.getParticipant(loser.id)).toBeNull();
+        expect(await repo.findParticipantByAccessKeyHash(loser.accessKeyHash)).toBeNull();
+      });
+
+      it("гонка: параллельные создания одного псевдонима дают ровно одного участника", async () => {
+        const attempts = Array.from({ length: 6 }, () => repo.createParticipantWithIdentity(telegramParticipant(), identity("race")));
+        const results = await Promise.all(attempts);
+        expect(results.filter((result) => result.created)).toHaveLength(1);
+        expect(new Set(results.map((result) => result.participant.id)).size).toBe(1);
+      });
+
+      it("один псевдоним в разных кампаниях — разные участники", async () => {
+        const a = await repo.createParticipantWithIdentity(telegramParticipant(), identity("same"));
+        const b = await repo.createParticipantWithIdentity(telegramParticipant({ campaignSlug: OTHER_CAMPAIGN }), identity("same", OTHER_CAMPAIGN));
+        expect(b.created).toBe(true);
+        expect(a.participant.id).not.toBe(b.participant.id);
+      });
+
+      it("очистка ПДн кампании удаляет идентичности (псевдонимы) этой кампании, участник и прогресс остаются", async () => {
+        const mine = await repo.createParticipantWithIdentity(telegramParticipant(), identity("mine"));
+        const foreign = await repo.createParticipantWithIdentity(telegramParticipant({ campaignSlug: OTHER_CAMPAIGN }), identity("foreign", OTHER_CAMPAIGN));
+        await repo.openDayOnce(mine.participant.id, 1, T0, true);
+        await repo.anonymizeCampaignParticipants(CAMPAIGN);
+        expect(await repo.findParticipantByIdentity(CAMPAIGN, "telegram", "mine")).toBeNull();
+        expect(await repo.getParticipant(mine.participant.id)).toMatchObject({ platform: "telegram", consentAt: null });
+        expect(await repo.listDayOpens(mine.participant.id)).toHaveLength(1);
+        expect((await repo.findParticipantByIdentity(OTHER_CAMPAIGN, "telegram", "foreign"))?.id).toBe(foreign.participant.id);
+      });
+    });
+
+    describe("переходы по источникам", () => {
+      it("складывает открытия по источнику и дню, кампании не смешиваются", async () => {
+        await repo.recordSourceVisit(CAMPAIGN, "channel", "2026-12-21");
+        await repo.recordSourceVisit(CAMPAIGN, "channel", "2026-12-21");
+        await repo.recordSourceVisit(CAMPAIGN, "channel", "2026-12-22");
+        await repo.recordSourceVisit(CAMPAIGN, "chat", "2026-12-21");
+        await repo.recordSourceVisit(OTHER_CAMPAIGN, "channel", "2026-12-21");
+        expect(await repo.listSourceVisits(CAMPAIGN)).toEqual([
+          { source: "channel", date: "2026-12-21", opens: 2 },
+          { source: "chat", date: "2026-12-21", opens: 1 },
+          { source: "channel", date: "2026-12-22", opens: 1 }
+        ]);
+        expect(await repo.listSourceVisits(OTHER_CAMPAIGN)).toEqual([{ source: "channel", date: "2026-12-21", opens: 1 }]);
+      });
+
+      it("новых меток сверх предела нет: лишние копятся под other, известные продолжают считаться", async () => {
+        for (let index = 0; index < MAX_SOURCE_LABELS; index += 1) await repo.recordSourceVisit(CAMPAIGN, `src-${index}`, "2026-12-21");
+        await repo.recordSourceVisit(CAMPAIGN, "extra-1", "2026-12-21");
+        await repo.recordSourceVisit(CAMPAIGN, "extra-2", "2026-12-21");
+        await repo.recordSourceVisit(CAMPAIGN, "src-0", "2026-12-21");
+        const rows = await repo.listSourceVisits(CAMPAIGN);
+        expect(rows).toHaveLength(MAX_SOURCE_LABELS + 1);
+        expect(rows.find((row) => row.source === OTHER_SOURCE)?.opens).toBe(2);
+        expect(rows.find((row) => row.source === "src-0")?.opens).toBe(2);
+        expect(rows.some((row) => row.source.startsWith("extra"))).toBe(false);
       });
     });
 

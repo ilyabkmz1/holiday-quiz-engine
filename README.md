@@ -142,6 +142,7 @@ Workflow `.github/workflows/ci.yml` запускается на push в `main` �
 | `npm run quiz:brand -- <slug> <url> [--apply]` | Playwright снимает сайт клиента: цвета, шрифт, favicon, og:image, логотип; печатает предложение для `brand`, с `--apply` пишет `brand.colors`/`brand.font` в `pack.json`. Картинки скачивает человек или агент в `public/tenants/<slug>/` |
 | `npm run quiz:shots -- <slug> [каталог]` | Скриншоты лендинга, первого задания, карты, рывка, финала, «Поделиться», `/privacy` (mobile + desktop) в `shots/<slug>`. Нужен запущенный сервер: `TENANT=<slug> QUIZ_FORCE_OPEN=true npm run dev` |
 | `npm run quiz:shots -- <slug> --day 1..N [--desktop]` | Адвент: скриншоты каждого дня через `?asOf=` (глава, блоки, итог) и один файл `index.html` для согласования с клиентом. Нужны сервер на этом пакете, Mailpit и SMTP (вход по ссылке); без `--day` — основные экраны (`npm run advent:shots`; для «Витрины» — фасад в день 1 и 6, экран дня, задание «собери», финал; `--facade-only` — только фасад дня 6, чтобы сравнить шаблоны) |
+| `npm run telegram:shots -- <каталог>` | Адвент в Telegram: скриншоты экрана согласия, фасада, дня с промокодом (фейк `Telegram.WebApp`, 390×720 с safe area) и блока «Ссылки для поста» в админке; ранбук — `docs/engine/TELEGRAM_MINIAPP.md` |
 | `npm run quiz:preview -- <slug> --base-domain D [--ssh U@H --deploy]` | Превью на общем сервере: проверка пакета и git, выкатка через `deploy/deploy.sh`, адрес `https://<slug>.D/` за staging-паролем |
 | `npm run quiz:export -- <slug> --domain D [--build]` | Папка для сервера клиента: `.env` с секретами (`TENANT`, `QUIZ_PACKS`), инструкция, с `--build` — образы только с пакетом клиента |
 | `npm run quiz:admin -- <slug> --user ops` | Логин оператора клиента (пароль печатается один раз, в БД — хеш scrypt); `--disable`, `--list` |
@@ -202,6 +203,9 @@ Workflow `.github/workflows/ci.yml` запускается на push в `main` �
 | `TENANT` | Пакет арендатора; пусто — выбор по `Host` |
 | `TENANT_BASE_DOMAIN` | Общий домен для адресов вида `<slug>.<домен>` |
 | `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURE`, `SMTP_FROM`, `SMTP_USER`/`SMTP_PASSWORD` | Почта (авторизация необязательна, обе переменные вместе) |
+| `TELEGRAM_BOT_TOKEN`, `TELEGRAM_BOT_TOKEN__<БОТ>` | Токен бота для Telegram Mini App адвента (второй вариант — свой бот клиента); в production обязателен, если в пакете `platforms.telegram` |
+| `PLATFORM_ID_SECRET` | Секрет псевдонимизации идентификаторов Telegram (≥ 32 символов); менять нельзя, в production обязателен при Telegram |
+| `TELEGRAM_INIT_DATA_MAX_AGE` | Максимальный возраст `auth_date` в initData, секунд (по умолчанию 86400) |
 | `REWARD_QR_SECRET` | Подпись личного QR для погашения наград адвента на кассе (≥ 32 символов, `openssl rand -hex 32`); в production обязательна, если есть награды `redeem: cashier/both` |
 | `ADMIN_USERNAME`, `ADMIN_PASSWORD` | Суперадминистратор (пароль ≥ 16 символов); действует при `TENANT=<slug>` или `SUPERADMIN=true` |
 | `STAGING_USERNAME`, `STAGING_PASSWORD` | Закрытый стенд: HTTP Basic auth на весь сайт |

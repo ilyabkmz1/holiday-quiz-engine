@@ -54,7 +54,7 @@ export async function POST(request: NextRequest) {
     if (!target || target.owner.normalizedEmail === null) return sent();
     if (!identityRequestEmailRateLimiter.allow(`${tenant.advent.slug}:${hashToken(target.owner.normalizedEmail)}`)) return limited();
 
-    let requester = await participantFromRequest(request, adventService);
+    let requester = await participantFromRequest(request, adventService, tenant);
     // Владелец уже вошёл на этом устройстве (например, в соседней вкладке): письмо не нужно.
     if (requester?.id === target.owner.id) return NextResponse.redirect(publicUrl(baseUrl, `/?day=${target.day}`), 303);
     let newKey: string | null = null;

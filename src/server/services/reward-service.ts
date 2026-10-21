@@ -51,8 +51,9 @@ export function isCashierRedeemable(reward: Pick<AdventReward, "redeem"> | undef
   return reward?.redeem === "cashier" || reward?.redeem === "both";
 }
 
-export function isVerified(participant: Pick<ParticipantRecord, "normalizedEmail">): boolean {
-  return participant.normalizedEmail !== null;
+export function isVerified(participant: Pick<ParticipantRecord, "normalizedEmail" | "platform">): boolean {
+  // Участник платформы (Telegram) подтверждён самим аккаунтом: один аккаунт — один участник (уникальный индекс identity).
+  return participant.normalizedEmail !== null || (participant.platform ?? null) !== null;
 }
 
 function cryptoRng(): number {

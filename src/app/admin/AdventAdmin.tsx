@@ -2,7 +2,10 @@ import { loadAdventMetrics } from "@/server/advent-metrics";
 import { getAdventServices, getNow } from "@/server/container";
 import type { AdventTenant } from "@/server/tenants";
 
+import { miniAppLink } from "@/platform/telegram-links";
+
 import { CodeImport } from "./CodeImport";
+import { CopyLink } from "./CopyLink";
 import { formatCount } from "./format";
 
 /**
@@ -12,7 +15,14 @@ import { formatCount } from "./format";
 export async function AdventAdmin({ tenant }: { tenant: AdventTenant }) {
   const { advent } = tenant;
   const { rewardService, repository } = getAdventServices(tenant);
-  const [rows, metrics] = await Promise.all([rewardService.overview(), loadAdventMetrics(repository, advent, getNow())]);
+  const [rows, metrics, sourceVisits] = await Promise.all([
+    rewardService.overview(),
+    loadAdventMetrics(repository, advent, getNow()),
+    repository.listSourceVisits(advent.slug)
+  ]);
+  const telegram = tenant.platforms.telegram;
+  const postSource = "channel";
+  const sources = [...sourceVisits.reduce((acc, row) => acc.set(row.source, (acc.get(row.source) ?? 0) + row.opens), new Map<string, number>())].sort((a, b) => b[1] - a[1]);
   const { reminders } = metrics;
   const listRewards = new Set(advent.rewards.filter((reward) => reward.codes && "list" in reward.codes).map((reward) => reward.id));
 
@@ -61,6 +71,60 @@ export async function AdventAdmin({ tenant }: { tenant: AdventTenant }) {
           CSV для загрузки — столбец <code>code</code> в первой строке; коды приводятся к верхнему регистру, повторы пропускаются.
           Остаток удачи заводится при первом розыгрыше. В выгрузке выдач нет email и кодов.
         </p>
+      </section>
+
+      <section aria-labelledby="telegram-title" className="admin-card">
+        <h2 id="telegram-title">Ссылки для поста (Telegram)</h2>
+        {!telegram ? (
+          <p className="admin-empty">Telegram в пакете не включён (<code>platforms.telegram</code>: имя бота и короткое имя приложения из BotFather).</p>
+        ) : (
+          <>
+            <p className="admin-note">
+              Метка <code>s_{postSource}</code> в ссылках считает переходы по источникам (счётчик по дням, без участников). Другая метка — свой
+              источник: <code>d6_s_chat</code>, латиница, цифры и дефис, до 24 символов.
+            </p>
+            <p><a href={miniAppLink(telegram, { source: postSource })} target="_blank" rel="noopener noreferrer"><code data-testid="tg-link-main">{miniAppLink(telegram, { source: postSource })}</code></a>{" "}
+              <CopyLink value={miniAppLink(telegram, { source: postSource })} /></p>
+            <h3>Текст поста (заглушка)</h3>
+            <pre className="admin-note" data-testid="tg-post-text">{`🎄 ${advent.title}\n\nОткрылось новое окно! Заходите за историей, заданием и подарком дня:\n${miniAppLink(telegram, { source: postSource })}`}</pre>
+            <CopyLink label="Скопировать текст поста" value={`🎄 ${advent.title}\n\nОткрылось новое окно! Заходите за историей, заданием и подарком дня:\n${miniAppLink(telegram, { source: postSource })}`} />
+            <h3>Ссылки на отдельные дни</h3>
+            <div className="table-scroll">
+              <table className="left">
+                <thead>
+                  <tr><th scope="col">День</th><th scope="col">Ссылка</th><th scope="col"><span className="sr-only">Копирование</span></th></tr>
+                </thead>
+                <tbody>
+                  {advent.days.map((day) => {
+                    const link = miniAppLink(telegram, { day: day.n, source: postSource });
+                    return (
+                      <tr key={day.n}>
+                        <th scope="row">{day.n}. {day.title}</th>
+                        <td><code>{link}</code></td>
+                        <td><CopyLink value={link} /></td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+            <h3>Переходы по источникам</h3>
+            {sources.length === 0 ? (
+              <p className="admin-empty">Переходов с метками пока нет.</p>
+            ) : (
+              <div className="table-scroll">
+                <table className="left">
+                  <thead><tr><th scope="col">Источник</th><th scope="col">Открытий</th></tr></thead>
+                  <tbody>
+                    {sources.map(([source, opens]) => (
+                      <tr key={source}><th scope="row">{source}</th><td>{formatCount(opens)}</td></tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </>
+        )}
       </section>
 
       <section aria-labelledby="reminders-title" className="admin-card">

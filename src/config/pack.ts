@@ -4,6 +4,13 @@ import { adventSchema } from "@/config/advent-schema";
 import { PROFILE_IDS } from "@/config/advent-profile";
 import { campaignSchema } from "@/config/schema";
 
+/** Мини-приложение Telegram клиента: бот (`@имя`, заканчивается на `bot`) и короткое имя приложения из BotFather `/newapp`. */
+export const telegramPlatformSchema = z.object({
+  botUsername: z.string().regex(/^[A-Za-z][A-Za-z0-9_]{3,28}[Bb][Oo][Tt]$/, "Имя бота без @: 5–32 символа, латиница, цифры и _, заканчивается на bot"),
+  appShortName: z.string().regex(/^[A-Za-z][A-Za-z0-9_]{2,29}$/, "Короткое имя приложения из BotFather /newapp: 3–30 символов, латиница, цифры и _")
+});
+export type TelegramPlatform = z.infer<typeof telegramPlatformSchema>;
+
 /** Короткое имя пакета: папка `tenants/<slug>/`, поддомен и значение переменной `TENANT`. */
 export const TENANT_SLUG_PATTERN = /^[a-z0-9][a-z0-9-]{1,40}$/;
 
@@ -45,6 +52,8 @@ export const adventPackSchema = z.object({
   demo: z.boolean().default(false),
   /** Сколько участников ждём (оценка заказчика): `quiz:check` сверяет с ней запас кодов из списков. */
   expectedParticipants: z.number().int().min(1).optional(),
+  /** Платформы с входом без email. Нет `telegram` — заголовок initData для этого арендатора отвергается. */
+  platforms: z.object({ telegram: telegramPlatformSchema.optional() }).default({}),
   advent: adventSchema
 });
 

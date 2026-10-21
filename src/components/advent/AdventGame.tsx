@@ -3,12 +3,15 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { AdventFinale } from "@/components/advent/AdventFinale";
-import { adventApi, ApiError, type AdventApi } from "@/components/advent/api";
+import { adventApi, ApiError, recordTelegramVisit, setTelegramInitData, type AdventApi } from "@/components/advent/api";
 import { CalendarView } from "@/components/advent/CalendarView";
 import { ComebackBanner } from "@/components/advent/ComebackBanner";
 import { Countdown } from "@/components/advent/Countdown";
 import { DaySheet } from "@/components/advent/DaySheet";
 import { fill } from "@/components/advent/format";
+import { PlatformProvider } from "@/components/advent/platform-context";
+import { TelegramConsent } from "@/components/advent/TelegramConsent";
+import { usePlatformBoot } from "@/components/advent/usePlatformBoot";
 import { RemindersToggle } from "@/components/advent/RemindersToggle";
 import { SaveProgressCard, type SaveProgressInput } from "@/components/advent/SaveProgressCard";
 import { AdventSheet } from "@/components/advent/AdventSheet";
@@ -20,10 +23,12 @@ import { usePrefersReducedMotion } from "@/components/game/hooks";
 import { SoundButton } from "@/components/play/SoundButton";
 import { useSound } from "@/components/play/sound";
 import { WorldProvider } from "@/components/play/world-context";
+import { parseStartParam } from "@/platform/start-param";
+import { WEB_BRIDGE } from "@/platform/telegram-webapp";
 import type { AdventState, PublicAdvent } from "@/types/advent";
 import type { World } from "@/worlds/world";
 
-type Load = { status: "loading" } | { status: "ready"; state: AdventState } | { status: "error"; message: string } | { status: "closed" };
+type Load = { status: "loading" } | { status: "consent" } | { status: "ready"; state: AdventState } | { status: "error"; message: string } | { status: "closed" };
 
 const COMEBACK_KEY = "hqe-advent-comeback";
 
@@ -50,7 +55,12 @@ export function AdventGame({ advent, world, api = adventApi }: { advent: PublicA
   const { copy } = advent;
   const reduced = usePrefersReducedMotion();
   const sound = useSound();
+  const platformBoot = usePlatformBoot(advent.platforms.telegram !== null);
+  const bridge = platformBoot.status === "ready" ? platformBoot.bridge : WEB_BRIDGE;
+  const telegram = bridge.kind === "telegram";
   const [load, setLoad] = useState<Load>({ status: "loading" });
+  const [consentBusy, setConsentBusy] = useState(false);
+  const [consentError, setConsentError] = useState<string | null>(null);
   const [clock, setClock] = useState({ serverMs: 0, localMs: 0 });
   const [nowMs, setNowMs] = useState(0);
   const [openN, setOpenN] = useState<number | null>(null);
@@ -91,6 +101,11 @@ export function AdventGame({ advent, world, api = adventApi }: { advent: PublicA
       } catch (error) {
         // 401: на этом устройстве участника ещё нет, это первый визит.
         if (!(error instanceof ApiError) || error.status !== 401) throw error;
+        // В Telegram участник создаётся только после согласия на обработку данных.
+        if (telegram) {
+          setLoad({ status: "consent" });
+          return;
+        }
         try {
           adopt((await api.createParticipant()).state);
         } catch (creation) {
@@ -102,12 +117,39 @@ export function AdventGame({ advent, world, api = adventApi }: { advent: PublicA
     } catch (error) {
       setLoad({ status: "error", message: error instanceof ApiError && error.status !== 0 ? error.message : copy.errorGeneric });
     }
-  }, [adopt, api, copy.errorGeneric, copy.loginError, showHint]);
+  }, [adopt, api, copy.errorGeneric, copy.loginError, showHint, telegram]);
 
   useEffect(() => {
+    // Ждём определения платформы: в Telegram запросы подписываются initData, и первый из них не должен уйти без подписи.
+    if (platformBoot.status !== "ready") return;
+    setTelegramInitData(bridge.initData);
     // Один запуск на страницу: в dev StrictMode гоняет эффект дважды, а два параллельных первых визита создали бы двух участников.
     bootRef.current ??= boot();
-  }, [boot]);
+  }, [boot, bridge, platformBoot.status]);
+
+  // Оболочка Telegram: готовность, полный экран, цвета шапки и фона — бренд, а не тема Telegram.
+  useEffect(() => {
+    if (!telegram) return;
+    bridge.ready();
+    bridge.expand();
+    const background = getComputedStyle(document.documentElement).getPropertyValue("--bg").trim();
+    if (/^#[0-9a-f]{6}$/i.test(background)) bridge.setColors({ header: background, background });
+    if (parseStartParam(bridge.startParam).source) void recordTelegramVisit().catch(() => undefined);
+  }, [bridge, telegram]);
+
+  async function startWithConsent() {
+    setConsentBusy(true);
+    setConsentError(null);
+    try {
+      adopt((await api.createParticipant({ consent: true })).state);
+    } catch (error) {
+      // 409: адвент завершён, новых участников больше нет.
+      if (error instanceof ApiError && error.status === 409 && !/соглас/i.test(error.message)) setLoad({ status: "closed" });
+      else setConsentError(error instanceof ApiError && error.status !== 0 ? error.message : copy.errorGeneric);
+    } finally {
+      setConsentBusy(false);
+    }
+  }
 
   const refresh = useCallback(async () => {
     try {
@@ -184,13 +226,14 @@ export function AdventGame({ advent, world, api = adventApi }: { advent: PublicA
         const res = await api.openDay(n);
         adopt(res.state);
         setOpenN(n);
+        bridge.haptic("open");
       } catch (error) {
         onError(error);
       } finally {
         setBusyDoor(null);
       }
     },
-    [adopt, api, onError, sound, state]
+    [adopt, api, bridge, onError, sound, state]
   );
 
   // Кнопка письма-напоминания ведёт на `/?day=N`: после загрузки открываем этот день (один раз) и убираем параметр из адреса.
@@ -210,6 +253,16 @@ export function AdventGame({ advent, world, api = adventApi }: { advent: PublicA
     const door = emailDay.current === null ? undefined : state.doors.find((candidate) => candidate.n === emailDay.current);
     if (door && (door.status === "today" || door.status === "catchup" || door.status === "opened")) void openDoor(door.n);
   }, [state, openDoor]);
+  // Ссылка из поста ведёт на день (`startapp=d6`): открываем его один раз, если он доступен, иначе остаёмся на фасаде.
+  const deepLinked = useRef(false);
+  useEffect(() => {
+    if (!state || !telegram || deepLinked.current) return;
+    deepLinked.current = true;
+    const { day } = parseStartParam(bridge.startParam);
+    const door = day === null ? undefined : state.doors.find((candidate) => candidate.n === day);
+    if (door && (door.status === "today" || door.status === "catchup" || door.status === "opened")) void Promise.resolve().then(() => openDoor(door.n));
+  }, [state, telegram, bridge, openDoor]);
+
   function closeSheet() {
     const n = openN;
     setOpenN(null);
@@ -263,6 +316,8 @@ export function AdventGame({ advent, world, api = adventApi }: { advent: PublicA
         </div>
       </div>
     );
+  } else if (load.status === "consent") {
+    body = <TelegramConsent advent={advent} busy={consentBusy} error={consentError} onStart={() => void startWithConsent()} />;
   } else if (load.status === "closed") {
     body = (
       <section className="adv-finale" aria-labelledby="adv-closed-title">
@@ -322,7 +377,7 @@ export function AdventGame({ advent, world, api = adventApi }: { advent: PublicA
         )}
         <h2 className="adv-section-title">{copy.calendarTitle}</h2>
         <CalendarView doors={current.doors} copy={copy} timezone={advent.schedule.timezone} phase={current.phase} busy={busyDoor} onOpen={(n) => void openDoor(n)} onHint={showHint} />
-        {current.participant.email ? (
+        {telegram ? null : current.participant.email ? (
           <>
             <p className="adv-saved"><span className="adv-dot" aria-hidden="true" /> {fill(copy.saveDone, { email: current.participant.email })}</p>
             <RemindersToggle copy={copy} marketingText={advent.legal.marketingConsentText} state={current} onChange={changeReminders} onState={adopt} />
@@ -336,9 +391,20 @@ export function AdventGame({ advent, world, api = adventApi }: { advent: PublicA
 
   const anyDoorDone = state?.doors.some((door) => door.completed) ?? false;
   const sheetOpen = openN !== null || streakOpen;
+
+  // BackButton Telegram закрывает лист дня или серии и возвращает к фасаду (обработчик читает свежие замыкания через ref).
+  const goBack = useRef<() => void>(() => undefined);
+  useEffect(() => {
+    goBack.current = () => (openN !== null ? closeSheet() : closeStreak());
+  });
+  useEffect(() => {
+    if (!telegram || !sheetOpen) return;
+    return bridge.showBack(() => goBack.current());
+  }, [bridge, sheetOpen, telegram]);
   return (
+    <PlatformProvider value={bridge}>
     <WorldProvider world={world} rooms={[]}>
-      <div className="adv-app" data-phase={phase ?? "loading"} data-presentation={advent.presentation} data-sheet={sheetOpen ? "true" : "false"}>
+      <div className="adv-app" data-platform={telegram ? "telegram" : "web"} data-phase={phase ?? "loading"} data-presentation={advent.presentation} data-sheet={sheetOpen ? "true" : "false"}>
         <div className="adv-bg" aria-hidden="true">
           <Snow count={22} className="adv-snow" />
           <span className="adv-glow adv-glow-a" />
@@ -365,7 +431,7 @@ export function AdventGame({ advent, world, api = adventApi }: { advent: PublicA
                 <h2 className="adv-sheet-title">{copy.garlandSheetTitle}</h2>
               </header>
               <StreakHud state={state} copy={copy} />
-              {state.participant.email ? (
+              {telegram ? null : state.participant.email ? (
                 <>
                   <p className="adv-saved"><span className="adv-dot" aria-hidden="true" /> {fill(copy.saveDone, { email: state.participant.email })}</p>
                   <RemindersToggle copy={copy} marketingText={advent.legal.marketingConsentText} state={state} onChange={changeReminders} onState={adopt} />
@@ -380,5 +446,6 @@ export function AdventGame({ advent, world, api = adventApi }: { advent: PublicA
         <p className="adv-hint" role="status" aria-live="polite" data-visible={hint ? "true" : "false"}>{hint ?? ""}</p>
       </div>
     </WorldProvider>
+    </PlatformProvider>
   );
 }

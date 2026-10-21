@@ -26,7 +26,7 @@ export async function GET(request: NextRequest) {
   try {
     const delivery = request.nextUrl.searchParams.get("r");
     const { adventService, reminderService } = getAdventServices(tenant);
-    const current = await participantFromRequest(request, adventService);
+    const current = await participantFromRequest(request, adventService, tenant);
     const found = await reminderService.resolveOpen(delivery, current, resolveNow(request, tenant));
     if (!found || !delivery) return home();
     if (found.direct) return NextResponse.redirect(publicUrl(baseUrl, `/?day=${found.day}`), 303);

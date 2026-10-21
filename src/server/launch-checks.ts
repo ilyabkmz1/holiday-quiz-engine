@@ -44,3 +44,20 @@ export function assertRewardSecrets(env: RewardSecretEnv, rewards: ReadonlyArray
 export function resolveRewardSecret(env: RewardSecretEnv): string | undefined {
   return env.REWARD_QR_SECRET || (isPreviewEnvironment(env) ? DEV_QR_SECRET : undefined);
 }
+
+type TelegramLaunchEnv = LaunchEnv & Partial<Pick<RuntimeEnv, "PLATFORM_ID_SECRET">>;
+
+/**
+ * Если в пакете включён Telegram, боевому запуску нужны токен бота (`TELEGRAM_BOT_TOKEN` или `TELEGRAM_BOT_TOKEN__<БОТ>`) и
+ * `PLATFORM_ID_SECRET`: без них вход из Telegram не заработает. На стенде и локально — только предупреждение в `quiz:check`.
+ */
+export function assertTelegramSecrets(env: TelegramLaunchEnv, telegram: { botUsername: string } | undefined, tenant?: string, source: Record<string, string | undefined> = process.env): void {
+  if (!telegram || isPreviewEnvironment(env)) return;
+  const token = source[`TELEGRAM_BOT_TOKEN__${telegram.botUsername.toUpperCase()}`] || source.TELEGRAM_BOT_TOKEN;
+  if (!token) {
+    throw new Error(`Адвент${tenant ? ` «${tenant}»` : ""}: включён Telegram, задайте TELEGRAM_BOT_TOKEN (или TELEGRAM_BOT_TOKEN__${telegram.botUsername.toUpperCase()})`);
+  }
+  if (!env.PLATFORM_ID_SECRET) {
+    throw new Error(`Адвент${tenant ? ` «${tenant}»` : ""}: включён Telegram, задайте PLATFORM_ID_SECRET (не короче 32 символов, openssl rand -hex 32)`);
+  }
+}

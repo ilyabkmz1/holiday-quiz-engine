@@ -325,6 +325,24 @@ export async function checkAdventPack(raw: unknown, options: AdventCheckOptions 
     }
   }
 
+  // Telegram Mini App: имена проверила схема пакета; здесь — то, что нужно для деплоя.
+  const telegram = pack.platforms.telegram;
+  if (telegram) {
+    const own = `TELEGRAM_BOT_TOKEN__${telegram.botUsername.toUpperCase()}`;
+    if (!process.env[own] && !process.env.TELEGRAM_BOT_TOKEN) {
+      report.warnings.push(`platforms.telegram: в окружении нет токена бота (${own} или TELEGRAM_BOT_TOKEN): без него вход из Telegram отклоняется (для деплоя)`);
+    }
+    if (!process.env.PLATFORM_ID_SECRET) {
+      report.warnings.push("platforms.telegram: в окружении нет PLATFORM_ID_SECRET (openssl rand -hex 32): без него Telegram-участников не создать (для деплоя)");
+    }
+    if (!advent.legal.telegramConsentText) {
+      report.warnings.push("platforms.telegram: нет legal.telegramConsentText — на экране согласия в Telegram покажется общий consentText (обычно он про email); задайте текст про идентификатор Telegram, его утверждает юрист заказчика");
+    }
+    if (pack.hosts.length > 0 && pack.hosts.every((host) => /(^|\.)localhost(:\d+)?$/.test(host))) {
+      report.warnings.push("platforms.telegram: hosts только localhost, а мини-приложению нужен публичный HTTPS-адрес (URL приложения в BotFather /newapp)");
+    }
+  }
+
   // Мир и точки дней.
   const worlds = worldIds();
   if (!worlds.includes(pack.worldId)) {

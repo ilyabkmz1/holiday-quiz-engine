@@ -29,7 +29,7 @@ export async function POST(request: NextRequest) {
     const tenant = adventTenantFromHeaders(request.headers);
     const now = resolveNow(request, tenant);
     const { adventService } = getAdventServices(tenant);
-    const participant = await participantFromRequest(request, adventService);
+    const participant = await participantFromRequest(request, adventService, tenant);
     if (!participant) return unauthorized();
     const body: OpenDayResponse = { state: await adventService.setReminders(participant.id, input, now) };
     console.info(JSON.stringify({ event: "advent_reminders_toggled", participantId: participant.id, enabled: input.enabled }));

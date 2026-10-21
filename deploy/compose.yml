@@ -21,6 +21,10 @@ x-app-env: &app-env
   TLS_ASK_TOKEN: ${TLS_ASK_TOKEN:-}
   # Подпись личного QR погашения наград адвента на кассе; обязателен в production, если у адвента есть награды redeem cashier/both.
   REWARD_QR_SECRET: ${REWARD_QR_SECRET:-}
+  # Telegram Mini App (docs/engine/TELEGRAM_MINIAPP.md): токен бота и секрет псевдонимизации; обязательны в production, если в пакете включён platforms.telegram.
+  TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+  PLATFORM_ID_SECRET: ${PLATFORM_ID_SECRET:-}
+  TELEGRAM_INIT_DATA_MAX_AGE: ${TELEGRAM_INIT_DATA_MAX_AGE:-}
   SMTP_HOST: ${SMTP_HOST:?Задайте SMTP_HOST в .env}
   SMTP_PORT: ${SMTP_PORT:?Задайте SMTP_PORT в .env}
   SMTP_SECURE: ${SMTP_SECURE:-false}

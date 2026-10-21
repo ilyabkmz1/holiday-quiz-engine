@@ -7,6 +7,7 @@ import { AdventSheet } from "@/components/advent/AdventSheet";
 import { Burst } from "@/components/advent/Burst";
 import { LuckReveal, type LuckPhase } from "@/components/advent/LuckReveal";
 import { PromoCard } from "@/components/advent/PromoCard";
+import { usePlatformBridge } from "@/components/advent/platform-context";
 import { SaveProgressCard, type SaveProgressInput } from "@/components/advent/SaveProgressCard";
 import { dayLabel, fill } from "@/components/advent/format";
 import { HeroSays } from "@/components/advent/storefront/HeroSays";
@@ -74,6 +75,7 @@ type LuckRun = { phase: LuckPhase; chosen: number | null; result: AdventGrantVie
  * разбор или раскрытие награды исчезли бы в тот же момент, когда сервер отметил блок выполненным.
  */
 export function DaySheet({ advent, state, n, reduced, nowMs, api, onClose, onState, onError }: Props) {
+  const platform = usePlatformBridge();
   const { copy } = advent;
   const sound = useSound();
   const day = state.days.find((candidate) => candidate.n === n);
@@ -142,6 +144,7 @@ export function DaySheet({ advent, state, n, reduced, nowMs, api, onClose, onSta
     setActed(true);
     setPinned(index);
     sound.effect(res.block.outcome?.outcome === "perfect" ? "correct" : "miss");
+    platform.haptic(res.block.outcome?.outcome === "perfect" ? "success" : "warning");
     onState(res.state);
   }
 
@@ -169,6 +172,7 @@ export function DaySheet({ advent, state, n, reduced, nowMs, api, onClose, onSta
     setPinned(index);
     setLuck({ phase: "reveal", chosen: choice, result });
     sound.effect("lit");
+    platform.haptic("success");
     onState(res.state);
   }
 
@@ -184,7 +188,10 @@ export function DaySheet({ advent, state, n, reduced, nowMs, api, onClose, onSta
     // Догнанный день при rewardOnlyOnDay: блок отмечен, но подарка нет — сразу итог дня, а не снова «Открыть подарок».
     setPinned(res.block.reward ? index : null);
     setPromo(res.block.reward);
-    if (res.block.reward) sound.effect("lit");
+    if (res.block.reward) {
+      sound.effect("lit");
+      platform.haptic("success");
+    }
     onState(res.state);
   }
 
@@ -203,7 +210,8 @@ export function DaySheet({ advent, state, n, reduced, nowMs, api, onClose, onSta
   );
   const done = current === null;
   const dayGrants = state.grants.filter((grant) => grant.day === n && (grant.source === "day" || grant.source === "luck"));
-  const anonymous = state.participant.email === null;
+  // В Telegram вход по email скрыт: участник подтверждён самим аккаунтом, а связка с email — следующий этап.
+  const anonymous = state.participant.email === null && platform.kind !== "telegram";
   const nextButton = (label: string) => (
     <button type="button" className="adv-btn adv-btn-primary adv-next" onClick={advance} ref={focusFirst}>
       {label} <AdventIcon name="check" size={16} />

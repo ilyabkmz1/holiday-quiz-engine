@@ -378,7 +378,7 @@ model ReminderDelivery { participantId, day, sentAt, clickedAt?              @@u
 
 ## 8. Что не входит в v1
 
-- Telegram Mini App и бот как канал входа и напоминаний — этап 2, отдельный модуль `reminders.channel`.
+- Напоминания сообщениями бота и связка Telegram с email — этап 2, отдельный модуль `reminders.channel` (прототип Mini App без напоминаний — «Что реализовано в Telegram Mini App» ниже и `TELEGRAM_MINIAPP.md`).
 - Блок «слово дня».
 - Интеграции с программами лояльности (Maxma, UDS) и выгрузка в CRM.
 - Платное участие и денежные призы — никогда (244-ФЗ).
@@ -534,3 +534,15 @@ model ReminderDelivery { participantId, day, sentAt, clickedAt?              @@u
 ### Скриншоты
 
 `docs/screens/advent-a5/`: письмо-напоминание (`coffee-reminder-email.webp`), письмо-возвращение (`coffee-reminder-email-comeback.webp`), страница отписки (`coffee-unsubscribe-confirm.webp`, `coffee-unsubscribe-done.webp`), страница кнопки письма без входа (`coffee-reminder-login.webp`, `coffee-reminder-login-sent.webp`), отметки согласий в «Сохранить прогресс» (`coffee-save-consents.webp`) и включение напоминаний с текстом согласия (`coffee-reminders-consent.webp`). Письма — HTML шаблона `demo-coffee-advent`, отрисованный в Chromium (ширина 640).
+
+## Что реализовано в Telegram Mini App и чем отличается от плана
+
+Прототип показа на продажах: демо-кофейня открывается в Telegram по ссылке из канала, вход без email. Ранбук и решения — [`docs/engine/TELEGRAM_MINIAPP.md`](TELEGRAM_MINIAPP.md).
+
+- **Слой платформ** `src/platform/`: `telegram-init-data.ts` (проверка подписи `initData`, чистая функция на `node:crypto`), `start-param.ts` (`d6_s_channel`), `telegram-links.ts` (прямые ссылки и окно «Переслать»), `telegram-webapp.ts` (определение платформы, ленивая загрузка скрипта, обёртка над `Telegram.WebApp` с заглушками для веба). Под VK и MAX — новые значения `PlatformKind`.
+- **Данные.** Аддитивная миграция `20261021100000_telegram_miniapp`: `ParticipantIdentity` (только HMAC-псевдоним, уникальный индекс `(campaignSlug, platform, subjectHash)`), `Participant.platform`, `AdventSourceVisit` (счётчик переходов по меткам). `isVerified` для участника платформы истинно: коды, остатки и удача выдаются без email, инварианты A2 (атомарность кодов и остатков) не тронуты. Очистка ПДн кампании удаляет идентичности.
+- **Запросы.** Заголовок `X-Telegram-Init-Data` проверяется там, где раньше читался cookie (`participantFromRequest`); невалидный — 401 без отката на cookie, арендатор без `platforms.telegram` — 401. `DomainError` получил код `unauthorized` (401). Создание участника в Telegram — только `POST /api/advent/participants` с `{"consent": true}`, идемпотентно при гонке. `POST /api/advent/platform/visit` считает метку источника.
+- **Пакет.** `platforms.telegram: { botUsername, appShortName }` в `adventPack` (не в `advent`); `legal.telegramConsentText` — отдельный текст согласия; `quiz:check` проверяет формат имён и предупреждает об отсутствии токена, `PLATFORM_ID_SECRET`, текста согласия и публичного хоста.
+- **Клиент.** Экран согласия, BackButton, тактильный отклик, цвета шапки = бренд, safe area, deep link `startapp=dN`, «Поделиться» ведёт на мини-приложение; email-вход и напоминания в Telegram скрыты.
+- **Админка.** Блок «Ссылки для поста»: ссылка на мини-приложение, на каждый день, текст поста, переходы по источникам.
+- **Отступления.** (1) `X-Frame-Options: DENY` заменён политикой по арендатору в `src/proxy.ts` (Telegram Web встраивает мини-приложение во фрейм), Caddy получил `?Content-Security-Policy`. (2) Псевдоним привязан к кампании (`telegram:<кампания>:<id>`), а не только к id. (3) Вход по email для участника Telegram пока 409 — связка с email отложена.
