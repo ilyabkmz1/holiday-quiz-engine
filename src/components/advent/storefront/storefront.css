@@ -152,7 +152,7 @@
 .adv-host svg { display: block; width: 100%; height: 100%; overflow: visible; }
 
 /* Хозяин на улице: слой внутри стены, высота героя — доля ряда окон (масштаб следует за фасадом); ноги стоят на снегу под стеной. Двигает хук через transform дорожки. */
-.adv-street { position: absolute; z-index: 4; left: 0; right: 0; bottom: -9px; height: calc(var(--ch) * 0.8); pointer-events: none; }
+.adv-street { position: absolute; z-index: 4; left: 0; right: 0; bottom: -9px; height: calc(var(--ch) * 0.88); pointer-events: none; }
 .adv-street-track { position: absolute; inset: 0; transform: translate3d(50%, 0, 0); will-change: transform; }
 .adv-street-host { position: absolute; left: 0; bottom: 0; height: 100%; aspect-ratio: 40 / 64; transform: translateX(-50%); filter: drop-shadow(0 3px 4px color-mix(in srgb, var(--void) 45%, transparent)); }
 .adv-street-host svg { display: block; width: 100%; height: 100%; overflow: visible; }
