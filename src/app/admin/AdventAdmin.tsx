@@ -185,16 +185,16 @@ export async function AdventAdmin({ tenant, now, asOf }: { tenant: AdventTenant;
               Метка <code>s_{postSource}</code> в ссылках считает переходы по источникам (счётчик по дням, без участников). Другая метка — свой
               источник: <code>d6_s_chat</code>, латиница, цифры и дефис, до 24 символов.
             </p>
-            <p><a href={miniAppLink(telegram, { source: postSource })} target="_blank" rel="noopener noreferrer"><code data-testid="tg-link-main">{miniAppLink(telegram, { source: postSource })}</code></a>{" "}
+            <p className="admin-wrap"><a href={miniAppLink(telegram, { source: postSource })} target="_blank" rel="noopener noreferrer"><code data-testid="tg-link-main">{miniAppLink(telegram, { source: postSource })}</code></a>{" "}
               <CopyLink value={miniAppLink(telegram, { source: postSource })} /></p>
             <h3>Текст поста (заглушка)</h3>
-            <pre className="admin-note" data-testid="tg-post-text">{`🎄 ${advent.title}\n\nОткрылось новое окно! Заходите за историей, заданием и подарком дня:\n${miniAppLink(telegram, { source: postSource })}`}</pre>
+            <pre className="admin-note admin-wrap" data-testid="tg-post-text">{`🎄 ${advent.title}\n\nОткрылось новое окно! Заходите за историей, заданием и подарком дня:\n${miniAppLink(telegram, { source: postSource })}`}</pre>
             <CopyLink label="Скопировать текст поста" value={`🎄 ${advent.title}\n\nОткрылось новое окно! Заходите за историей, заданием и подарком дня:\n${miniAppLink(telegram, { source: postSource })}`} />
             <h3>Ссылки на отдельные дни</h3>
             <div className="table-scroll">
               <table className="left">
                 <thead>
-                  <tr><th scope="col">День</th><th scope="col">Ссылка</th><th scope="col"><span className="sr-only">Копирование</span></th></tr>
+                  <tr><th scope="col">День</th><th scope="col">Ссылка</th><th scope="col">Копировать</th></tr>
                 </thead>
                 <tbody>
                   {advent.days.map((day) => {

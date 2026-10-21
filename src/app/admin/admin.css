@@ -39,6 +39,9 @@
 .timing dd { margin: 4px 0 0; font-size: 24px; font-weight: 800; font-variant-numeric: tabular-nums; }
 
 .table-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+/* Ссылка на мини-приложение и текст поста переносятся, а не растягивают карточку на телефоне. */
+.admin-wrap, .admin-wrap code { overflow-wrap: anywhere; }
+pre.admin-wrap { white-space: pre-wrap; }
 .admin table { width: 100%; border-collapse: collapse; font-size: 14px; font-variant-numeric: tabular-nums; }
 .admin th, .admin td { padding: 8px 10px; text-align: right; border-bottom: 1px solid var(--a-line); white-space: nowrap; }
 .admin thead th { font-size: 12px; font-weight: 600; color: var(--a-muted); white-space: normal; vertical-align: bottom; }
