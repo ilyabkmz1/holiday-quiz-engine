@@ -1,4 +1,5 @@
-import { loadAdventAnalytics, loadAdventMetrics } from "@/server/advent-metrics";
+import { loadAdventMetrics } from "@/server/advent-metrics";
+import { loadTenantAnalytics } from "@/server/advent-report";
 import { getAdventServices } from "@/server/container";
 import type { AdventTenant } from "@/server/tenants";
 
@@ -16,7 +17,7 @@ export async function AdventAdmin({ tenant, now, asOf }: { tenant: AdventTenant;
   const { advent } = tenant;
   const { rewardService, repository } = getAdventServices(tenant);
   const rows = await rewardService.overview();
-  const [metrics, data] = await Promise.all([loadAdventMetrics(repository, advent, now), loadAdventAnalytics(repository, advent, now, rows)]);
+  const [metrics, data] = await Promise.all([loadAdventMetrics(repository, advent, now), loadTenantAnalytics(tenant, now)]);
   const { reminders } = metrics;
   const listRewards = new Set(advent.rewards.filter((reward) => reward.codes && "list" in reward.codes).map((reward) => reward.id));
 
@@ -123,7 +124,7 @@ export async function AdventAdmin({ tenant, now, asOf }: { tenant: AdventTenant;
         <section aria-labelledby="teams-title" className="admin-card">
           <h2 id="teams-title">Команды</h2>
           <TeamsTable data={data} />
-          <p className="admin-note">Рейтинг — по среднему числу дверей на участника; команды меньше {data.minGroup} человек скрыты. В публичном рейтинге порог — 3 человека.</p>
+          <p className="admin-note">Рейтинг — по среднему числу дверей на участника; команды меньше {data.minGroup} человек скрыты. Тот же порог в публичном рейтинге, где цифры к тому же округлены, а размер команды дан интервалом.</p>
         </section>
       )}
 

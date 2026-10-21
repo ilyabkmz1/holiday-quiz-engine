@@ -80,17 +80,21 @@ export default async function ReportPage({ searchParams }: { searchParams: Promi
       </section>
 
       {data.bestDays.length > 0 && (
-        <section aria-labelledby="r-best" className="report-pair">
-          <div>
-            <h2 id="r-best">Лучшие дни</h2>
-            <DayRank days={data.bestDays} />
-          </div>
-          {data.weakDays.length > 0 && (
+        <section aria-labelledby="r-best">
+          <h2 id="r-best">Лучшие и слабые дни</h2>
+          <p className="report-note">Сравниваем дни по людям, которые уже играли до этого дня: сколько из них открыли дверь в тот же день. Тех, кто пришёл в этот день впервые, не считаем — в первый визит почти все открывают дверь, и первые дни выглядели бы лучше, чем есть.</p>
+          <div className="report-pair">
             <div>
-              <h2>Слабые дни</h2>
-              <DayRank days={data.weakDays} />
+              <h3>Лучшие</h3>
+              <DayRank days={data.bestDays} />
             </div>
-          )}
+            {data.weakDays.length > 0 && (
+              <div>
+                <h3>Слабые</h3>
+                <DayRank days={data.weakDays} />
+              </div>
+            )}
+          </div>
         </section>
       )}
 
@@ -158,7 +162,7 @@ export default async function ReportPage({ searchParams }: { searchParams: Promi
           <li><b>Участник</b> — устройство или аккаунт, зашедший в кампанию; <b>игрок</b> — открывший хотя бы одну дверь.</li>
           <li><b>Дни</b> делятся по времени кампании ({data.timezone}). «В свой день» — дверь открыта, пока её день не закончился; «догнали» — открыта позже по правилам догоняния.</li>
           <li><b>Активные</b> в день — те, кто открыл любую дверь до конца этого дня; <b>пропустили</b> — активные, не открывшие этот день вовсе. Текущий день считается предварительно.</li>
-          <li><b>Лучшие и слабые дни</b> сравниваются по тем, кто играл и раньше (открыл первую дверь до начала дня): новички почти всегда открывают текущую дверь, и без этого первые дни выглядели бы лучше, чем есть.</li>
+          <li><b>Лучшие и слабые дни</b> — какая доля людей, игравших до этого дня, открыла дверь в тот же день. Пришедших в этот день впервые не считаем: в первый визит почти все открывают дверь.</li>
           <li><b>D1 / D3 / D7</b> — доля участников, открывших дверь через 1 / 3 / 7 суток после первого визита; в расчёт входят только когорты, у которых срок наступил и пришёлся на дни кампании (после финала двери не открываются). Когорты меньше {data.minGroup} человек не показываются.</li>
           <li><b>Серия</b> — дни подряд, открытые вовремя; пропуск прощают заморозки по правилам кампании.</li>
           <li><b>Погашение</b> считается только по наградам с кодом для кассы или сайта; баллы и участие в финале не погашаются.</li>
@@ -172,7 +176,7 @@ export default async function ReportPage({ searchParams }: { searchParams: Promi
 function DayRank({ days }: { days: Array<{ day: number; title: string; returningOnTime: number; returning: number; returningShare: number | null }> }) {
   return (
     <table className="left">
-      <thead><tr><th scope="col">День</th><th scope="col">Открыли в свой день</th><th scope="col">Доля игравших раньше</th></tr></thead>
+      <thead><tr><th scope="col">День</th><th scope="col">Открыли в тот же день (из уже игравших)</th><th scope="col">Доля</th></tr></thead>
       <tbody>
         {days.map((day) => (
           <tr key={day.day}>

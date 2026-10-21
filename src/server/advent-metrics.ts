@@ -1,7 +1,6 @@
 import type { AdventConfig } from "@/config/advent-schema";
 import {
   MIN_GROUP,
-  MIN_PUBLIC_TEAM,
   adventPhase,
   bestStreakHistogram,
   buildInsights,
@@ -10,6 +9,7 @@ import {
   dayUnlockAt,
   histogramStats,
   localDateAt,
+  rankPublicTeams,
   rankTeams,
   retentionRate,
   share
@@ -288,10 +288,30 @@ export async function loadAdventAnalytics(
   return data;
 }
 
-/** Сколько секунд публичный рейтинг команд живёт в кэше процесса. */
+export type CacheEntry<T> = { at: number; createdAt: number; value: Promise<T> };
+
+/**
+ * Кэш в процессе на арендатора: в нём лежит обещание, поэтому одновременные запросы после истечения срока ждут один пересчёт,
+ * а не запускают каждый свой. Запись годна, пока ей меньше `ttl` и по часам кампании (`now`, учитывает `?asOf=`), и по
+ * настоящим часам: повторный показ с тем же `asOf` после `seed-demo` не застревает на старых данных. Ошибка в кэше не остаётся.
+ */
+export function cachedPerTenant<T>(cache: Map<string, CacheEntry<T>>, key: string, now: Date, ttl: number, load: (at: Date) => Promise<T>): CacheEntry<T> {
+  const cached = cache.get(key);
+  const age = cached ? now.getTime() - cached.at : -1;
+  if (cached && age >= 0 && age < ttl && Date.now() - cached.createdAt < ttl) return cached;
+  const value = load(now);
+  const entry = { at: now.getTime(), createdAt: Date.now(), value };
+  cache.set(key, entry);
+  value.catch(() => {
+    if (cache.get(key) === entry) cache.delete(key);
+  });
+  return entry;
+}
+
+/** Сколько миллисекунд публичный рейтинг команд живёт в кэше процесса. */
 export const LEADERBOARD_TTL_MS = 3 * 60 * 1000;
 
-const leaderboardCache = new Map<string, { at: number; teams: Promise<TeamLeaderboard["teams"]> }>();
+const leaderboardCache = new Map<string, CacheEntry<TeamLeaderboard["teams"]>>();
 
 /** Сбросить кэш рейтинга (тесты). */
 export function clearLeaderboardCache(): void {
@@ -299,10 +319,10 @@ export function clearLeaderboardCache(): void {
 }
 
 /**
- * Публичный рейтинг команд: среднее число открытых дверей на участника команды и доля участников, открывших хотя бы одну дверь.
- * Имён и идентификаторов людей нет; команда меньше `MIN_PUBLIC_TEAM` участников — без цифр и вне рейтинга.
- * Кэшируется в процессе на `LEADERBOARD_TTL_MS`: тяжёлый запрос не выполняется на каждый открытый лист серии. В кэше лежит
- * обещание, поэтому одновременные запросы после истечения срока ждут один пересчёт, а не запускают каждый свой.
+ * Публичный рейтинг команд: среднее число открытых дверей на участника команды и доля участников, открывших хотя бы одну дверь,
+ * округлённые (`rankPublicTeams`); размер команды — интервалом. Имён и идентификаторов людей нет; команда меньше `MIN_GROUP`
+ * участников — без цифр и вне рейтинга. Кэшируется в процессе на `LEADERBOARD_TTL_MS` (`cachedPerTenant`): тяжёлый запрос не
+ * выполняется на каждый открытый лист серии.
  */
 export async function loadTeamLeaderboard(
   repository: Pick<AnalyticsRepository, "teamStats">,
@@ -311,22 +331,13 @@ export async function loadTeamLeaderboard(
   mine: string | null
 ): Promise<TeamLeaderboard | null> {
   if (advent.audience.leaderboard !== "teams") return null;
-  const cached = leaderboardCache.get(advent.slug);
-  let entry = cached && now.getTime() - cached.at < LEADERBOARD_TTL_MS && now.getTime() >= cached.at ? cached : null;
-  if (!entry) {
-    const teams = repository.teamStats(advent.slug).then((stats) => {
+  const entry = cachedPerTenant(leaderboardCache, advent.slug, now, LEADERBOARD_TTL_MS, () =>
+    repository.teamStats(advent.slug).then((stats) => {
       const rows = new Map(stats.map((row) => [row.teamId, row]));
-      return rankTeams(
-        (advent.audience.teams ?? []).map((team) => ({ id: team.id, title: team.title, members: rows.get(team.id)?.members ?? 0, players: rows.get(team.id)?.players ?? 0, doors: rows.get(team.id)?.doors ?? 0, points: 0 })),
-        MIN_PUBLIC_TEAM
-      ).map((team) => ({ id: team.id, title: team.title, rank: team.rank, hidden: team.hidden, members: team.hidden ? null : team.members, avgDoors: team.avgDoors, activeShare: team.activeShare }));
-    });
-    entry = { at: now.getTime(), teams };
-    leaderboardCache.set(advent.slug, entry);
-    // Ошибка запроса не должна застрять в кэше на весь срок: следующий запрос попробует снова.
-    teams.catch(() => {
-      if (leaderboardCache.get(advent.slug) === entry) leaderboardCache.delete(advent.slug);
-    });
-  }
-  return { generatedAt: now.toISOString(), teams: await entry.teams, mine };
+      return rankPublicTeams(
+        (advent.audience.teams ?? []).map((team) => ({ id: team.id, title: team.title, members: rows.get(team.id)?.members ?? 0, players: rows.get(team.id)?.players ?? 0, doors: rows.get(team.id)?.doors ?? 0, points: 0 }))
+      );
+    })
+  );
+  return { generatedAt: now.toISOString(), teams: await entry.value, mine };
 }

@@ -1,7 +1,7 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { dayLocalDate } from "@/domain/advent";
-import { clearLeaderboardCache, loadAdventAnalytics, loadTeamLeaderboard, LEADERBOARD_TTL_MS } from "@/server/advent-metrics";
+import { cachedPerTenant, clearLeaderboardCache, loadAdventAnalytics, loadTeamLeaderboard, LEADERBOARD_TTL_MS, type CacheEntry } from "@/server/advent-metrics";
 import { daysMetricsToCsv, rewardsMetricsToCsv, cohortsMetricsToCsv } from "@/server/csv";
 
 import { adventConfig, at, newAdventService, playDay, verifyParticipant } from "../support/advent";
@@ -204,11 +204,11 @@ describe("команды (corporate)", () => {
     }
   }
 
-  it("рейтинг по среднему, малые команды скрыты в панели (порог 5) и в публичном рейтинге (порог 3)", async () => {
+  it("один порог 5 везде: команды из 3 и 4 человек без цифр и в панели, и в публичном рейтинге", async () => {
     const ctx = newAdventService(config());
     await join(ctx, "t-north", 6, 3); // 6 человек × 3 двери: среднее 3,0
-    await join(ctx, "t-south", 4, 4); // 4 человека × 4 двери: среднее 4,0 — видна в публичном (≥3), скрыта в панели (<5)
-    await join(ctx, "t-east", 2, 4); // 2 человека: скрыта везде
+    await join(ctx, "t-south", 4, 4); // 4 человека — меньше порога
+    await join(ctx, "t-east", 3, 4); // 3 человека — меньше порога
     const now = at(4, 12);
     const data = await loadAdventAnalytics(ctx.repository, ctx.advent, now, await ctx.rewards.overview());
     expect(data.teams!.map((team) => [team.id, team.rank, team.hidden, team.members, team.avgDoors])).toEqual([
@@ -217,45 +217,66 @@ describe("команды (corporate)", () => {
       ["t-south", null, true, null, null]
     ]);
     expect(data.teams![0]).toMatchObject({ activeShare: 1, points: 0 });
+    for (const team of data.teams!.filter((row) => row.hidden)) expect(team).toMatchObject({ players: null, activeShare: null, points: null, avgPoints: null });
 
     const board = await loadTeamLeaderboard(ctx.repository, ctx.advent, now, "t-south");
     expect(board!.mine).toBe("t-south");
-    expect(board!.teams.map((team) => [team.id, team.rank, team.hidden, team.members, team.avgDoors])).toEqual([
-      ["t-south", 1, false, 4, 4],
-      ["t-north", 2, false, 6, 3],
-      ["t-east", null, true, null, null]
+    expect(board!.teams).toEqual([
+      { id: "t-north", title: "Север", rank: 1, hidden: false, size: "5–9", avgDoors: 3, activeShare: 1 },
+      { id: "t-east", title: "Восток", rank: null, hidden: true, size: null, avgDoors: null, activeShare: null },
+      { id: "t-south", title: "Юг", rank: null, hidden: true, size: null, avgDoors: null, activeShare: null }
     ]);
-    // В публичном ответе нет ничего, кроме агрегатов.
-    expect(JSON.stringify(board)).not.toMatch(/participant|email|accessKey/i);
+    // В публичном ответе только округлённые агрегаты: ни людей, ни точного числа участников.
+    expect(JSON.stringify(board)).not.toMatch(/participant|email|accessKey|members|players|"6"|:6[,}]/i);
+  });
+
+  it("публичный рейтинг округляет среднее до 0,5 и долю до 10 п. п.; порядок — по округлённым значениям", async () => {
+    const ctx = newAdventService(config());
+    // Север: 7 человек, 3 открыли 4 двери → 12/7 ≈ 1,71 → 1,5; доля 3/7 ≈ 0,43 → 0,4.
+    // Юг: 6 человек, 3 открыли 3 двери → 9/6 = 1,5; доля 0,5. Точное среднее у Севера выше, но округлённые равны,
+    // а доля у Юга выше: Юг первый. Восток: 5 человек, 2 открыли 4 → 8/5 = 1,6 → 1,5; доля 0,4 — равен Северу, делят место.
+    await join(ctx, "t-north", 3, 4);
+    await join(ctx, "t-north", 4, 0);
+    await join(ctx, "t-south", 3, 3);
+    await join(ctx, "t-south", 3, 0);
+    await join(ctx, "t-east", 2, 4);
+    await join(ctx, "t-east", 3, 0);
+    const board = await loadTeamLeaderboard(ctx.repository, ctx.advent, at(4, 12), null);
+    expect(board!.teams.map((team) => [team.id, team.rank, team.avgDoors, team.activeShare, team.size])).toEqual([
+      ["t-south", 1, 1.5, 0.5, "5–9"],
+      ["t-east", 2, 1.5, 0.4, "5–9"],
+      ["t-north", 2, 1.5, 0.4, "5–9"]
+    ]);
   });
 
   it("публичный рейтинг кэшируется на несколько минут", async () => {
     const ctx = newAdventService(config());
-    await join(ctx, "t-north", 3, 1);
+    await join(ctx, "t-north", 5, 1);
     const now = at(2, 12);
     const first = await loadTeamLeaderboard(ctx.repository, ctx.advent, now, null);
-    await join(ctx, "t-north", 3, 1);
+    expect(first!.teams[0].size).toBe("5–9");
+    await join(ctx, "t-north", 5, 1);
     const cached = await loadTeamLeaderboard(ctx.repository, ctx.advent, new Date(now.getTime() + LEADERBOARD_TTL_MS - 1000), null);
-    expect(cached!.teams[0].members).toBe(first!.teams[0].members);
+    expect(cached!.teams[0].size).toBe("5–9");
     const fresh = await loadTeamLeaderboard(ctx.repository, ctx.advent, new Date(now.getTime() + LEADERBOARD_TTL_MS), null);
-    expect(fresh!.teams[0].members).toBe(6);
+    expect(fresh!.teams[0].size).toBe("10–24");
   });
 
   it("одновременные запросы после истечения кэша ждут один пересчёт; ошибка в кэше не застревает", async () => {
     const ctx = newAdventService(config());
-    await join(ctx, "t-north", 3, 1);
+    await join(ctx, "t-north", 5, 1);
     let calls = 0;
     const counting = { teamStats: (slug: string) => { calls += 1; return ctx.repository.teamStats(slug); } };
     const now = at(2, 12);
     const boards = await Promise.all(Array.from({ length: 5 }, () => loadTeamLeaderboard(counting, ctx.advent, now, null)));
     expect(calls).toBe(1);
-    expect(new Set(boards.map((board) => board!.teams[0].members))).toEqual(new Set([3]));
+    expect(new Set(boards.map((board) => board!.teams[0].size))).toEqual(new Set(["5–9"]));
 
     clearLeaderboardCache();
     let failNext = true;
     const flaky = { teamStats: async (slug: string) => { if (failNext) { failNext = false; throw new Error("db down"); } return ctx.repository.teamStats(slug); } };
     await expect(loadTeamLeaderboard(flaky, ctx.advent, now, null)).rejects.toThrow("db down");
-    expect((await loadTeamLeaderboard(flaky, ctx.advent, now, null))!.teams[0].members).toBe(3);
+    expect((await loadTeamLeaderboard(flaky, ctx.advent, now, null))!.teams[0].hidden).toBe(false);
   });
 
   it("без рейтинга по командам загрузчик возвращает null", async () => {
@@ -297,5 +318,31 @@ describe("CSV метрик", () => {
       { date: "2026-12-21", size: 10, hidden: false, cells: [{ offset: 1, count: 4, share: 0.4 }] }
     ] });
     expect(csv.split("\r\n").slice(1, 3)).toEqual([`"2026-12-20","","",""`, `"2026-12-21","10","4","0.4"`]);
+  });
+});
+
+describe("cachedPerTenant: кэш метрик на арендатора", () => {
+  afterEach(() => vi.useRealTimers());
+
+  it("один пересчёт на одновременные запросы; срок — и по часам кампании, и по настоящим; ошибка не кэшируется", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-12-23T09:00:00Z"));
+    const cache = new Map<string, CacheEntry<number>>();
+    let calls = 0;
+    const load = async () => (calls += 1);
+    const now = at(4, 12);
+    const values = await Promise.all(Array.from({ length: 5 }, () => cachedPerTenant(cache, "t", now, 60_000, load).value));
+    expect([calls, new Set(values).size]).toEqual([1, 1]);
+    // Тот же `asOf` (часы кампании стоят) — кэш живёт, пока не прошла минута по настоящим часам.
+    expect(await cachedPerTenant(cache, "t", now, 60_000, load).value).toBe(1);
+    vi.setSystemTime(new Date("2026-12-23T09:01:00Z"));
+    expect(await cachedPerTenant(cache, "t", now, 60_000, load).value).toBe(2);
+    // Другой арендатор и момент в прошлом — свой пересчёт.
+    expect(await cachedPerTenant(cache, "other", now, 60_000, load).value).toBe(3);
+    expect(await cachedPerTenant(cache, "t", new Date(now.getTime() - 1000), 60_000, load).value).toBe(4);
+
+    const failing = cachedPerTenant(cache, "t", new Date(now.getTime() + 120_000), 60_000, async () => { throw new Error("db down"); });
+    await expect(failing.value).rejects.toThrow("db down");
+    expect(cache.has("t")).toBe(false);
   });
 });
