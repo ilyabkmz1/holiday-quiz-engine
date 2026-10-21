@@ -63,20 +63,27 @@
 
 Нужен локальный `npm run dev` и туннель. Закрытый стенд (`STAGING_*`) для этого **не годится**: Telegram не умеет вводить Basic-пароль.
 
-```bash
-# 1. База (любой PostgreSQL) и миграции
-export DATABASE_URL=postgresql://quiz:quiz@127.0.0.1:5432/quiz
-npm ci && npm run db:generate && npm run db:migrate
+Понадобятся Node.js 22, PostgreSQL (или Docker: `docker compose up -d db`) и `cloudflared` (macOS: `brew install cloudflared`, Windows: `winget install --id Cloudflare.cloudflared`, Linux — пакет со страницы [cloudflared](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/)).
 
-# 2. Туннель — запомните выданный адрес https://<что-то>.trycloudflare.com
+```bash
+# 1. Зависимости, окружение и база. .env из примера уже содержит всё обязательное (SMTP, ADMIN_*) для локального запуска;
+#    DATABASE_URL в нём поправьте под свой PostgreSQL.
+npm ci
+cp .env.example .env
+npm run db:generate && npm run db:migrate
+
+# 2. Секрет псевдонимизации — один раз, в .env. Не генерируйте его при каждом запуске:
+#    с новым секретом сервер не узнает прежних игроков, и прогресс «пропадёт».
+echo "PLATFORM_ID_SECRET=$(openssl rand -hex 32)" >> .env
+
+# 3. Туннель (отдельный терминал) — запомните выданный адрес https://<что-то>.trycloudflare.com
 cloudflared tunnel --url http://localhost:3000
 
-# 3. Сервер: TENANT заставляет любой Host (в том числе туннеля) показывать demo-coffee-advent,
+# 4. Сервер: TENANT заставляет любой Host (в том числе туннеля) показывать demo-coffee-advent,
 #    APP_URL = адрес туннеля (по нему проверяется Origin запросов), токен — от вашего бота.
 TENANT=demo-coffee-advent \
 APP_URL=https://<что-то>.trycloudflare.com \
 TELEGRAM_BOT_TOKEN=<токен бота> \
-PLATFORM_ID_SECRET=$(openssl rand -hex 32) \
 npm run dev -- --hostname 127.0.0.1 --port 3000
 ```
 
@@ -84,7 +91,7 @@ npm run dev -- --hostname 127.0.0.1 --port 3000
 
 - `*.trycloudflare.com` уже разрешён для `next dev` (`allowedDevOrigins`); другой туннель (ngrok и пр.) — `ALLOWED_DEV_ORIGINS=<хост>`.
 - Адрес туннеля меняется при каждом запуске `cloudflared`: после смены обновите Web App URL в BotFather (`/myapps` → приложение → *Edit Web App URL*) и перезапустите сервер с новым `APP_URL`. Для постоянной демонстрации возьмите именованный туннель Cloudflare или поддомен на любом VPS.
-- Время демо двигает `?asOf=<ISO>` (для пакетов с `demo: true`). В Telegram параметры адреса задаёт Web App URL, поэтому для показа «как в день 6» можно завести отдельное приложение с URL `https://<туннель>/?asOf=2026-12-25T12:00:00%2B03:00`.
+- **До старта кампании (у демо — 20 декабря) приложение показывает только отсчёт.** Время демо двигает `?asOf=<ISO>` (для пакетов с `demo: true`). В Telegram параметры адреса задаёт Web App URL, поэтому для показа с открытыми окнами укажите в BotFather URL вида `https://<туннель>/?asOf=2026-12-24T12:00:00%2B03:00` (окно 5) или заведите для этого отдельное приложение.
 - Без бота вообще: `npm run telegram:shots` и E2E подменяют `window.Telegram.WebApp` фейком с настоящей подписью (раздел 5).
 
 ### Тестовая среда Telegram
