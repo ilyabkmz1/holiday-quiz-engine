@@ -117,6 +117,19 @@ describe("loadAdventAnalytics: ручной сценарий на фикстур
 });
 
 describe("loadAdventAnalytics: пустая кампания и границы", () => {
+  it("после финала когорта последнего дня не тянет D1 вниз: вернуться ей было некуда", async () => {
+    const ctx = newAdventService();
+    // Шесть человек пришли 31.12 (день 12) и открыли его; 01.01 — уже финал, двери не открываются.
+    for (let index = 0; index < 6; index += 1) {
+      const participant = (await ctx.service.createParticipant(at(12, 10))).participant;
+      await ctx.service.openDay(participant.id, 12, at(12, 11));
+    }
+    const data = await loadAdventAnalytics(ctx.repository, ctx.advent, new Date("2027-01-03T12:00:00+03:00"), await ctx.rewards.overview());
+    expect(data.kpis.d1).toEqual({ count: 0, base: 0, share: null });
+    expect(data.cohorts.rows).toHaveLength(1);
+    expect(data.cohorts.rows[0].cells.every((cell) => cell.share === null && cell.count === null)).toBe(true);
+  });
+
   it("пустая кампания: нули, прочерки, без деления на ноль", async () => {
     const ctx = newAdventService();
     const data = await loadAdventAnalytics(ctx.repository, ctx.advent, at(3, 12), await ctx.rewards.overview());

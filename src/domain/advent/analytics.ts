@@ -56,16 +56,22 @@ export function bestStreakHistogram(
 
 export type CohortRaw = { date: string; size: number; returned: ReadonlyArray<{ offset: number; count: number }> };
 
+/** Локальные даты, в которые дверь вообще можно открыть: от даты первого дня до последней даты перед финалом. */
+export type OpenableDates = { first: string; last: string };
+
 /**
  * Возврат на день `offset`: доля участников, вернувшихся (открывших дверь) через `offset` суток после первого визита.
  * В основание входят только созревшие когорты, у которых этот день уже наступил (`дата + offset ≤ today`): недождавшиеся
- * не считаются «не вернувшимися».
+ * не считаются «не вернувшимися». Если день возврата выпадает на дату, когда двери не открываются (до первого дня или после
+ * финала), когорта тоже не входит в основание: вернуться ей было некуда.
  */
-export function retentionRate(cohorts: readonly CohortRaw[], offset: number, today: string): { count: number; base: number } {
+export function retentionRate(cohorts: readonly CohortRaw[], offset: number, today: string, openable?: OpenableDates): { count: number; base: number } {
   let count = 0;
   let base = 0;
   for (const cohort of cohorts) {
-    if (addDays(cohort.date, offset) > today) continue;
+    const target = addDays(cohort.date, offset);
+    if (target > today) continue;
+    if (openable && (target < openable.first || target > openable.last)) continue;
     base += cohort.size;
     count += cohort.returned.find((row) => row.offset === offset)?.count ?? 0;
   }

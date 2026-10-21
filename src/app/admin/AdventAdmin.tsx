@@ -107,7 +107,7 @@ export async function AdventAdmin({ tenant, now, asOf }: { tenant: AdventTenant;
       <section aria-labelledby="cohort-title" className="admin-card">
         <h2 id="cohort-title">Когорты: возврат по дню первого визита</h2>
         <CohortTable data={data} />
-        <p className="admin-note">Когорта — участники, впервые пришедшие в этот день (по времени кампании). D1/D3/D7 — доля открывших дверь через 1/3/7 суток. Когорты меньше {data.minGroup} человек скрыты. Прочерк — срок ещё не наступил.</p>
+        <p className="admin-note">Когорта — участники, впервые пришедшие в этот день (по времени кампании). D1/D3/D7 — доля открывших дверь через 1/3/7 суток. Когорты меньше {data.minGroup} человек скрыты. Прочерк — срок ещё не наступил или выпал на дни, когда двери уже не открываются (после финала).</p>
       </section>
 
       <section aria-labelledby="reward-funnel-title" className="admin-card">

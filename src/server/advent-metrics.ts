@@ -146,8 +146,10 @@ export async function loadAdventAnalytics(
   const doorsStats = histogramStats(raw.doorsHistogram.map((row) => ({ value: row.doors, count: row.count })));
   const streakHistogram = bestStreakHistogram(raw.onTimePatterns, today, { endowedDay: advent.streak.endowedDay, freezes: advent.streak.freezes, goals: advent.streak.goals });
   const streakStats = histogramStats(streakHistogram);
-  const d1 = retentionRate(raw.cohorts, 1, todayLocal);
-  const d7 = retentionRate(raw.cohorts, 7, todayLocal);
+  // Последняя дата, когда ещё можно открыть дверь, — локальная дата мгновения перед финалом.
+  const openable = { first: dayLocalDate(1, schedule), last: localDateAt(new Date(finale.getTime() - 1), schedule.timezone) };
+  const d1 = retentionRate(raw.cohorts, 1, todayLocal, openable);
+  const d7 = retentionRate(raw.cohorts, 7, todayLocal, openable);
 
   const cohortRows: AnalyticsCohort[] = raw.cohorts.map((cohort) => {
     const hidden = cohort.size < MIN_GROUP;
@@ -156,7 +158,7 @@ export async function loadAdventAnalytics(
       size: hidden ? null : cohort.size,
       hidden,
       cells: RETENTION_OFFSETS.map((offset) => {
-        const matured = retentionRate([cohort], offset, todayLocal).base > 0;
+        const matured = retentionRate([cohort], offset, todayLocal, openable).base > 0;
         const count = cohort.returned.find((entry) => entry.offset === offset)?.count ?? 0;
         return { offset, count: hidden || !matured ? null : count, share: hidden || !matured ? null : share(count, cohort.size) };
       })

@@ -183,3 +183,21 @@ describe("buildInsights: правила выводов", () => {
     expect(text).toContain("Юг");
   });
 });
+
+describe("retentionRate: срок возврата вне дней кампании", () => {
+  const cohorts = [
+    { date: "2026-12-29", size: 10, returned: [{ offset: 1, count: 4 }] },
+    { date: "2026-12-31", size: 8, returned: [] }
+  ];
+  const openable = { first: "2026-12-20", last: "2026-12-31" };
+
+  it("когорта, чей D1 выпал после финала, не считается «не вернувшейся»", () => {
+    // Без ограничения 31.12 (+1 = 01.01, двери уже закрыты) занижала бы возврат: 4 из 18.
+    expect(retentionRate(cohorts, 1, "2027-01-05")).toEqual({ count: 4, base: 18 });
+    expect(retentionRate(cohorts, 1, "2027-01-05", openable)).toEqual({ count: 4, base: 10 });
+  });
+
+  it("день возврата до первого дня кампании тоже вне основания", () => {
+    expect(retentionRate([{ date: "2026-12-18", size: 6, returned: [] }], 1, "2026-12-25", openable)).toEqual({ count: 0, base: 0 });
+  });
+});
