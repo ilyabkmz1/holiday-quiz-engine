@@ -1,5 +1,6 @@
 import { expect, test as base, type APIRequestContext, type BrowserContext, type Locator, type Page } from "@playwright/test";
 
+import { marketingConsentText } from "../../../src/config/legal";
 import { adventPackSchema } from "../../../src/config/pack";
 import { asOfForDay } from "../../../src/tools/advent-asof";
 import { escapeRegExp, fillTask as driveTask, finishSpeech, storefrontNames } from "../../../src/tools/advent-driver";
@@ -28,6 +29,8 @@ if (!raw) throw new Error(`E2E_TENANT=${tenantSlug}: такого пакета �
 export const pack = adventPackSchema.parse(raw);
 export const advent = pack.advent;
 export const { copy, schedule } = advent;
+/** Подпись отметки «напоминания» — согласие на рассылку из `legal` пакета. */
+export const marketingLabel = marketingConsentText(advent.legal);
 export type PackTask = Extract<(typeof advent.days)[number]["blocks"][number], { type: "task" }>["task"];
 
 /** Нужен ли вход по ссылке для наград пакета (как `rewardNeedsIdentity`: код, остаток или погашение на кассе). */
@@ -152,7 +155,7 @@ export async function submitSaveProgress(page: Page, email: string, options: { m
   const card = page.getByRole("region", { name: copy.saveTitle });
   await card.getByLabel(copy.saveEmail, { exact: true }).fill(email);
   await card.getByRole("checkbox", { name: copy.saveConsent }).check();
-  if (options.marketing) await card.getByRole("checkbox", { name: copy.saveMarketing }).check();
+  if (options.marketing) await card.getByRole("checkbox", { name: marketingLabel }).check();
   await card.getByRole("button", { name: copy.saveSubmit }).click();
   await expect(page.getByRole("heading", { name: copy.saveSentTitle })).toBeVisible();
 }

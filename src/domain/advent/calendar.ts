@@ -83,6 +83,30 @@ export function dayUnlockAt(n: number, schedule: ScheduleTime): Date {
   return new Date(wallToInstant(wall, schedule.timezone));
 }
 
+/** Календарная дата (YYYY-MM-DD) момента `instant` по настенным часам `timezone`. */
+export function localDateAt(instant: Date, timezone: string): string {
+  const parts: Record<string, number> = {};
+  for (const part of formatterFor(timezone).formatToParts(instant)) {
+    if (part.type !== "literal") parts[part.type] = Number(part.value);
+  }
+  return new Date(Date.UTC(parts.year, parts.month - 1, parts.day)).toISOString().slice(0, 10);
+}
+
+/** Момент, когда часы в `timezone` показывают `time` (`HH:MM`) на локальную дату `date` (`YYYY-MM-DD`). */
+export function localInstant(date: string, time: string, timezone: string): Date {
+  const { year, month, day } = parseStartDate(date);
+  const [hour, minute] = time.split(":").map(Number);
+  return new Date(wallToInstant(Date.UTC(year, month - 1, day, hour, minute, 0), timezone));
+}
+
+/** Ближайшая локальная полночь строго после `instant`: конец местных суток. */
+export function endOfLocalDay(instant: Date, timezone: string): Date {
+  const today = localDateAt(instant, timezone);
+  const { year, month, day } = parseStartDate(today);
+  const next = new Date(Date.UTC(year, month - 1, day + 1)).toISOString().slice(0, 10);
+  return localInstant(next, "00:00", timezone);
+}
+
 /**
  * Номер текущего дня: самый поздний уже открытый. До открытия первого дня — `null`,
  * после открытия последнего остаётся `schedule.days` (дальше решает `adventPhase`).

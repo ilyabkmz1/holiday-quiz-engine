@@ -106,6 +106,8 @@ export type AdventState = {
     consent: boolean;
     marketingConsent: boolean;
     reminderOptIn: boolean;
+    /** Можно включать и выключать напоминания: кампания их рассылает, адрес подтверждён. */
+    canRemind: boolean;
   };
   doors: AdventDoor[];
   days: AdventDayContent[];
@@ -163,7 +165,8 @@ export type PublicAdvent = {
   brand: { name: string; mark: string; wordmark: string; logo?: string; tagline: string; topNote: string };
   story: { placeTitle: string; guideIntro: string };
   copy: AdventCopy;
-  legal: { operatorName: string; consentText: string };
+  /** `marketingConsentText` — текст необязательной отметки «напоминания на почту» (согласие на рассылку); `null` — напоминаний нет. */
+  legal: { operatorName: string; consentText: string; marketingConsentText: string | null };
   schedule: { timezone: string; days: number; startDate: string; finaleAt: string; claimEndsAt: string };
   /** Скин блока удачи; `null`, если удачи в адвенте нет. */
   luckSkin: "boxes" | "wheel" | "scratch" | null;

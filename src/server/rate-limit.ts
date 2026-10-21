@@ -54,6 +54,8 @@ export const identityRequestIpRateLimiter = new FixedWindowRateLimiter(5, 60_000
 export const identityRequestParticipantRateLimiter = new FixedWindowRateLimiter(5, 60_000);
 // И на адрес: с разных IP и участников нельзя заваливать письмами один чужой ящик. Ключ — хеш адреса, не сам адрес.
 export const identityRequestEmailRateLimiter = new FixedWindowRateLimiter(5, 15 * 60_000);
+// Кнопка «Прислать ссылку для входа» со страницы письма-напоминания: ещё и на доставку (одно письмо — не больше 3 ссылок за 15 минут).
+export const reminderLoginDeliveryRateLimiter = new FixedWindowRateLimiter(3, 15 * 60_000);
 
 // Проверка пароля оператора идёт через scrypt (десятки миллисекунд процессора и 32 МиБ на попытку), а /admin виден из интернета.
 // 60 попыток в минуту на IP хватает оператору (страница = 2 проверки: proxy и сама страница), но не даёт перебирать пароли

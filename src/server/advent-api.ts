@@ -26,6 +26,15 @@ export const LOGIN_PAGE_PATH = "/login";
 /** Форма токена из ссылки входа (`createOpaqueToken`: 43 символа base64url); остальное — сразу «ссылка не сработала». */
 export const loginTokenSchema = z.string().min(20).max(200);
 
+/** Идентификатор доставки письма-напоминания (uuid) в ссылках `?r=`. */
+export const DELIVERY_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** Страница кнопки письма-напоминания на устройстве без входа: «Прислать ссылку для входа». */
+export const REMINDER_PAGE_PATH = "/reminder";
+
+/** Токен отписки из письма (`createOpaqueToken`: 43 символа base64url). */
+export const unsubscribeTokenSchema = z.string().min(20).max(200);
+
 /** Параметры cookie: httpOnly, SameSite=Lax, Secure в production, срок — до конца выдачи (`claimEndsAt`). */
 export function adventCookieOptions(advent: Pick<AdventConfig, "schedule">) {
   return {

@@ -9,9 +9,9 @@ export const LOGIN_FORM_ACTION = "/api/advent/identity/verify";
 /**
  * Промежуточная страница входа по ссылке из письма. Ссылка одноразовая, поэтому тратится только по кнопке:
  * почтовые сканеры и предпросмотр открывают адрес (GET), но форму не отправляют. Работает без JavaScript.
- * `token === null` — ссылка битая: сразу предлагаем вернуться на главную.
+ * `delivery` — идентификатор доставки письма-напоминания: по нему после входа засчитывается переход. `token === null` — ссылка битая: сразу предлагаем вернуться на главную.
  */
-export function AdventLogin({ advent, token }: { advent: AdventConfig; token: string | null }) {
+export function AdventLogin({ advent, token, delivery = null }: { advent: AdventConfig; token: string | null; delivery?: string | null }) {
   const { brand } = advent;
   return (
     <main className="app verify-page">
@@ -29,6 +29,7 @@ export function AdventLogin({ advent, token }: { advent: AdventConfig; token: st
             <p>Нажмите «Войти», чтобы открыть свою серию и награды на этом устройстве.</p>
             <form method="post" action={LOGIN_FORM_ACTION}>
               <input type="hidden" name="token" value={token} />
+              {delivery && <input type="hidden" name="r" value={delivery} />}
               <button className="btn btn-primary" type="submit">Войти</button>
             </form>
             <p>Если вы не запрашивали вход, просто закройте страницу.</p>

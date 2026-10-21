@@ -67,9 +67,24 @@ describe("deploy: общий сервер", () => {
 
   it("Caddy: в журналы не попадают токены, код награды и подпись QR (query и Referer) — в обоих режимах", () => {
     for (const file of [caddyfile, readFileSync("deploy/Caddyfile", "utf8")]) {
-      expect(file).toMatch(/request>uri query \{[^}]*delete token[^}]*delete code[^}]*\}/);
+      expect(file).toMatch(/request>uri query \{[^}]*delete token[^}]*delete code[^}]*delete t\b[^}]*\}/);
       expect(file).toContain("request>headers>Referer delete");
     }
+  });
+
+  it("compose: сервис напоминаний адвента (A5) — цикл advent:remind на образе migrate, общие переменные с app, пределы рассылки настраиваются", () => {
+    const service = compose.slice(compose.indexOf("\n  reminders:"), compose.indexOf("\n  caddy:"));
+    expect(service).toContain("image: ${COMPOSE_PROJECT_NAME:-quiz}-migrate:latest");
+    expect(service).toContain("<<: *app-env");
+    expect(service).toContain("npm run --silent advent:remind");
+    expect(service).toContain("$${REMINDERS_INTERVAL_SECONDS:-900}");
+    expect(service).toContain("ADVENT_REMINDERS_DEMO: ${ADVENT_REMINDERS_DEMO:-false}");
+    for (const name of ["REMINDER_BATCH_SIZE", "REMINDER_MAX_PER_RUN", "REMINDER_MAX_ATTEMPTS", "REMINDER_RETRY_MINUTES", "REMINDER_RATE_PER_SECOND", "REMINDER_MAX_LATE_HOURS"]) {
+      expect(service).toContain(`${name}: $\{${name}:-`);
+    }
+    expect(service).toContain("migrate:\n        condition: service_completed_successfully");
+    // Те же секреты, что у app: общий блок, а не копия.
+    expect(compose).toMatch(/app:[\s\S]*?environment:\n\s+<<: \*app-env/);
   });
 
   it("compose: Caddyfile выбирается переменной, общий режим не прячется за TENANT по умолчанию, образ по умолчанию — один пакет", () => {

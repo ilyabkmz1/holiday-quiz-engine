@@ -552,7 +552,7 @@ describe("AdventGame: «Витрина»", () => {
     expect(document.querySelector(".adv-streak")).toBeNull();
     expect(document.querySelector(".adv-doors")).toBeNull();
     const garland = screen.getByRole("button", { name: /Подробнее о серии/ });
-    expect(garland).toHaveTextContent(/^Ещё \d+ (огонёк|огонька|огоньков) — и /);
+    expect(garland).toHaveTextContent(/^Ещё \d+ (окно|окна|окон) — и /);
     expect(document.querySelectorAll(".adv-bulb")).toHaveLength(12);
     expect(screen.getByRole("button", { name: "Открыть окно 6" })).toBeInTheDocument();
     expect(document.querySelector(".adv-bar-line")).toHaveTextContent(config.days[5].teaser);
@@ -569,7 +569,7 @@ describe("AdventGame: «Витрина»", () => {
     expect(document.querySelectorAll('.adv-bulb[data-lit="true"]')).toHaveLength(2);
     expect(document.querySelectorAll(".adv-bulb.goal")).toHaveLength(1);
     expect(document.querySelector(".adv-bulb.goal")).toHaveAttribute("data-bulb", "4");
-    expect(screen.getByRole("button", { name: /Ещё 2 огонька — и десерт за серию/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Ещё 2 окна — и десерт за серию/ })).toBeInTheDocument();
   });
 
   it("нажатие на гирлянду открывает лист серии и заморозок; Escape закрывает", async () => {
@@ -584,6 +584,30 @@ describe("AdventGame: «Витрина»", () => {
     await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
     // Фокус возвращается на гирлянду.
     await waitFor(() => expect(document.querySelector(".adv-garland-btn")).toHaveFocus());
+  });
+
+  it("в листе серии вошедший по ссылке видит переключатель напоминаний и включает его; анониму его нет", async () => {
+    const anonymous = memoryAdventApi({ advent: config, start: at(3) });
+    const view = game(anonymous.api);
+    fireEvent.click(await screen.findByRole("button", { name: /Подробнее о серии/ }));
+    const anonSheet = await screen.findByRole("dialog", { name: copy.garlandSheetTitle });
+    expect(within(anonSheet).queryByRole("checkbox", { name: copy.remindersToggle })).not.toBeInTheDocument();
+    view.unmount();
+
+    const harness = memoryAdventApi({ advent: config, start: at(3) });
+    await harness.ensureParticipant();
+    await harness.api.requestLink({ email: "guest@example.test", consent: true, marketingConsent: false, reminderOptIn: false });
+    await harness.confirmLogin();
+    game(harness.api);
+    fireEvent.click(await screen.findByRole("button", { name: /Подробнее о серии/ }));
+    const sheet = await screen.findByRole("dialog", { name: copy.garlandSheetTitle });
+    const toggle = within(sheet).getByRole("checkbox", { name: copy.remindersToggle });
+    expect(within(sheet).getByText(/новое окно/)).toBeInTheDocument();
+    fireEvent.click(toggle);
+    // Сначала текст согласия на рассылку, затем явное «Согласен(на), включить».
+    expect(within(sheet).getByText(/рекламные рассылки/)).toBeInTheDocument();
+    fireEvent.click(within(sheet).getByRole("button", { name: copy.remindersConsentAccept }));
+    await waitFor(() => expect(within(sheet).getByRole("checkbox", { name: copy.remindersToggle })).toBeChecked());
   });
 
   it("кнопка плашки открывает сегодняшнее окно; по возвращении оно загорается, а кнопка меняется на «До завтра» после прохождения", async () => {

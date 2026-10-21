@@ -1,6 +1,7 @@
 import nodemailer from "nodemailer";
 
 import { getRuntimeEnv } from "@/server/env";
+import { renderReminderMail, type ReminderMailVars } from "@/server/mail-reminder";
 
 /** Переменные шаблонов писем. Тексты и бренд берутся из пакета арендатора и передаются снаружи. */
 export type MailVars = {
@@ -8,11 +9,13 @@ export type MailVars = {
   verify: { link: string; subject: string };
   /** Вход в адвент по одноразовой ссылке. */
   login: { link: string; subject: string; brandName: string; ttlMinutes: number };
+  /** Напоминание адвента об открытой двери (A5): бренд, тексты дня, кнопка входа и отписка. */
+  reminder: ReminderMailVars;
 };
 
 export type MailTemplate = keyof MailVars;
 
-export type RenderedMail = { subject: string; text: string; html: string };
+export type RenderedMail = { subject: string; text: string; html: string; headers?: Record<string, string> };
 
 function escapeHtml(value: string): string {
   return value.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;");
@@ -24,6 +27,7 @@ const renderers: { [T in MailTemplate]: (vars: MailVars[T]) => RenderedMail } = 
     text: `Подтвердите заявку на приз: ${link}\n\nСсылка действует 24 часа.`,
     html: `<p>Подтвердите заявку на приз:</p><p><a href="${link}">Подтвердить email</a></p><p>Ссылка действует 24 часа.</p>`
   }),
+  reminder: (vars) => renderReminderMail(vars),
   login: ({ link, subject, brandName, ttlMinutes }) => ({
     subject,
     text: `Войти в «${brandName}»: ${link}\n\nСсылка действует ${ttlMinutes} минут и срабатывает один раз. Если вы не запрашивали вход, просто проигнорируйте письмо.`,
@@ -48,7 +52,7 @@ export async function sendMail<T extends MailTemplate>(template: T, to: string, 
     ...(env.SMTP_USER && env.SMTP_PASSWORD ? { auth: { user: env.SMTP_USER, pass: env.SMTP_PASSWORD } } : {})
   });
   const mail = renderMail(template, vars);
-  await transport.sendMail({ from: env.SMTP_FROM, to, subject: mail.subject, text: mail.text, html: mail.html });
+  await transport.sendMail({ from: env.SMTP_FROM, to, subject: mail.subject, text: mail.text, html: mail.html, ...(mail.headers ? { headers: mail.headers } : {}) });
 }
 
 /** Письмо с подтверждением заявки квиза; обёртка над `sendMail("verify", …)`, поведение прежнее. */

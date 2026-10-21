@@ -118,7 +118,6 @@
     "fallbackRewardId": "luck-a"
   },
   "reminders": {
-    "channel": "email",
     "sendAtLocal": "10:00",
     "subject": "Дверь {day}: {teaser}",
     "preheader": "Сегодняшний промокод ждёт"

@@ -118,7 +118,6 @@
     "fallbackRewardId": "luck-a"
   },
   "reminders": {
-    "channel": "email",
     "sendAtLocal": "08:30",
     "subject": "Дверь {day} открыта: {teaser}",
     "preheader": "Подарок дня ждёт на кассе"

@@ -9,6 +9,32 @@ x-logging: &logging
     max-size: "10m"
     max-file: "5"
 
+x-app-env: &app-env
+  DATABASE_URL: ${DATABASE_URL:?Задайте DATABASE_URL в .env}
+  APP_URL: ${APP_URL:?Задайте APP_URL в .env}
+  # Какой пакет из tenants/ показывать; по умолчанию — эталонный demo-office.
+  # Пустое значение (TENANT=) включает общий сервер: нужны TENANT_BASE_DOMAIN и образ со всеми нужными пакетами (QUIZ_PACKS).
+  TENANT: ${TENANT-demo-office}
+  TENANT_BASE_DOMAIN: ${TENANT_BASE_DOMAIN:-}
+  # Администратор из ADMIN_* в общем режиме (без TENANT) действует только при SUPERADMIN=true; операторов клиентов заводит quiz:admin.
+  SUPERADMIN: ${SUPERADMIN:-false}
+  TLS_ASK_TOKEN: ${TLS_ASK_TOKEN:-}
+  # Подпись личного QR погашения наград адвента на кассе; обязателен в production, если у адвента есть награды redeem cashier/both.
+  REWARD_QR_SECRET: ${REWARD_QR_SECRET:-}
+  SMTP_HOST: ${SMTP_HOST:?Задайте SMTP_HOST в .env}
+  SMTP_PORT: ${SMTP_PORT:?Задайте SMTP_PORT в .env}
+  SMTP_SECURE: ${SMTP_SECURE:-false}
+  SMTP_FROM: ${SMTP_FROM:?Задайте SMTP_FROM в .env}
+  SMTP_USER: ${SMTP_USER:-}
+  SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+  ADMIN_USERNAME: ${ADMIN_USERNAME:?Задайте ADMIN_USERNAME в .env}
+  ADMIN_PASSWORD: ${ADMIN_PASSWORD:?Задайте ADMIN_PASSWORD в .env}
+  # Закрытый стенд: оба значения заданы -> весь сайт под Basic auth. В боевом режиме пусто.
+  STAGING_USERNAME: ${STAGING_USERNAME:-}
+  STAGING_PASSWORD: ${STAGING_PASSWORD:-}
+  QUIZ_FORCE_OPEN: ${QUIZ_FORCE_OPEN:-false}
+  NODE_OPTIONS: --max-old-space-size=768
+
 services:
   db:
     image: postgres:17-alpine
@@ -61,30 +87,7 @@ services:
         QUIZ_PACKS: ${QUIZ_PACKS:-${TENANT:-demo-office}}
     restart: unless-stopped
     environment:
-      DATABASE_URL: ${DATABASE_URL:?Задайте DATABASE_URL в .env}
-      APP_URL: ${APP_URL:?Задайте APP_URL в .env}
-      # Какой пакет из tenants/ показывать; по умолчанию — эталонный demo-office.
-      # Пустое значение (TENANT=) включает общий сервер: нужны TENANT_BASE_DOMAIN и образ со всеми нужными пакетами (QUIZ_PACKS).
-      TENANT: ${TENANT-demo-office}
-      TENANT_BASE_DOMAIN: ${TENANT_BASE_DOMAIN:-}
-      # Администратор из ADMIN_* в общем режиме (без TENANT) действует только при SUPERADMIN=true; операторов клиентов заводит quiz:admin.
-      SUPERADMIN: ${SUPERADMIN:-false}
-      TLS_ASK_TOKEN: ${TLS_ASK_TOKEN:-}
-      # Подпись личного QR погашения наград адвента на кассе; обязателен в production, если у адвента есть награды redeem cashier/both.
-      REWARD_QR_SECRET: ${REWARD_QR_SECRET:-}
-      SMTP_HOST: ${SMTP_HOST:?Задайте SMTP_HOST в .env}
-      SMTP_PORT: ${SMTP_PORT:?Задайте SMTP_PORT в .env}
-      SMTP_SECURE: ${SMTP_SECURE:-false}
-      SMTP_FROM: ${SMTP_FROM:?Задайте SMTP_FROM в .env}
-      SMTP_USER: ${SMTP_USER:-}
-      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
-      ADMIN_USERNAME: ${ADMIN_USERNAME:?Задайте ADMIN_USERNAME в .env}
-      ADMIN_PASSWORD: ${ADMIN_PASSWORD:?Задайте ADMIN_PASSWORD в .env}
-      # Закрытый стенд: оба значения заданы -> весь сайт под Basic auth. В боевом режиме пусто.
-      STAGING_USERNAME: ${STAGING_USERNAME:-}
-      STAGING_PASSWORD: ${STAGING_PASSWORD:-}
-      QUIZ_FORCE_OPEN: ${QUIZ_FORCE_OPEN:-false}
-      NODE_OPTIONS: --max-old-space-size=768
+      <<: *app-env
     # Порт 3000 наружу не публикуется: трафик идёт через caddy.
     expose:
       - "3000"
@@ -98,6 +101,54 @@ services:
       retries: 6
       start_period: 20s
     mem_limit: 1g
+    logging: *logging
+
+  # Напоминания адвента (A5): раз в REMINDERS_INTERVAL_SECONDS (по умолчанию 15 минут) запускает `npm run advent:remind`.
+  # Без адвент-арендатора с reminders.channel=email сервис ничего не делает; демо-пакеты письма не шлют
+  # (ADVENT_REMINDERS_DEMO=true разрешает). Тот же образ, что у migrate; БД и переменные те же, что у app.
+  reminders:
+    image: ${COMPOSE_PROJECT_NAME:-quiz}-migrate:latest
+    restart: unless-stopped
+    environment:
+      <<: *app-env
+      ADVENT_REMINDERS_DEMO: ${ADVENT_REMINDERS_DEMO:-false}
+      REMINDER_BATCH_SIZE: ${REMINDER_BATCH_SIZE:-100}
+      REMINDER_MAX_PER_RUN: ${REMINDER_MAX_PER_RUN:-2000}
+      REMINDER_MAX_ATTEMPTS: ${REMINDER_MAX_ATTEMPTS:-3}
+      REMINDER_RETRY_MINUTES: ${REMINDER_RETRY_MINUTES:-10}
+      REMINDER_RATE_PER_SECOND: ${REMINDER_RATE_PER_SECOND:-5}
+      REMINDER_MAX_LATE_HOURS: ${REMINDER_MAX_LATE_HOURS:-6}
+      REMINDERS_INTERVAL_SECONDS: ${REMINDERS_INTERVAL_SECONDS:-900}
+    # init: tini — PID 1 и передаёт SIGTERM циклу. Цикл по сигналу не начинает новый запуск и не досыпает паузу, а идущему
+    # запуску передаёт SIGTERM: advent:remind дописывает текущее письмо и выходит, не оставляя лишних доставок в `sending`.
+    # $$ -- переменные оболочки контейнера, а не подстановка Compose.
+    init: true
+    stop_grace_period: 60s
+    command:
+      - sh
+      - -c
+      - |
+        stop=""
+        pid=""
+        trap 'stop=1; if [ -n "$$pid" ]; then kill -TERM "$$pid" 2>/dev/null || true; fi' TERM INT
+        while [ -z "$$stop" ]; do
+          npm run --silent advent:remind &
+          pid=$$!
+          # wait прерывается сигналом: ждём, пока запуск допишет текущее письмо.
+          while kill -0 "$$pid" 2>/dev/null; do wait "$$pid" || true; done
+          pid=""
+          [ -n "$$stop" ] && break
+          sleep "$${REMINDERS_INTERVAL_SECONDS:-900}" &
+          pid=$$!
+          wait "$$pid" || true
+          pid=""
+        done
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      db:
+        condition: service_healthy
+    mem_limit: 512m
     logging: *logging
 
   caddy:

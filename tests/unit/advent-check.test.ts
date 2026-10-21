@@ -15,6 +15,43 @@ describe("quiz:check для адвента", () => {
     expect(report.info.join("\n")).toContain("дней: 12");
   });
 
+  it("напоминания по email без реквизитов оператора или без текста согласия на рассылку — ошибка; без рассылки — ничего", async () => {
+    const pack = adventPackFixture();
+    delete pack.advent.legal.operatorDetails;
+    const report = await checkPack(pack);
+    expect(report.errors.join("\n")).toContain("нет реквизитов оператора");
+
+    const noConsent = adventPackFixture();
+    delete noConsent.advent.legal.marketingConsentText;
+    expect((await checkPack(noConsent)).errors.join("\n")).toContain("нет текста согласия на рассылку");
+
+    const off = adventPackFixture();
+    delete off.advent.legal.operatorDetails;
+    delete off.advent.legal.marketingConsentText;
+    off.advent.reminders.channel = "off";
+    const offReport = await checkPack(off);
+    expect(offReport.errors).toEqual([]);
+    expect(offReport.warnings.join("\n")).not.toContain("реквизитов оператора");
+    expect((await checkPack(adventPackFixture())).errors).toEqual([]);
+  });
+
+  it("неизвестные подстановки в текстах напоминаний и слишком длинная тема — предупреждения", async () => {
+    const pack = adventPackFixture();
+    pack.advent.reminders.subject = "Окно {dya}: {teaser}";
+    pack.advent.reminders.comebackText = "Вернитесь за {gift}";
+    pack.advent.reminders.preheader = "п".repeat(120);
+    const warnings = (await checkPack(pack)).warnings.join("\n");
+    expect(warnings).toContain("reminders.subject неизвестные подстановки {dya}");
+    expect(warnings).toContain("reminders.comebackText неизвестные подстановки {gift}");
+    expect(warnings).toContain("длина: reminders.preheader");
+    // {missed} допустим только в catchUpText.
+    const ok = adventPackFixture();
+    ok.advent.reminders.catchUpText = "Догоните {missed}";
+    expect((await checkPack(ok)).warnings.join("\n")).not.toContain("catchUpText");
+    ok.advent.reminders.subject = "{missed}";
+    expect((await checkPack(ok)).warnings.join("\n")).toContain("reminders.subject неизвестные подстановки {missed}");
+  });
+
   it("ошибки схемы — русские, а не «expected quiz»", async () => {
     const pack = adventPackFixture();
     delete pack.advent.schedule.startDate;

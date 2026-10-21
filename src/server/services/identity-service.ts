@@ -31,9 +31,9 @@ export type RequestLinkInput = {
   email: string;
   /** Согласие на обработку персональных данных (152-ФЗ): без него ссылка не отправляется. */
   consent: boolean;
-  /** Отдельное согласие на рассылку (ст. 18 38-ФЗ). */
+  /** Отдельное согласие на рекламную и информационную рассылку (ст. 18 38-ФЗ). */
   marketingConsent: boolean;
-  /** Напоминания об открытии дверей. */
+  /** Напоминания об открытии дверей — рассылка: только вместе с `marketingConsent`. */
   reminderOptIn: boolean;
 };
 
@@ -49,6 +49,7 @@ export class IdentityService {
     const { repository, advent } = this.dependencies;
     if (adventPhase(now, advent.schedule) === "closed") throw new DomainError("conflict", "Адвент завершён.");
     if (!input.consent) throw new DomainError("conflict", "Нужно согласие на обработку данных.");
+    if (input.reminderOptIn && !input.marketingConsent) throw new DomainError("invalid", "Напоминания включаются только с согласием на рассылку.");
     const email = normalizeEmail(input.email);
     if (email.length > 254 || !EMAIL_PATTERN.test(email)) throw new DomainError("invalid", "Проверьте email.");
 
@@ -70,8 +71,45 @@ export class IdentityService {
       usedAt: null
     });
 
+    await this.send(participantId, email, token, null);
+  }
+
+  /**
+   * «Прислать ссылку для входа» со страницы письма-напоминания (вход из письма только по cookie, иначе — эта кнопка).
+   * Обычная свежая ссылка входа (30 минут, одноразовая, семантика `requestLink`): запросило устройство `requesterId`, а адрес —
+   * подтверждённый адрес владельца письма из БД; сама страница email не видит и не принимает. Согласия ссылка не меняет:
+   * они уже даны владельцем, отметка напоминаний не ставится. В ссылку добавлен идентификатор доставки `r`: после входа
+   * открывается день письма.
+   */
+  async requestOwnerLink(requesterId: string, owner: ParticipantRecord, deliveryId: string, now: Date): Promise<void> {
+    const { repository, advent } = this.dependencies;
+    if (adventPhase(now, advent.schedule) === "closed") throw new DomainError("conflict", "Адвент завершён.");
+    if (owner.campaignSlug !== advent.slug || owner.normalizedEmail === null || owner.consentAt === null) {
+      throw new DomainError("not_found", "Участник не найден.");
+    }
+    assertParticipantId(requesterId);
+    const requester = await repository.getParticipant(requesterId);
+    if (!requester || requester.campaignSlug !== advent.slug) throw new DomainError("not_found", "Участник не найден.");
+
+    const token = createOpaqueToken();
+    await repository.createLoginToken({
+      tokenHash: hashToken(token),
+      participantId: requesterId,
+      normalizedEmail: owner.normalizedEmail,
+      consentAt: owner.consentAt,
+      marketingConsentAt: null,
+      reminderOptIn: false,
+      createdAt: now,
+      expiresAt: new Date(now.getTime() + LOGIN_TOKEN_TTL_MS),
+      usedAt: null
+    });
+    await this.send(requesterId, owner.normalizedEmail, token, deliveryId);
+  }
+
+  private async send(participantId: string, email: string, token: string, deliveryId: string | null): Promise<void> {
     const url = new URL(this.dependencies.verifyEndpoint);
     url.searchParams.set("token", token);
+    if (deliveryId) url.searchParams.set("r", deliveryId);
     try {
       await this.dependencies.sendLoginLink(email, url.toString());
     } catch (error) {

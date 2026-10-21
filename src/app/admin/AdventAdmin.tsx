@@ -1,4 +1,5 @@
-import { getAdventServices } from "@/server/container";
+import { loadAdventMetrics } from "@/server/advent-metrics";
+import { getAdventServices, getNow } from "@/server/container";
 import type { AdventTenant } from "@/server/tenants";
 
 import { CodeImport } from "./CodeImport";
@@ -10,8 +11,9 @@ import { formatCount } from "./format";
  */
 export async function AdventAdmin({ tenant }: { tenant: AdventTenant }) {
   const { advent } = tenant;
-  const { rewardService } = getAdventServices(tenant);
-  const rows = await rewardService.overview();
+  const { rewardService, repository } = getAdventServices(tenant);
+  const [rows, metrics] = await Promise.all([rewardService.overview(), loadAdventMetrics(repository, advent, getNow())]);
+  const { reminders } = metrics;
   const listRewards = new Set(advent.rewards.filter((reward) => reward.codes && "list" in reward.codes).map((reward) => reward.id));
 
   return (
@@ -59,6 +61,51 @@ export async function AdventAdmin({ tenant }: { tenant: AdventTenant }) {
           CSV для загрузки — столбец <code>code</code> в первой строке; коды приводятся к верхнему регистру, повторы пропускаются.
           Остаток удачи заводится при первом розыгрыше. В выгрузке выдач нет email и кодов.
         </p>
+      </section>
+
+      <section aria-labelledby="reminders-title" className="admin-card">
+        <h2 id="reminders-title">Напоминания</h2>
+        {reminders.channel !== "email" ? (
+          <p className="admin-empty">Напоминания в пакете выключены (<code>reminders.channel</code>).</p>
+        ) : (
+          <>
+            <ul className="status-chips">
+              <li>Подписаны: <strong>{formatCount(reminders.subscribed)}</strong></li>
+              <li>Отписались: <strong>{formatCount(reminders.unsubscribed)}</strong></li>
+            </ul>
+            <div className="table-scroll">
+              <table className="left">
+                <thead>
+                  <tr>
+                    <th scope="col">День</th>
+                    <th scope="col">Отправлено</th>
+                    <th scope="col">Ошибки*</th>
+                    <th scope="col">Переходы</th>
+                    <th scope="col">Открыли день после письма</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {reminders.days.map((row) => (
+                    <tr key={row.day}>
+                      <th scope="row">{row.day}. {row.title}</th>
+                      <td>{formatCount(row.sent)}</td>
+                      <td>{formatCount(row.failed)}</td>
+                      <td>{formatCount(row.clicked)}</td>
+                      <td>{formatCount(row.openedAfter)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <p className="admin-note">
+              Только числа, без email. * «Ошибки» — письма, которые не ушли (повтор в следующий запуск, пока есть попытки), и застрявшие
+              в статусе <code>sending</code>: заявлены, но отправка не подтверждена (процесс упал во время отправки; такие письма не повторяются).
+              «Подписаны» — с согласием на рассылку и включёнными напоминаниями. «Переходы» — клики с устройств, где участник уже вошёл,
+              и нажатия «Прислать ссылку для входа» на остальных.
+              Те же данные — в <code>GET /api/admin/advent/metrics</code>.
+            </p>
+          </>
+        )}
       </section>
     </main>
   );

@@ -1,13 +1,14 @@
 import { getPrisma } from "@/server/db";
 import { getRuntimeEnv, isForceOpenAllowed } from "@/server/env";
 import { resolveRewardSecret } from "@/server/launch-checks";
-import { sendMail, sendVerificationEmail } from "@/server/mailer";
+import { sendMail, sendVerificationEmail, type MailVars } from "@/server/mailer";
 import { PrismaAdventRepository } from "@/server/repositories/prisma-advent-repository";
 import { PrismaClaimRepository } from "@/server/repositories/prisma-claim-repository";
 import { PrismaSessionRepository } from "@/server/repositories/prisma-session-repository";
 import { ClaimService } from "@/server/services/claim-service";
 import { AdventService } from "@/server/services/advent-service";
 import { IdentityService, LOGIN_TOKEN_TTL_MS } from "@/server/services/identity-service";
+import { ReminderService, type ReminderOptions } from "@/server/services/reminder-service";
 import { RewardService, type RewardServiceOptions } from "@/server/services/reward-service";
 import { RushService } from "@/server/services/rush-service";
 import { SessionService } from "@/server/services/session-service";
@@ -18,7 +19,11 @@ type ServiceOverrides = {
   sendVerification?: (email: string, link: string) => Promise<void>;
   /** Отправка ссылки входа адвента (email, ссылка). */
   sendLogin?: (email: string, link: string) => Promise<void>;
+  /** Отправка письма-напоминания адвента (email, готовые переменные шаблона). */
+  sendReminder?: (email: string, vars: MailVars["reminder"]) => Promise<void>;
   now?: () => Date;
+  /** Пауза рассылки напоминаний (в тестах не ждёт). */
+  sleep?: (ms: number) => Promise<void>;
   /** Параметры наград адвента (источник случайности кодов, секрет QR): в тестах подменяются. */
   rewards?: Pick<RewardServiceOptions, "rng" | "qrSecret">;
   /** Источник случайности для порядка заявок рывка; в тестах подменяется детерминированным. */
@@ -93,7 +98,7 @@ export function getServices(tenant: Tenant = defaultTenant()) {
 }
 
 /** Сервисы адвент-арендатора: участники, прогресс и вход по ссылке. Данные разделены по `campaignSlug`, как у квиза. */
-export function getAdventServices(tenant: AdventTenant) {
+export function getAdventServices(tenant: AdventTenant, settings: { reminderOptions?: ReminderOptions } = {}) {
   // Типы не пускают квиз-арендатора сюда, но вызов из JS или через `as` должен падать понятно.
   if ((tenant as { experience?: string }).experience !== "advent") {
     throw new Error(`getAdventServices вызван для квиза «${(tenant as { tenant: string }).tenant}»: используйте getServices`);
@@ -120,6 +125,14 @@ export function getAdventServices(tenant: AdventTenant) {
     ensureCampaign: async () => {
       await prisma.campaign.upsert({ where: { slug: advent.slug }, update: {}, create: { slug: advent.slug, title: advent.title } });
     },
+    reminderService: new ReminderService({
+      repository,
+      advent,
+      baseUrl: tenantBaseUrl(tenant, env.APP_URL),
+      send: overrides.sendReminder ?? ((email, vars) => sendMail("reminder", email, vars)),
+      options: settings.reminderOptions,
+      sleep: overrides.sleep
+    }),
     identityService: new IdentityService({
       repository,
       advent,

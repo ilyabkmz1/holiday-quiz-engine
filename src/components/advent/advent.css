@@ -124,6 +124,11 @@
 .adv-comeback p { color: var(--muted-2); font-size: 14px; line-height: 1.4; }
 .adv-comeback-label { color: var(--gold-soft); font-weight: 700; }
 .adv-comeback-badge, .adv-save-badge, .adv-promo-badge, .adv-done-badge { flex: none; display: grid; place-items: center; width: 42px; height: 42px; border-radius: 14px; background: color-mix(in srgb, var(--gold) 22%, transparent); color: var(--gold); }
+.adv-reminders { display: grid; gap: 4px; margin-top: 10px; }
+.adv-reminders .adv-muted { margin: 0 0 0 32px; font-size: 13px; }
+.adv-reminders-consent { margin: 6px 0 0 32px; display: grid; gap: 8px; font-size: 14px; }
+.adv-reminders-consent p { margin: 0; }
+.adv-reminders-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .adv-saved { display: flex; align-items: center; gap: 8px; font-size: 14px; color: var(--muted-2); }
 .adv-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--green); box-shadow: 0 0 10px var(--green); }
 

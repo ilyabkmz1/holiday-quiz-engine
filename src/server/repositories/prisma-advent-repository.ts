@@ -16,6 +16,12 @@ import {
   type LoginTokenRecord,
   type ParticipantRecord,
   type RedeemOutcome,
+  type ReminderCandidateQuery,
+  type ReminderClaimInput,
+  type ReminderDeliveryRecord,
+  type ReminderRepository,
+  type ReminderStats,
+  type ReminderStatus,
   type RewardGrantRecord
 } from "@/server/repositories/advent-repository";
 
@@ -32,6 +38,7 @@ function mapParticipant(participant: ParticipantRecord): ParticipantRecord {
     marketingConsentAt: participant.marketingConsentAt,
     reminderOptIn: participant.reminderOptIn,
     unsubscribeHash: participant.unsubscribeHash,
+    unsubscribedAt: participant.unsubscribedAt,
     createdAt: participant.createdAt
   };
 }
@@ -105,11 +112,35 @@ async function takeCode(tx: Tx, campaignSlug: string, grantId: string, rewardId:
 }
 
 /**
- * Сериализует подтверждения входа одной кампании: слияние участников и привязка email меняют сразу несколько строк,
- * а входы редки (клик по письму), поэтому одна блокировка на кампанию проще и надёжнее построчных.
+ * Сериализует подтверждения входа одного адреса в кампании: привязка email и слияние меняют сразу несколько строк,
+ * и два параллельных подтверждения одного адреса обязаны идти по очереди (пара кампания+email остаётся уникальной).
+ * Входы разных адресов друг друга не ждут: утренняя пачка писем-напоминаний не выстраивается в одну очередь.
  */
-async function lockCampaignLogins(tx: Tx, campaignSlug: string): Promise<void> {
-  await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`advent-login:${campaignSlug}`}))`;
+async function lockEmailLogin(tx: Tx, campaignSlug: string, normalizedEmail: string): Promise<void> {
+  await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`advent-login:${campaignSlug}:${normalizedEmail}`}))`;
+}
+
+/** Момент для сырого SQL: столбцы `timestamp(3)` хранят UTC, поэтому переводим явно, не полагаясь на часовой пояс сессии. */
+function utc(value: Date): Prisma.Sql {
+  return Prisma.sql`(${value.toISOString()}::timestamptz AT TIME ZONE 'UTC')`;
+}
+
+type DeliveryRow = Omit<ReminderDeliveryRecord, "status"> & { status: string };
+
+function mapDelivery(row: DeliveryRow): ReminderDeliveryRecord {
+  return {
+    id: row.id,
+    participantId: row.participantId,
+    day: Number(row.day),
+    status: row.status as ReminderStatus,
+    attempts: Number(row.attempts),
+    lastError: row.lastError,
+    claimedAt: row.claimedAt,
+    lastAttemptAt: row.lastAttemptAt,
+    sentAt: row.sentAt,
+    clickedAt: row.clickedAt,
+    unsubscribeHash: row.unsubscribeHash
+  };
 }
 
 /** Блокирует строки участников в порядке id (одинаковый порядок исключает взаимные блокировки). */
@@ -167,7 +198,7 @@ async function mergeInTx(tx: Tx, fromId: string, intoId: string, moveKeys = true
   await tx.participant.delete({ where: { id: fromId } });
 }
 
-export class PrismaAdventRepository implements AdventRepository, IdentityRepository {
+export class PrismaAdventRepository implements AdventRepository, IdentityRepository, ReminderRepository {
   constructor(private readonly prisma: PrismaClient) {}
 
   async createParticipant(participant: ParticipantRecord): Promise<ParticipantRecord> {
@@ -364,6 +395,121 @@ export class PrismaAdventRepository implements AdventRepository, IdentityReposit
     await this.prisma.$transaction((tx) => mergeInTx(tx, fromId, intoId));
   }
 
+  async listReminderCandidates(query: ReminderCandidateQuery): Promise<ParticipantRecord[]> {
+    const rows = await this.prisma.participant.findMany({
+      where: {
+        campaignSlug: query.campaignSlug,
+        reminderOptIn: true,
+        normalizedEmail: { not: null },
+        consentAt: { not: null },
+        // Напоминание — рассылка: без согласия на неё (ст. 18 38-ФЗ) не шлём.
+        marketingConsentAt: { not: null },
+        dayOpens: { none: { day: query.day } },
+        // Доставка есть и не подлежит повтору — не кандидат.
+        reminders: {
+          none: {
+            day: query.day,
+            NOT: { status: "failed", attempts: { lt: query.maxAttempts }, lastAttemptAt: { lt: query.retryBefore } }
+          }
+        }
+      },
+      orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+      take: query.limit
+    });
+    return rows.map(mapParticipant);
+  }
+
+  async claimReminder(input: ReminderClaimInput): Promise<ReminderDeliveryRecord | null> {
+    // Одна инструкция: условия кандидата, вставка и перевод failed → sending проверяются атомарно. Параллельный запуск
+    // упирается в уникальный ключ (участник, день) и ждёт первого; его условие `status = 'failed'` уже не выполняется.
+    const rows = await this.prisma.$transaction(async (tx) => {
+      const claimed = await tx.$queryRaw<DeliveryRow[]>`
+        INSERT INTO "ReminderDelivery" ("id", "participantId", "day", "status", "attempts", "claimedAt", "lastAttemptAt", "unsubscribeHash")
+        SELECT ${input.deliveryId}::uuid, p."id", ${input.day}, 'sending', 1, ${utc(input.now)}, ${utc(input.now)}, ${input.unsubscribeHash}
+        FROM "Participant" p
+        WHERE p."id" = ${input.participantId}::uuid
+          AND p."reminderOptIn" AND p."normalizedEmail" IS NOT NULL AND p."consentAt" IS NOT NULL AND p."marketingConsentAt" IS NOT NULL
+          AND NOT EXISTS (SELECT 1 FROM "DayOpen" o WHERE o."participantId" = p."id" AND o."day" = ${input.day})
+        ON CONFLICT ("participantId", "day") DO UPDATE SET
+          "id" = ${input.deliveryId}::uuid, "status" = 'sending', "attempts" = "ReminderDelivery"."attempts" + 1, "lastError" = NULL,
+          "claimedAt" = ${utc(input.now)}, "lastAttemptAt" = ${utc(input.now)}, "unsubscribeHash" = ${input.unsubscribeHash}
+        WHERE "ReminderDelivery"."status" = 'failed' AND "ReminderDelivery"."attempts" < ${input.maxAttempts}
+          AND "ReminderDelivery"."lastAttemptAt" < ${utc(input.retryBefore)}
+        RETURNING "id"::text AS "id", "participantId"::text AS "participantId", "day", "status", "attempts", "lastError",
+          "claimedAt", "lastAttemptAt", "sentAt", "clickedAt", "unsubscribeHash"`;
+      if (claimed.length === 1) {
+        // Токен последнего письма — и на участнике (поле unsubscribeHash), старые остаются на своих доставках.
+        await tx.participant.update({ where: { id: input.participantId }, data: { unsubscribeHash: input.unsubscribeHash } });
+      }
+      return claimed;
+    });
+    return rows.length === 1 ? mapDelivery(rows[0]) : null;
+  }
+
+  async markReminderSent(deliveryId: string, now: Date): Promise<void> {
+    await this.prisma.reminderDelivery.updateMany({ where: { id: deliveryId, status: "sending" }, data: { status: "sent", sentAt: now, lastError: null } });
+  }
+
+  async markReminderFailed(deliveryId: string, errorCode: string): Promise<void> {
+    await this.prisma.reminderDelivery.updateMany({ where: { id: deliveryId, status: "sending" }, data: { status: "failed", lastError: errorCode.slice(0, 64) } });
+  }
+
+  async getReminderDelivery(deliveryId: string): Promise<ReminderDeliveryRecord | null> {
+    const found = await this.prisma.reminderDelivery.findUnique({ where: { id: deliveryId } });
+    return found ? mapDelivery(found as DeliveryRow) : null;
+  }
+
+  async recordReminderClick(deliveryId: string, now: Date): Promise<ReminderDeliveryRecord | null> {
+    await this.prisma.reminderDelivery.updateMany({ where: { id: deliveryId, clickedAt: null }, data: { clickedAt: now } });
+    return this.getReminderDelivery(deliveryId);
+  }
+
+  async findParticipantByUnsubscribeHash(hash: string): Promise<ParticipantRecord | null> {
+    const direct = await this.prisma.participant.findUnique({ where: { unsubscribeHash: hash } });
+    if (direct) return mapParticipant(direct);
+    const delivery = await this.prisma.reminderDelivery.findUnique({ where: { unsubscribeHash: hash }, include: { participant: true } });
+    return delivery ? mapParticipant(delivery.participant) : null;
+  }
+
+  async setReminderOptIn(participantId: string, enabled: boolean, now: Date): Promise<ParticipantRecord | null> {
+    // Условные UPDATE: повтор ничего не меняет, а первая отписка запоминает свой момент.
+    if (enabled) {
+      // Одна инструкция: согласие на рассылку — первое сохраняется (COALESCE), отметка ставится, прежняя отписка снимается.
+      await this.prisma.$executeRaw`
+        UPDATE "Participant" SET "reminderOptIn" = true, "unsubscribedAt" = NULL, "marketingConsentAt" = COALESCE("marketingConsentAt", ${utc(now)})
+        WHERE "id" = ${participantId}::uuid AND (NOT "reminderOptIn" OR "unsubscribedAt" IS NOT NULL OR "marketingConsentAt" IS NULL)`;
+    } else {
+      // Отзыв согласия на рассылку вместе с отметкой; повтор не сдвигает момент первой отписки.
+      await this.prisma.participant.updateMany({
+        where: { id: participantId, OR: [{ reminderOptIn: true }, { marketingConsentAt: { not: null } }] },
+        data: { reminderOptIn: false, marketingConsentAt: null, unsubscribedAt: now }
+      });
+    }
+    return this.getParticipant(participantId);
+  }
+
+  async reminderStats(campaignSlug: string): Promise<ReminderStats> {
+    const [days, subscribed, unsubscribed] = await Promise.all([
+      this.prisma.$queryRaw<Array<{ day: number; sent: bigint; failed: bigint; clicked: bigint; opened: bigint }>>`
+        SELECT r."day",
+          COUNT(*) FILTER (WHERE r."status" = 'sent') AS sent,
+          COUNT(*) FILTER (WHERE r."status" <> 'sent') AS failed,
+          COUNT(r."clickedAt") AS clicked,
+          COUNT(*) FILTER (WHERE r."status" = 'sent' AND EXISTS (
+            SELECT 1 FROM "DayOpen" o WHERE o."participantId" = r."participantId" AND o."day" = r."day" AND o."openedAt" >= r."sentAt")) AS opened
+        FROM "ReminderDelivery" r JOIN "Participant" p ON p."id" = r."participantId"
+        WHERE p."campaignSlug" = ${campaignSlug}
+        GROUP BY r."day" ORDER BY r."day"`,
+      this.prisma.participant.count({ where: { campaignSlug, reminderOptIn: true, normalizedEmail: { not: null }, marketingConsentAt: { not: null } } }),
+      this.prisma.participant.count({ where: { campaignSlug, reminderOptIn: false, unsubscribedAt: { not: null } } })
+    ]);
+    return {
+      days: days.map((row) => ({ day: Number(row.day), sent: Number(row.sent), failed: Number(row.failed), clicked: Number(row.clicked), openedAfter: Number(row.opened) })),
+      subscribed,
+      unsubscribed
+    };
+  }
+
   async createLoginToken(token: LoginTokenRecord): Promise<void> {
     try {
       await this.prisma.loginToken.create({ data: token });
@@ -394,30 +540,47 @@ export class PrismaAdventRepository implements AdventRepository, IdentityReposit
       const { count } = await tx.participant.updateMany({
         where: {
           campaignSlug,
-          OR: [{ normalizedEmail: { not: null } }, { consentAt: { not: null } }, { marketingConsentAt: { not: null } }, { reminderOptIn: true }, { unsubscribeHash: { not: null } }]
+          OR: [
+            { normalizedEmail: { not: null } },
+            { consentAt: { not: null } },
+            { marketingConsentAt: { not: null } },
+            { reminderOptIn: true },
+            { unsubscribeHash: { not: null } },
+            { unsubscribedAt: { not: null } }
+          ]
         },
-        data: { normalizedEmail: null, consentAt: null, marketingConsentAt: null, reminderOptIn: false, unsubscribeHash: null }
+        data: { normalizedEmail: null, consentAt: null, marketingConsentAt: null, reminderOptIn: false, unsubscribeHash: null, unsubscribedAt: null }
       });
+      // Токены отписки прежних писем: по ним без email уже нечего отключать.
+      await tx.reminderDelivery.updateMany({ where: { participant: { campaignSlug }, unsubscribeHash: { not: null } }, data: { unsubscribeHash: null } });
       return count;
     });
   }
 
   private async completeLoginInTx(tx: Tx, input: CompleteLoginInput): Promise<CompleteLoginResult> {
-    await lockCampaignLogins(tx, input.campaignSlug);
-    const token = await tx.loginToken.findUnique({ where: { tokenHash: input.tokenHash }, include: { participant: true } });
-    if (!token || token.participant.campaignSlug !== input.campaignSlug) {
+    // Адрес узнаём без блокировок, затем берём блокировку этого адреса и перечитываем ссылку уже под ней.
+    const peek = await tx.loginToken.findUnique({ where: { tokenHash: input.tokenHash }, include: { participant: true } });
+    if (!peek || peek.participant.campaignSlug !== input.campaignSlug) {
       throw new DomainError("invalid", "Ссылка входа недействительна.");
     }
+    await lockEmailLogin(tx, input.campaignSlug, peek.normalizedEmail);
+    const token = await tx.loginToken.findUnique({ where: { tokenHash: input.tokenHash } });
+    if (!token) throw new DomainError("invalid", "Ссылка входа недействительна.");
     if (token.usedAt) throw new DomainError("conflict", "Ссылка входа уже использована.");
     if (input.now.getTime() > token.expiresAt.getTime()) throw new DomainError("expired", "Срок действия ссылки истёк.");
-    await tx.loginToken.update({ where: { tokenHash: input.tokenHash }, data: { usedAt: input.now } });
+    const marked = await tx.loginToken.updateMany({ where: { tokenHash: input.tokenHash, usedAt: null }, data: { usedAt: input.now } });
+    if (marked.count !== 1) throw new DomainError("conflict", "Ссылка входа уже использована.");
 
-    const requester = token.participant;
     const owner = await tx.participant.findUnique({
       where: { campaignSlug_normalizedEmail: { campaignSlug: input.campaignSlug, normalizedEmail: token.normalizedEmail } }
     });
-    const target = owner ?? requester;
-    await lockParticipants(tx, [target.id, requester.id, ...(input.currentParticipantId ? [input.currentParticipantId] : [])]);
+    const targetId = owner?.id ?? token.participantId;
+    // Блокировка адреса не защищает от входов с другими адресами, которые вливают тех же анонимов: блокируем строки участников
+    // (в порядке id) и перечитываем их уже под блокировкой.
+    await lockParticipants(tx, [targetId, token.participantId, ...(input.currentParticipantId ? [input.currentParticipantId] : [])]);
+    const requester = await tx.participant.findUnique({ where: { id: token.participantId } });
+    if (!requester) throw new DomainError("invalid", "Ссылка входа недействительна.");
+    const target = owner ? await tx.participant.findUniqueOrThrow({ where: { id: owner.id } }) : requester;
 
     const mergedFrom: string[] = [];
     // Ссылку открыли не на устройстве, которое её запросило: устройства запросившего доступа не получают (см. контракт).
@@ -442,6 +605,8 @@ export class PrismaAdventRepository implements AdventRepository, IdentityReposit
         consentAt: fresh.consentAt ?? token.consentAt,
         marketingConsentAt: fresh.marketingConsentAt ?? token.marketingConsentAt,
         reminderOptIn: fresh.reminderOptIn || token.reminderOptIn,
+        // Явное включение напоминаний при входе снимает прежнюю отписку.
+        ...(token.reminderOptIn && !fresh.reminderOptIn ? { unsubscribedAt: null } : {}),
         // Ключ создателя заменяется ключом этого устройства: прежние cookie запросившего больше не действуют.
         ...(revokeRequesterKeys ? { accessKeyHash: input.newAccessKeyHash } : {})
       }

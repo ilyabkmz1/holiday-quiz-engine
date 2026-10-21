@@ -1,5 +1,6 @@
 import { DEFAULT_WORLD_ID } from "@/config/pack";
 import type { CampaignConfig, Task } from "@/config/schema";
+import { marketingConsentText } from "@/config/legal";
 import { RUSH } from "@/domain/rush";
 import { SCORING } from "@/domain/scoring";
 import { seededShuffle } from "@/server/shuffle";
@@ -134,7 +135,12 @@ export function publicAdvent(advent: AdventConfig, tenant: string, worldId: stri
     },
     story: { placeTitle: advent.story.placeTitle, guideIntro: advent.story.guideIntro },
     copy: advent.copy,
-    legal: { operatorName: advent.legal.operatorName, consentText: advent.legal.consentText },
+    legal: {
+      operatorName: advent.legal.operatorName,
+      consentText: advent.legal.consentText,
+      // Отметка «напоминания» — согласие на рассылку; без email-напоминаний её нет вовсе.
+      marketingConsentText: advent.reminders.channel === "email" ? marketingConsentText(advent.legal) : null
+    },
     schedule: {
       timezone: advent.schedule.timezone,
       days: advent.schedule.days,
