@@ -12,6 +12,8 @@ export type LegalConfig = {
   consentText: string;
   /** Согласие на рекламную и информационную рассылку (ст. 18 38-ФЗ): текст отметки «напоминания на почту»; `{operator}` — `operatorName`. */
   marketingConsentText?: string;
+  /** Согласие для входа через Telegram; без него на экране согласия показывается `consentText`. */
+  telegramConsentText?: string;
 };
 
 /** Текст согласия на рассылку по умолчанию; `quiz:check` при `reminders.channel = email` требует задать свой (`legal.marketingConsentText`). */

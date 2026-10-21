@@ -4,6 +4,7 @@ import { NextResponse } from "next/server";
 import { adminAuthorized, redeemAuthorized } from "@/server/admin";
 import { adminGate, redeemGate } from "@/server/admin-gate";
 import { getRuntimeEnv } from "@/server/env";
+import { frameHeaders } from "@/server/frame-policy";
 import { authRealm } from "@/server/realm";
 import { shareGate } from "@/server/share-gate";
 import { stagingGate } from "@/server/staging-gate";
@@ -14,5 +15,13 @@ import { stagingGate } from "@/server/staging-gate";
 export async function proxy(request: NextRequest) {
   const env = getRuntimeEnv();
   const host = request.headers.get("host");
-  return stagingGate(request, env, authRealm(host, "staging")) ?? (await adminGate(request, adminAuthorized, authRealm(host))) ?? (await redeemGate(request, redeemAuthorized, authRealm(host))) ?? shareGate(request) ?? NextResponse.next();
+  const response =
+    stagingGate(request, env, authRealm(host, "staging")) ??
+    (await adminGate(request, adminAuthorized, authRealm(host))) ??
+    (await redeemGate(request, redeemAuthorized, authRealm(host))) ??
+    shareGate(request) ??
+    NextResponse.next();
+  // Защита от встраивания во фрейм ставится здесь, а не в next.config: для адвента с Telegram она пускает фреймы Telegram Web.
+  for (const [name, value] of Object.entries(frameHeaders(host, request.nextUrl.pathname))) response.headers.set(name, value);
+  return response;
 }

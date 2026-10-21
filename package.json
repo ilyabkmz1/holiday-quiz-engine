@@ -29,6 +29,7 @@
     "quiz:rules": "tsx scripts/quiz-rules.ts",
     "quiz:shots": "tsx scripts/quiz-shots.ts",
     "advent:shots": "tsx scripts/advent-shots.ts",
+    "telegram:shots": "tsx scripts/telegram-shots.ts",
     "advent:a7-shots": "tsx scripts/advent-a7-shots.ts",
     "quiz:brand": "tsx scripts/quiz-brand.ts",
     "quiz:admin": "tsx scripts/quiz-admin.ts",

@@ -20,6 +20,9 @@ const serverEnv = {
   ...localEnv,
   TENANT: tenant,
   REWARD_QR_SECRET: process.env.REWARD_QR_SECRET ?? "e2e-only-qr-secret-0123456789abcdef0123456789",
+  // Telegram Mini App: тестовые токен бота и секрет псевдонимизации (tests/e2e-advent/support/telegram.ts подписывает initData этим токеном).
+  TELEGRAM_BOT_TOKEN: "123456789:e2e-only-bot-token-0123456789abcdef",
+  PLATFORM_ID_SECRET: "e2e-only-platform-id-secret-0123456789abcdef",
   ...(prod ? { QUIZ_LOCAL_STACK: "true" } : {})
 };
 

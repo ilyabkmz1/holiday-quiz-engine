@@ -12,6 +12,7 @@ import {
   type DayBlockResultRecord,
   type DayOpenRecord,
   type ParticipantRecord,
+  type PlatformId,
   type ReminderRepository,
   type RewardGrantRecord
 } from "@/server/repositories/advent-repository";
@@ -110,6 +111,51 @@ export class AdventService {
     });
     await this.reconcile(await this.snapshot(participant.id), now);
     return { participant, accessKey };
+  }
+
+  /**
+   * Участник платформы (Telegram) по псевдониму или `null`. Участник создаётся только после согласия
+   * (`createPlatformParticipant`), поэтому «нет участника» — повод показать экран согласия.
+   */
+  async identifyPlatform(platform: PlatformId, subjectHash: string): Promise<ParticipantRecord | null> {
+    return this.repository.findParticipantByIdentity(this.advent.slug, platform, subjectHash);
+  }
+
+  /**
+   * Участник платформы: согласие на обработку данных (псевдоним идентификатора) фиксируется при создании, без него вызывать нельзя.
+   * Идемпотентно и безопасно при гонке: один аккаунт даёт одного участника. Ключ cookie не нужен — в Telegram веб-фрейм часто
+   * блокирует сторонние cookie, поэтому запросы подписываются initData; в БД кладётся случайный неиспользуемый хеш ключа.
+   */
+  async createPlatformParticipant(platform: PlatformId, subjectHash: string, now: Date): Promise<{ participant: ParticipantRecord; created: boolean }> {
+    const existing = await this.identifyPlatform(platform, subjectHash);
+    if (existing) return { participant: existing, created: false };
+    if (adventPhase(now, this.advent.schedule) === "closed") {
+      throw new DomainError("conflict", "Адвент завершён.");
+    }
+    const { participant, created } = await this.repository.createParticipantWithIdentity(
+      {
+        id: createId(),
+        campaignSlug: this.advent.slug,
+        accessKeyHash: hashToken(createOpaqueToken()),
+        normalizedEmail: null,
+        teamId: null,
+        consentAt: now,
+        marketingConsentAt: null,
+        reminderOptIn: false,
+        unsubscribeHash: null,
+        unsubscribedAt: null,
+        platform,
+        createdAt: now
+      },
+      { campaignSlug: this.advent.slug, platform, subjectHash }
+    );
+    if (created) await this.reconcile(await this.snapshot(participant.id), now);
+    return { participant, created };
+  }
+
+  /** Учитывает переход по ссылке с меткой источника (агрегат по дням UTC, без участников). */
+  async recordSourceVisit(source: string, now: Date): Promise<void> {
+    await this.repository.recordSourceVisit(this.advent.slug, source, now.toISOString().slice(0, 10));
   }
 
   /**

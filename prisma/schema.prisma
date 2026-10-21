@@ -207,9 +207,12 @@ model Participant {
   unsubscribeHash    String?            @unique
   /// Когда участник последний раз отключил напоминания (ссылка в письме или переключатель на сайте); при включении сбрасывается.
   unsubscribedAt     DateTime?
+  /// Платформа, в которой создан участник (`telegram`); `null` — обычный веб. Участник платформы считается подтверждённым для наград.
+  platform           String?
   createdAt          DateTime           @default(now())
   campaign           Campaign           @relation(fields: [campaignSlug], references: [slug], onDelete: Restrict)
   keys               ParticipantKey[]
+  identities         ParticipantIdentity[]
   dayOpens           DayOpen[]
   blockResults       DayBlockResult[]
   grants             RewardGrant[]
@@ -220,6 +223,32 @@ model Participant {
   @@index([campaignSlug])
   /// Рейтинг команд (A7): участники команды кампании.
   @@index([campaignSlug, teamId])
+}
+
+/// Платформенная идентичность участника (Telegram). Сырой идентификатор, имя, username и фото не хранятся:
+/// только HMAC-SHA256 идентификатора с серверным секретом PLATFORM_ID_SECRET (псевдоним, привязанный к кампании).
+model ParticipantIdentity {
+  id            String      @id @default(uuid()) @db.Uuid
+  campaignSlug  String
+  platform      String
+  subjectHash   String
+  participantId String      @db.Uuid
+  createdAt     DateTime    @default(now())
+  participant   Participant @relation(fields: [participantId], references: [id], onDelete: Cascade)
+
+  @@unique([campaignSlug, platform, subjectHash])
+  @@index([participantId])
+}
+
+/// Переходы в адвент по меткам источника из startapp (`s_<метка>`): счётчик по дням, без участников и персональных данных.
+model AdventSourceVisit {
+  campaignSlug String
+  source       String
+  /// День по UTC, `YYYY-MM-DD`.
+  date         String
+  opens        Int    @default(0)
+
+  @@id([campaignSlug, source, date])
 }
 
 /// Ключ доступа дополнительного устройства (хеш). После слияния участников сюда переезжают ключи поглощённого участника.

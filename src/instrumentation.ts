@@ -5,13 +5,17 @@ export async function register() {
   // Сборка идёт с заглушками окружения; проверяем только реальный запуск сервера.
   if (process.env.NEXT_RUNTIME !== "nodejs" || process.env.NEXT_PHASE === "phase-production-build") return;
   const { getRuntimeEnv } = await import("@/server/env");
-  const { assertLaunchReady, assertRewardSecrets } = await import("@/server/launch-checks");
+  const { assertLaunchReady, assertRewardSecrets, assertTelegramSecrets } = await import("@/server/launch-checks");
   const { activeTenants, assertTenantsConfigured, isAdventTenant, tenantCore } = await import("@/server/tenants");
   assertTenantsConfigured();
   // Юридические тексты проверяются у каждого пакета, который этот процесс может показать.
   for (const tenant of activeTenants()) {
     assertLaunchReady(getRuntimeEnv(), tenantCore(tenant).legal, tenant.tenant);
     // Погашение на кассе по личному QR (адвент) подписывается секретом: без него боевой запуск не стартует.
-    if (isAdventTenant(tenant)) assertRewardSecrets(getRuntimeEnv(), tenant.advent.rewards, tenant.tenant);
+    if (isAdventTenant(tenant)) {
+      assertRewardSecrets(getRuntimeEnv(), tenant.advent.rewards, tenant.tenant);
+      // Telegram Mini App: токен бота и секрет псевдонимизации обязательны в боевом запуске.
+      assertTelegramSecrets(getRuntimeEnv(), tenant.platforms.telegram, tenant.tenant);
+    }
   }
 }

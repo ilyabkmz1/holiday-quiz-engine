@@ -2,6 +2,10 @@ import { DomainError } from "@/domain/errors";
 import { Prisma, type PrismaClient } from "@/generated/prisma/client";
 import {
   GENERATED_CODE_ATTEMPTS,
+  MAX_SOURCE_LABELS,
+  OTHER_SOURCE,
+  type PlatformId,
+  type SourceVisitRow,
   SYNTHETIC_EMAIL_DOMAIN,
   type AdventRepository,
   type AnalyticsQuery,
@@ -32,7 +36,10 @@ import {
 
 type Tx = Prisma.TransactionClient;
 
-function mapParticipant(participant: ParticipantRecord): ParticipantRecord {
+/** Строка Participant из Prisma: `platform` там обычная строка. */
+type ParticipantRow = Omit<ParticipantRecord, "platform"> & { platform: string | null };
+
+function mapParticipant(participant: ParticipantRow): ParticipantRecord {
   return {
     id: participant.id,
     campaignSlug: participant.campaignSlug,
@@ -44,6 +51,7 @@ function mapParticipant(participant: ParticipantRecord): ParticipantRecord {
     reminderOptIn: participant.reminderOptIn,
     unsubscribeHash: participant.unsubscribeHash,
     unsubscribedAt: participant.unsubscribedAt,
+    platform: participant.platform === "telegram" ? "telegram" : null,
     createdAt: participant.createdAt
   };
 }
@@ -177,6 +185,8 @@ async function mergeInTx(tx: Tx, fromId: string, intoId: string, moveKeys = true
   if (!from || !into) throw participantMissing();
   if (from.campaignSlug !== into.campaignSlug) throw new DomainError("invalid", "Участники из разных кампаний.");
   if (from.normalizedEmail !== null) throw new DomainError("invalid", "Нельзя влить участника, привязанного к email.");
+  // Участник Telegram живёт по своей идентичности: слияние удалило бы его (и псевдоним) и перенесло бы награды, выданные без email.
+  if (from.platform !== null) throw new DomainError("invalid", "Нельзя влить участника платформы.");
   // Команда поглощённого не пропадает, если итоговый свою ещё не выбрал.
   if (into.teamId === null && from.teamId !== null) await tx.participant.update({ where: { id: intoId }, data: { teamId: from.teamId } });
 
@@ -229,6 +239,54 @@ export class PrismaAdventRepository implements AdventRepository, IdentityReposit
       where: { OR: [{ accessKeyHash }, { keys: { some: { accessKeyHash } } }] }
     });
     return found ? mapParticipant(found) : null;
+  }
+
+  async findParticipantByIdentity(campaignSlug: string, platform: PlatformId, subjectHash: string): Promise<ParticipantRecord | null> {
+    const found = await this.prisma.participantIdentity.findUnique({
+      where: { campaignSlug_platform_subjectHash: { campaignSlug, platform, subjectHash } },
+      include: { participant: true }
+    });
+    return found ? mapParticipant(found.participant) : null;
+  }
+
+  async createParticipantWithIdentity(
+    participant: ParticipantRecord,
+    identity: { campaignSlug: string; platform: PlatformId; subjectHash: string }
+  ): Promise<{ participant: ParticipantRecord; created: boolean }> {
+    try {
+      // Участник и идентичность — одна транзакция: проигравший гонку откатывается целиком, лишнего участника не остаётся.
+      const created = await this.prisma.$transaction(async (tx) => {
+        const row = await tx.participant.create({ data: participant });
+        await tx.participantIdentity.create({ data: { ...identity, participantId: participant.id } });
+        return row;
+      });
+      return { participant: mapParticipant(created), created: true };
+    } catch (error) {
+      if (!isUniqueViolation(error)) throw error;
+      // Уникальный индекс identity сработал: параллельный запрос успел раньше. P2002 по ключу доступа невозможен (ключ случайный).
+      const existing = await this.findParticipantByIdentity(identity.campaignSlug, identity.platform, identity.subjectHash);
+      if (!existing) throw error;
+      return { participant: existing, created: false };
+    }
+  }
+
+  async recordSourceVisit(campaignSlug: string, source: string, date: string): Promise<void> {
+    let label = source;
+    const known = await this.prisma.adventSourceVisit.findFirst({ where: { campaignSlug, source }, select: { source: true } });
+    if (!known) {
+      const distinct = await this.prisma.adventSourceVisit.groupBy({ by: ["source"], where: { campaignSlug } });
+      if (distinct.length >= MAX_SOURCE_LABELS) label = OTHER_SOURCE;
+    }
+    await this.prisma.adventSourceVisit.upsert({
+      where: { campaignSlug_source_date: { campaignSlug, source: label, date } },
+      create: { campaignSlug, source: label, date, opens: 1 },
+      update: { opens: { increment: 1 } }
+    });
+  }
+
+  async listSourceVisits(campaignSlug: string): Promise<SourceVisitRow[]> {
+    const rows = await this.prisma.adventSourceVisit.findMany({ where: { campaignSlug }, orderBy: [{ date: "asc" }, { source: "asc" }] });
+    return rows.map(({ source, date, opens }) => ({ source, date, opens }));
   }
 
   async openDayOnce(participantId: string, day: number, openedAt: Date, onTime: boolean): Promise<{ open: DayOpenRecord; created: boolean }> {
@@ -681,6 +739,7 @@ export class PrismaAdventRepository implements AdventRepository, IdentityReposit
   async anonymizeCampaignParticipants(campaignSlug: string): Promise<number> {
     return this.prisma.$transaction(async (tx) => {
       await tx.loginToken.deleteMany({ where: { participant: { campaignSlug } } });
+      await tx.participantIdentity.deleteMany({ where: { campaignSlug } });
       const { count } = await tx.participant.updateMany({
         where: {
           campaignSlug,
@@ -734,8 +793,8 @@ export class PrismaAdventRepository implements AdventRepository, IdentityReposit
     if (revokeRequesterKeys) await tx.participantKey.deleteMany({ where: { participantId: target.id } });
     const current = input.currentParticipantId ? await tx.participant.findUnique({ where: { id: input.currentParticipantId } }) : null;
     for (const source of [requester, current]) {
-      // Сливаем только анонимных той же кампании; участник с другим email остаётся отдельным.
-      if (!source || source.id === target.id || source.normalizedEmail !== null || source.campaignSlug !== target.campaignSlug) continue;
+      // Сливаем только анонимных веб-участников той же кампании; участник с другим email или из Telegram остаётся отдельным.
+      if (!source || source.id === target.id || source.normalizedEmail !== null || source.platform !== null || source.campaignSlug !== target.campaignSlug) continue;
       if (mergedFrom.includes(source.id)) continue;
       await mergeInTx(tx, source.id, target.id, source.id !== requester.id || sameDevice);
       mergedFrom.push(source.id);

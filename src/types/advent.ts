@@ -168,8 +168,10 @@ export type PublicAdvent = {
   story: { placeTitle: string; guideIntro: string };
   copy: AdventCopy;
   /** `marketingConsentText` — текст необязательной отметки «напоминания на почту» (согласие на рассылку); `null` — напоминаний нет. */
-  legal: { operatorName: string; consentText: string; marketingConsentText: string | null };
+  legal: { operatorName: string; consentText: string; telegramConsentText: string | null; marketingConsentText: string | null };
   schedule: { timezone: string; days: number; startDate: string; finaleAt: string; claimEndsAt: string };
   /** Скин блока удачи; `null`, если удачи в адвенте нет. */
   luckSkin: "boxes" | "wheel" | "scratch" | null;
+  /** Платформы с входом без email; `telegram` — имена бота и приложения для ссылок (не секреты). */
+  platforms: { telegram: { botUsername: string; appShortName: string } | null };
 };

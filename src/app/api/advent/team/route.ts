@@ -20,7 +20,7 @@ export async function POST(request: NextRequest) {
     const tenant = adventTenantFromHeaders(request.headers);
     const now = resolveNow(request, tenant);
     const { adventService } = getAdventServices(tenant);
-    const participant = await participantFromRequest(request, adventService);
+    const participant = await participantFromRequest(request, adventService, tenant);
     if (!participant) return unauthorized();
     const body: OpenDayResponse = { state: await adventService.setTeam(participant.id, input.teamId, now) };
     return NextResponse.json(body);

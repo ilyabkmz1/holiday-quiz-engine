@@ -30,7 +30,7 @@ export async function POST(request: NextRequest) {
     const tenant = adventTenantFromHeaders(request.headers);
     const now = resolveNow(request, tenant);
     const { adventService, identityService } = getAdventServices(tenant);
-    const participant = await participantFromRequest(request, adventService);
+    const participant = await participantFromRequest(request, adventService, tenant);
     if (!participant) return unauthorized();
     const limited = guardIdentityRequest(request, participant.id, tenant.advent.slug, input.email);
     if (limited) return limited;

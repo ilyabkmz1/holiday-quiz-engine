@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 
 import { AdventIcon } from "@/components/advent/icons";
 import { dateTimeLabel, fill, grantCondition, safeHref } from "@/components/advent/format";
+import { usePlatformBridge } from "@/components/advent/platform-context";
 import { qrModel } from "@/components/advent/qr";
 import type { AdventCopy } from "@/config/advent-schema";
 import type { AdventGrantView } from "@/types/advent";
@@ -38,6 +39,7 @@ function Qr({ payload, label }: { payload: string; label: string }) {
  * Код и QR приходят только владельцу; если кода ещё нет, объясняем почему (вход по ссылке или пустой пул).
  */
 export function PromoCard({ grant, copy, timezone, nowMs, onNeedIdentity, fresh = false }: Props) {
+  const platform = usePlatformBridge();
   const codeRef = useRef<HTMLElement>(null);
   const [message, setMessage] = useState<string | null>(null);
   const timer = useRef<number | null>(null);
@@ -55,14 +57,22 @@ export function PromoCard({ grant, copy, timezone, nowMs, onNeedIdentity, fresh 
     try {
       await navigator.clipboard.writeText(grant.code);
     } catch {
-      // Буфер недоступен (http, запрет разрешения): выделяем код, чтобы его можно было скопировать вручную.
+      // Буфер недоступен (http, запрет разрешения, WebView Telegram): выделяем код и пробуем копирование командой браузера;
+      // не вышло — код остаётся выделенным для ручного копирования.
       const range = document.createRange();
       if (codeRef.current) range.selectNodeContents(codeRef.current);
       const selection = window.getSelection();
       selection?.removeAllRanges();
       selection?.addRange(range);
-      text = copy.promoCopyFailed;
+      let copied = false;
+      try {
+        copied = document.execCommand("copy");
+      } catch {
+        copied = false;
+      }
+      if (!copied) text = copy.promoCopyFailed;
     }
+    platform.haptic("tap");
     setMessage(text);
     if (timer.current !== null) window.clearTimeout(timer.current);
     timer.current = window.setTimeout(() => setMessage(null), 2600);

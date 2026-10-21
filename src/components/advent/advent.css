@@ -319,6 +319,24 @@
   .adv-door:hover, .adv-luck-item:hover:not(:disabled) { transform: none; }
 }
 
+/* ——— Telegram Mini App ———
+ * Отступы safe area и шапки Telegram приходят CSS-переменными (по умолчанию 0: в обычном вебе правила не меняют вёрстку).
+ * Высота — `--tg-viewport-stable-height`: она не прыгает при сворачивании шторки, поэтому прикреплённые к низу элементы остаются на месте. */
+.adv-app[data-platform="telegram"] {
+  --adv-tg-top: calc(var(--tg-safe-area-inset-top, 0px) + var(--tg-content-safe-area-inset-top, 0px));
+  --adv-tg-bottom: calc(var(--tg-safe-area-inset-bottom, 0px) + var(--tg-content-safe-area-inset-bottom, 0px));
+  min-height: var(--tg-viewport-stable-height, 100dvh);
+  padding: var(--adv-tg-top) var(--tg-safe-area-inset-right, 0px) 0 var(--tg-safe-area-inset-left, 0px);
+}
+.adv-app[data-platform="telegram"] .adv-main.adv-main-store { min-height: calc(var(--tg-viewport-stable-height, 100dvh) - var(--adv-tg-top)); padding-bottom: calc(10px + var(--adv-tg-bottom)); }
+.adv-app[data-platform="telegram"] .adv-main:not(.adv-main-store) { padding-bottom: calc(56px + var(--adv-tg-bottom)); }
+.adv-app[data-platform="telegram"] .adv-sheet { max-height: calc(var(--tg-viewport-stable-height, 100dvh) * 0.92); padding-bottom: var(--adv-tg-bottom); }
+.adv-app[data-platform="telegram"] .adv-hint { bottom: calc(20px + var(--adv-tg-bottom)); }
+
+.adv-tg-consent { display: flex; flex-direction: column; gap: 14px; padding: 18px 4px 10px; animation: advRise 0.5s cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+.adv-tg-consent-title { font-size: clamp(26px, 7.5vw, 34px); line-height: 1.08; font-weight: 800; letter-spacing: -0.02em; color: var(--ink); text-wrap: balance; }
+.adv-tg-consent-form { display: flex; flex-direction: column; gap: 12px; padding: 16px; border-radius: 20px; border: 1px solid var(--line); background: var(--card); }
+.adv-tg-consent-form a { color: var(--gold-soft, var(--ink)); }
 /* ——— Командный зачёт (A7) ——— */
 .adv-team { display: grid; gap: 12px; padding: 16px; border-radius: 22px; border: 1px solid var(--line); background: color-mix(in srgb, var(--panel) 78%, transparent); }
 .adv-team-title { font-size: 13px; font-weight: 800; letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); }

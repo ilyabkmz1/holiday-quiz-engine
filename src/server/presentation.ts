@@ -114,7 +114,7 @@ function publicFacade(advent: AdventConfig): PublicFacade {
 }
 
 /** Адвент для клиента: явный список полей (задания, награды и пулы удачи уходят только через состояние участника). */
-export function publicAdvent(advent: AdventConfig, tenant: string, worldId: string = DEFAULT_WORLD_ID): PublicAdvent {
+export function publicAdvent(advent: AdventConfig, tenant: string, worldId: string = DEFAULT_WORLD_ID, platforms: PublicAdvent["platforms"] = { telegram: null }): PublicAdvent {
   return {
     slug: advent.slug,
     tenant,
@@ -138,6 +138,7 @@ export function publicAdvent(advent: AdventConfig, tenant: string, worldId: stri
     legal: {
       operatorName: advent.legal.operatorName,
       consentText: advent.legal.consentText,
+      telegramConsentText: advent.legal.telegramConsentText ?? null,
       // Отметка «напоминания» — согласие на рассылку; без email-напоминаний её нет вовсе.
       marketingConsentText: advent.reminders.channel === "email" ? marketingConsentText(advent.legal) : null
     },
@@ -148,6 +149,7 @@ export function publicAdvent(advent: AdventConfig, tenant: string, worldId: stri
       finaleAt: advent.schedule.finaleAt,
       claimEndsAt: advent.schedule.claimEndsAt
     },
-    luckSkin: advent.luck?.skin ?? null
+    luckSkin: advent.luck?.skin ?? null,
+    platforms
   };
 }

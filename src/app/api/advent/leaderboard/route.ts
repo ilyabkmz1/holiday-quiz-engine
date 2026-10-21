@@ -22,7 +22,7 @@ export async function GET(request: NextRequest) {
     const tenant = adventTenantFromHeaders(request.headers);
     const now = resolveNow(request, tenant);
     const { adventService, repository } = getAdventServices(tenant);
-    const participant = await participantFromRequest(request, adventService);
+    const participant = await participantFromRequest(request, adventService, tenant);
     const board = await loadTeamLeaderboard(repository, tenant.advent, now, participant?.teamId ?? null);
     if (!board) throw new DomainError("not_found", "Рейтинга команд в этой кампании нет.");
     return NextResponse.json(board, { headers: { "cache-control": "no-store" } });

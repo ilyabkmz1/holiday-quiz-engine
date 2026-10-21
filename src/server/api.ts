@@ -15,7 +15,8 @@ export const DOMAIN_ERROR_STATUS: Record<DomainErrorCode, number> = {
   not_found: 404,
   conflict: 409,
   invalid: 400,
-  expired: 400
+  expired: 400,
+  unauthorized: 401
 };
 
 export function clientKey(request: NextRequest): string {

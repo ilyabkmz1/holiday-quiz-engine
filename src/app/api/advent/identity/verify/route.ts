@@ -68,7 +68,7 @@ export async function POST(request: NextRequest) {
     const token = loginTokenSchema.parse(fields.token);
     const now = resolveNow(request, tenant);
     const { adventService, identityService, reminderService } = getAdventServices(tenant);
-    const current = await participantFromRequest(request, adventService);
+    const current = await participantFromRequest(request, adventService, tenant);
     const { participant, accessKey } = await identityService.verify(token, current, now);
     // Вход по ссылке, присланной со страницы письма-напоминания: на сайте открывается день письма.
     let day: number | null = null;

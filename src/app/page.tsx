@@ -14,7 +14,7 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
   const tenant = await anyTenantForPage();
   if (isAdventTenant(tenant)) {
     // Публичный срез пакета без заданий и наград: они приходят в состоянии участника по мере прохождения.
-    return <AdventGame advent={publicAdvent(tenant.advent, tenant.tenant, tenant.worldId)} world={loadWorld(tenant.worldId)} />;
+    return <AdventGame advent={publicAdvent(tenant.advent, tenant.tenant, tenant.worldId, { telegram: tenant.platforms.telegram ?? null })} world={loadWorld(tenant.worldId)} />;
   }
   const { mode: requested } = await searchParams;
   // Публичный срез кампании без признаков правильности: тот же, что отдаёт API.

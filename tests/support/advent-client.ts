@@ -7,7 +7,7 @@ import type { AdventState } from "@/types/advent";
 
 import { adventConfig, newAdventService } from "./advent";
 
-const STATUS = { not_found: 404, conflict: 409, invalid: 400, expired: 410 } as const;
+const STATUS = { not_found: 404, conflict: 409, invalid: 400, expired: 410, unauthorized: 401 } as const;
 
 /**
  * Клиент адвента поверх настоящих сервисов в памяти (без HTTP): компоненты проходят тот же код, что и API, включая

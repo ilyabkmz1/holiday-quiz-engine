@@ -32,6 +32,13 @@ const runtimeEnvBase = z.object({
   // Секрет подписи личного QR для погашения наград адвента на кассе (HMAC). Обязателен в production, если у адвент-арендатора
   // есть награды с redeem cashier/both (см. launch-checks); не короче 32 символов: `openssl rand -hex 32`.
   REWARD_QR_SECRET: z.preprocess((value) => (value === "" ? undefined : value), z.string().min(32).optional()),
+  // Telegram Mini App (docs/engine/TELEGRAM_MINIAPP.md). Токен бота по умолчанию; токены ботов клиентов — в переменных
+  // TELEGRAM_BOT_TOKEN__<ИМЯ_БОТА_ЗАГЛАВНЫМИ> (читаются напрямую из окружения, см. src/server/telegram-config.ts).
+  TELEGRAM_BOT_TOKEN: optionalString,
+  // Максимальный возраст auth_date в initData, секунд (по умолчанию сутки).
+  TELEGRAM_INIT_DATA_MAX_AGE: z.preprocess((value) => (value === "" ? undefined : value), z.coerce.number().int().min(60).max(7 * 24 * 3600).default(24 * 3600)),
+  // Секрет псевдонимизации идентификаторов платформ (HMAC): `openssl rand -hex 32`. Без него Telegram-вход не работает; менять нельзя — участники потеряют прогресс.
+  PLATFORM_ID_SECRET: z.preprocess((value) => (value === "" ? undefined : value), z.string().min(32).optional()),
   // Секрет для проверки Caddy перед выпуском сертификата (on-demand TLS): /api/internal/tls-ask?domain=…&token=…
   TLS_ASK_TOKEN: optionalString,
   NODE_ENV: z.enum(["development", "test", "production"]).default("development")

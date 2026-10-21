@@ -16,6 +16,8 @@ import {
 } from "@/server/rate-limit";
 import type { ParticipantRecord } from "@/server/repositories/advent-repository";
 import type { AdventService } from "@/server/services/advent-service";
+import { telegramCaller } from "@/server/telegram-auth";
+import type { AdventTenant } from "@/server/tenants";
 
 /** Cookie с ключом доступа участника адвента (в БД только хеш). */
 export const ADVENT_COOKIE = "advent_participant_access";
@@ -65,8 +67,13 @@ export function guardIdentityRequest(request: NextRequest, participantId: string
   return null;
 }
 
-/** Участник по cookie или `null`. */
-export async function participantFromRequest(request: NextRequest, service: AdventService): Promise<ParticipantRecord | null> {
+/**
+ * Участник запроса или `null`. Запрос из Telegram (заголовок `X-Telegram-Init-Data`) идентифицируется по подписанным данным
+ * запуска, cookie не читается вовсе; невалидный заголовок — 401. Без заголовка — cookie устройства, как раньше.
+ */
+export async function participantFromRequest(request: NextRequest, service: AdventService, tenant: AdventTenant): Promise<ParticipantRecord | null> {
+  const caller = telegramCaller(request.headers, tenant);
+  if (caller) return service.identifyPlatform("telegram", caller.subjectHash);
   return service.identify(request.cookies.get(ADVENT_COOKIE)?.value);
 }
 

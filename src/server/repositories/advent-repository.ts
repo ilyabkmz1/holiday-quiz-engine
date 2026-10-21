@@ -8,6 +8,24 @@ export type GrantStatus = "issued" | "redeemed";
  */
 export const CAMPAIGN_GRANT_DAY = 0;
 
+/** Платформы с входом без email. Участник платформы считается подтверждённым (антифарм наград: один аккаунт — один участник). */
+export type PlatformId = "telegram";
+
+/** Платформенная идентичность: только псевдоним (HMAC идентификатора), без сырого ID, имени и username. */
+export type ParticipantIdentityRecord = {
+  campaignSlug: string;
+  platform: PlatformId;
+  subjectHash: string;
+  participantId: string;
+  createdAt: Date;
+};
+
+/** Переходы по метке источника за день (UTC), без персональных данных. */
+export type SourceVisitRow = { source: string; date: string; opens: number };
+
+/** Сколько разных меток источника ведём в кампании; остальные копятся под `other` (метку может задать любой по ссылке). */
+export const MAX_SOURCE_LABELS = 40;
+export const OTHER_SOURCE = "other";
 /**
  * Адреса синтетических участников демо-данных (`advent:seed-demo`) лежат на этом домене (поддомен зарезервированного `example.test`).
  * Напоминания им не отправляются и в кандидаты не попадают: письма не должны уходить даже в «чёрную дыру», а тысячи демо-адресов
@@ -30,6 +48,8 @@ export type ParticipantRecord = {
   unsubscribeHash: string | null;
   /** Когда участник последний раз отключил напоминания; `null` — не отключал или включил снова. */
   unsubscribedAt: Date | null;
+  /** Платформа, в которой создан участник; `null`/нет — обычный веб (cookie). */
+  platform?: PlatformId | null;
   createdAt: Date;
 };
 
@@ -117,6 +137,17 @@ export interface AdventRepository {
   /** Участник по хешу ключа cookie: ключ создателя или ключ дополнительного устройства. */
   findParticipantByAccessKeyHash(accessKeyHash: string): Promise<ParticipantRecord | null>;
 
+  /** Участник по платформенной идентичности в кампании или `null`. */
+  findParticipantByIdentity(campaignSlug: string, platform: PlatformId, subjectHash: string): Promise<ParticipantRecord | null>;
+  /**
+   * Атомарно создаёт участника вместе с его идентичностью. Уникальность (кампания, платформа, subjectHash): при гонке
+   * проигравший ничего не создаёт и получает уже существующего участника (`created: false`).
+   */
+  createParticipantWithIdentity(participant: ParticipantRecord, identity: Omit<ParticipantIdentityRecord, "participantId" | "createdAt">): Promise<{ participant: ParticipantRecord; created: boolean }>;
+  /** Прибавляет переход к счётчику (кампания, источник, день UTC); новые метки сверх `MAX_SOURCE_LABELS` идут под `other`. */
+  recordSourceVisit(campaignSlug: string, source: string, date: string): Promise<void>;
+  /** Счётчики переходов кампании по источникам и дням. */
+  listSourceVisits(campaignSlug: string): Promise<SourceVisitRow[]>;
   /**
    * Команда участника (рейтинг `audience.leaderboard = "teams"`); `null` снимает выбор. Допустимость id команды проверяет сервис.
    * Участника нет — `null`.
@@ -224,7 +255,7 @@ export interface IdentityRepository {
 
   /**
    * Очистка ПДн после кампании: у всех участников кампании стираются email, согласия, подписка на напоминания и
-   * ключ отписки, ссылки входа кампании удаляются. Прогресс и награды остаются (обезличены). Возвращает число
+   * ключ отписки, ссылки входа и платформенные идентичности (псевдонимы Telegram) кампании удаляются. Прогресс и награды остаются (обезличены). Возвращает число
    * участников, у которых было что стирать.
    */
   anonymizeCampaignParticipants(campaignSlug: string): Promise<number>;

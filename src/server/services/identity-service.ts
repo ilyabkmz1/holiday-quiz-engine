@@ -56,6 +56,8 @@ export class IdentityService {
     assertParticipantId(participantId);
     const participant = await repository.getParticipant(participantId);
     if (!participant || participant.campaignSlug !== advent.slug) throw new DomainError("not_found", "Участник не найден.");
+    // Связка Telegram-участника с email (слияние прогресса) — следующий этап; сейчас вход по ссылке только у веб-участников.
+    if (participant.platform) throw new DomainError("conflict", "Вход по email для этого участника недоступен.");
 
     const token = createOpaqueToken();
     await repository.createLoginToken({

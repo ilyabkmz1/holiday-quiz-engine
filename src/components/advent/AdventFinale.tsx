@@ -6,6 +6,8 @@ import { AdventIcon } from "@/components/advent/icons";
 import { Burst } from "@/components/advent/Burst";
 import { PromoCard } from "@/components/advent/PromoCard";
 import { fill } from "@/components/advent/format";
+import { usePlatformBridge } from "@/components/advent/platform-context";
+import { miniAppLink, telegramShareLink } from "@/platform/telegram-links";
 import { CountUp } from "@/components/game/CountUp";
 import type { AdventState, PublicAdvent } from "@/types/advent";
 
@@ -15,6 +17,7 @@ import type { AdventState, PublicAdvent } from "@/types/advent";
  */
 export function AdventFinale({ advent, state, reduced, nowMs, extra = null }: { advent: PublicAdvent; state: AdventState; reduced: boolean; nowMs: number; extra?: ReactNode }) {
   const { copy } = advent;
+  const platform = usePlatformBridge();
   const closed = state.phase === "closed";
   const opened = state.doors.filter((door) => door.status === "opened").length;
   const goals = [...state.goals].sort((a, b) => a.opened - b.opened);
@@ -27,6 +30,12 @@ export function AdventFinale({ advent, state, reduced, nowMs, extra = null }: { 
   }, []);
 
   async function share() {
+    // В Telegram ссылка ведёт на мини-приложение (метка источника `share`), а не на сайт: окно «Переслать» открывает сам Telegram.
+    const app = advent.platforms.telegram;
+    if (platform.kind === "telegram" && app) {
+      const text = fill(copy.telegramFinaleShareText, { title: advent.title, k: opened, n: state.totalDays });
+      if (platform.openTelegramLink(telegramShareLink(miniAppLink(app, { source: "share" }), text))) return;
+    }
     const url = window.location.origin;
     const text = fill(copy.finaleShareText, { title: advent.title, k: opened, n: state.totalDays });
     try {
@@ -94,7 +103,7 @@ export function AdventFinale({ advent, state, reduced, nowMs, extra = null }: { 
       {extra}
 
       <button type="button" className="adv-btn adv-btn-primary" onClick={() => void share()}>
-        <AdventIcon name="share" size={16} /> {copy.finaleShare}
+        <AdventIcon name="share" size={16} /> {platform.kind === "telegram" ? copy.telegramShare : copy.finaleShare}
       </button>
       <span className="sr-only" role="status" aria-live="polite">{message ?? ""}</span>
       {message && <p className="adv-toast-inline" aria-hidden="true">{message}</p>}

@@ -189,5 +189,8 @@ npm run quiz:shots -- <slug> --day 1..12
 
 **Показ на продажах:** `npm run advent:seed-demo -- <demo-slug> --wipe` наполняет демо-пакет синтетическими участниками (адреса `seed.example.test`, письма им не уходят), затем `/admin?asOf=<ISO после финала>` и `/admin/report?asOf=…` (для `demo: true` и вне production). Скриншоты: `npm run advent:a7-shots -- <slug>`. В боевой пакет (`demo: false`) демо-данные не заливаются.
 
+### 8б. Telegram Mini App (по желанию клиента)
+Если клиент хочет адвент в Telegram: в `pack.json` добавить `"platforms": { "telegram": { "botUsername": "<бот>", "appShortName": "<short name>" } }` и `legal.telegramConsentText` (текст согласия про псевдонимизированный идентификатор Telegram, утверждает юрист клиента). Механика не меняется: вход без email, код выдаётся сразу. Бот, `/newapp`, токен и `PLATFORM_ID_SECRET` — по `docs/engine/TELEGRAM_MINIAPP.md`; `quiz:check` предупредит, чего не хватает. Ссылки для поста — в админке адвента, блок «Ссылки для поста». Напоминания ботом в этот этап не входят.
+
 ### 9. Запуск
-Чек-лист основной ветки плюс: `rules.md` утверждён и пометка снята, `demo: false`, `REWARD_QR_SECRET` задан (награды на кассе), кассиры заведены (`npm run quiz:admin -- <slug> --user kassa --role cashier`), коды загружены и их хватает (`quiz:check --participants N`), SMTP доходит до почты участников, `expectedParticipants` соответствует договорённостям.
+Чек-лист основной ветки плюс (если включён Telegram — токен бота и `PLATFORM_ID_SECRET` в окружении, `legal.telegramConsentText` утверждён): `rules.md` утверждён и пометка снята, `demo: false`, `REWARD_QR_SECRET` задан (награды на кассе), кассиры заведены (`npm run quiz:admin -- <slug> --user kassa --role cashier`), коды загружены и их хватает (`quiz:check --participants N`), SMTP доходит до почты участников, `expectedParticipants` соответствует договорённостям.
