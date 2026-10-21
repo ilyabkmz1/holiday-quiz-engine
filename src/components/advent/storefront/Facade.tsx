@@ -41,12 +41,45 @@ export function facadeVars(colors: FacadeColors): CSSProperties {
 
 const EAVE_LIGHTS = 13;
 const EAVE_COLORS = ["var(--gold)", "var(--cyan)", "var(--coral)", "var(--green)"] as const;
+/** Диодов в ряду юнита стойки: первый — «активность» (мигает у сегодняшнего окна), остальные — питание и сеть. */
+const UNIT_LEDS = 3;
+/** Вес ряда узкой сетки при выборе «прокручивать или вписывать»: ряд юнита примерно вдвое ниже ряда обычного окна. */
+const RACK_ROW_WEIGHT = 0.4;
+/** Блоки охлаждения на крыше: левый край каждого в координатах viewBox 400×80; середина блока — вентилятор. */
+const COOLING_UNITS = [40, 158, 276] as const;
+const COOLING_UNIT_WIDTH = 84;
+
+/** Крыша дата-центра: плита с тремя блоками охлаждения; лопасти вентиляторов крутит CSS (без движения стоят на месте). */
+function CoolingUnits() {
+  return (
+    <>
+      <rect className="adv-roof-fill" x="-6" y="40" width="412" height="40" rx="4" />
+      <rect className="adv-roof-trim" x="-6" y="36" width="412" height="8" rx="3" />
+      {COOLING_UNITS.map((x) => {
+        const cx = x + COOLING_UNIT_WIDTH / 2;
+        return (
+          <g key={x}>
+            <rect className="adv-roof-unit" x={x} y="6" width={COOLING_UNIT_WIDTH} height="32" rx="3" />
+            <path className="adv-roof-vent" d={`M${x + 6} 12h12M${x + 6} 17h12M${x + 6} 22h12M${x + 6} 27h12M${x + 66} 12h12M${x + 66} 17h12M${x + 66} 22h12M${x + 66} 27h12`} />
+            <circle className="adv-roof-fan-ring" cx={cx} cy="22" r="12.5" />
+            <g className="adv-roof-fan">
+              {[0, 90, 180, 270].map((angle) => (
+                <ellipse key={angle} className="adv-roof-blade" cx={cx} cy="16" rx="3.2" ry="6" transform={`rotate(${angle} ${cx} 22)`} />
+              ))}
+            </g>
+            <circle className="adv-roof-hub" cx={cx} cy="22" r="2.4" />
+          </g>
+        );
+      })}
+    </>
+  );
+}
 
 function Roof({ template, signText }: { template: FacadeTemplate; signText: string }) {
   const clip = `awn-${useId().replace(/:/g, "")}`;
   return (
     <div className="adv-roof" data-roof={template.roof.shape} data-awning={template.roof.awning || undefined}>
-      <svg className="adv-roof-svg" viewBox="0 0 400 96" preserveAspectRatio="none" aria-hidden="true" focusable="false">
+      <svg className="adv-roof-svg" viewBox={template.roof.shape === "cooling" ? "0 0 400 80" : "0 0 400 96"} preserveAspectRatio="none" aria-hidden="true" focusable="false">
         {template.roof.shape === "gable" && <path className="adv-roof-fill" d="M-6 96L200 6 406 96z" />}
         {template.roof.shape === "flat" && (
           <>
@@ -54,6 +87,7 @@ function Roof({ template, signText }: { template: FacadeTemplate; signText: stri
             <rect className="adv-roof-trim" x="-6" y="52" width="412" height="9" rx="3" />
           </>
         )}
+        {template.roof.shape === "cooling" && <CoolingUnits />}
         {template.roof.shape === "dome" && <path className="adv-roof-fill" d="M-6 96C-6 36 96 4 200 4S406 36 406 96z" />}
         {template.decor.snow && template.roof.shape === "gable" && <path className="adv-roof-snow" d="M52 70.6L200 6 348 70.6 338 82 318 72 298 84 276 70 250 82 226 68 200 78 174 68 150 82 124 70 102 84 82 72 62 82z" />}
         {template.decor.snow && template.roof.shape !== "gable" && <path className="adv-roof-snow" d={template.roof.shape === "dome" ? "M86 28C120 10 160 4 200 4s80 6 114 24c-16 6-26-2-42 4-16-6-26 2-42-4-16 6-26-2-44 4-16-6-26 2-42-4-14 6-26-2-38 4z" : "M-6 52h412v8c-16 6-26-2-42 4-16-6-26 2-42-4-16 6-26-2-44 4-16-6-26 2-42-4-16 6-26-2-44 4-16-6-26 2-42-4-16 6-26-2-44 4-16-6-26 2-42-4z"} />}
@@ -162,6 +196,7 @@ export function Facade({ template, signText, host, doors, grants, today, copy, t
           data-shape={WINDOW_SHAPE[status]}
           data-big={cell.big || undefined}
           data-finale={finale || undefined}
+          data-wide={cell.colSpan >= layout.columns || undefined}
           data-done={door.completed || undefined}
           data-igniting={lit === door.n || undefined}
           tabIndex={door.n === tabStop ? 0 : -1}
@@ -177,6 +212,11 @@ export function Facade({ template, signText, host, doors, grants, today, copy, t
           {icon && <AdventIcon name={icon} size={finale ? 24 : 22} className="adv-window-icon" />}
           {(cell.big || finale) && <span className="adv-window-tag" aria-hidden="true">{cell.big ? copy.windowToday : copy.windowFinale}</span>}
           {finale && <AdventIcon name="star" size={16} className="adv-window-star" />}
+          {template.windows.shape === "unit" && (
+            <span className="adv-window-leds" aria-hidden="true">
+              {Array.from({ length: UNIT_LEDS }, (_, index) => <i key={index} />)}
+            </span>
+          )}
           {status === "opened" && door.blocksTotal > 0 && !door.completed && (
             <span className="adv-window-pips" aria-hidden="true">
               {Array.from({ length: door.blocksTotal }, (_, index) => <i key={index} className={index < door.blocksDone ? "on" : ""} />)}
@@ -188,8 +228,8 @@ export function Facade({ template, signText, host, doors, grants, today, copy, t
   };
 
   return (
-    <div className="adv-facade-scroll" ref={scrollRef} data-fit={phase === "running" || undefined} data-scroll={layout.rows > 6 ? "true" : undefined}>
-      <div className="adv-facade" data-roof={template.roof.shape} data-windows={template.windows.shape} data-panes={template.windows.panes} data-door-shape={template.door.shape} data-template={template.id} data-snow={template.decor.snow ? "on" : "off"} style={{ ...facadeVars(template.colors), "--rows": layout.rows } as CSSProperties}>
+    <div className="adv-facade-scroll" ref={scrollRef} data-fit={phase === "running" || undefined} data-scroll={layout.rows * (layout.columns === 2 ? RACK_ROW_WEIGHT : 1) > 6 ? "true" : undefined}>
+      <div className="adv-facade" data-roof={template.roof.shape} data-windows={template.windows.shape} data-panes={template.windows.panes} data-door-shape={template.door.shape} data-template={template.id} data-snow={template.decor.snow ? "on" : "off"} style={{ ...facadeVars(template.colors), "--rows": layout.rows, "--cols": layout.columns } as CSSProperties}>
         <Roof template={template} signText={signText} />
         <div className="adv-wall" ref={wallRef}>
           <div className="adv-windows" role="list" aria-label={copy.windowsLabel} onKeyDown={onKeyDown}>
