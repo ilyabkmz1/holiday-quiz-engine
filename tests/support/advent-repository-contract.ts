@@ -486,6 +486,22 @@ export function describeAdventRepositoryContract(name: string, create: () => Pro
         expect((await repo.listDayOpens(requester.id)).map((open) => open.day)).toEqual([4]);
       });
 
+      it("участник Telegram не вливается ни при входе по ссылке, ни напрямую: его идентичность и награды остаются при нём", async () => {
+        const requester = await newParticipant();
+        const { participant: telegram } = await repo.createParticipantWithIdentity(
+          participantRecord({ platform: "telegram", consentAt: T0 }),
+          { campaignSlug: CAMPAIGN, platform: "telegram", subjectHash: "merge-guard" }
+        );
+        await repo.openDayOnce(telegram.id, 2, minutes(1), true);
+        const token = tokenRecord(requester.id, "tg-merge@example.test");
+        await repo.createLoginToken(token);
+        const result = await login(token.tokenHash, { current: telegram.id });
+        expect(result.mergedFrom).toEqual([]);
+        await expect(repo.mergeParticipants(telegram.id, requester.id)).rejects.toMatchObject({ code: "invalid" });
+        expect((await repo.findParticipantByIdentity(CAMPAIGN, "telegram", "merge-guard"))?.id).toBe(telegram.id);
+        expect((await repo.listDayOpens(telegram.id)).map((open) => open.day)).toEqual([2]);
+      });
+
       it("текущий участник устройства с другим email не вливается", async () => {
         const other = await newParticipant({ normalizedEmail: "other@example.test" });
         const requester = await newParticipant();

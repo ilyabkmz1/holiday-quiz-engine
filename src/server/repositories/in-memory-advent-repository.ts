@@ -325,6 +325,8 @@ export class InMemoryAdventRepository implements AdventRepository, IdentityRepos
     const into = this.requireParticipant(intoId);
     if (from.campaignSlug !== into.campaignSlug) throw new DomainError("invalid", "Участники из разных кампаний.");
     if (from.normalizedEmail !== null) throw new DomainError("invalid", "Нельзя влить участника, привязанного к email.");
+    // Участник Telegram живёт по своей идентичности: слияние удалило бы его (и псевдоним) и перенесло бы награды, выданные без email.
+    if ((from.platform ?? null) !== null) throw new DomainError("invalid", "Нельзя влить участника платформы.");
     if (into.teamId === null && from.teamId !== null) into.teamId = from.teamId;
 
     for (const [key, open] of [...this.opens]) {
@@ -676,8 +678,8 @@ export class InMemoryAdventRepository implements AdventRepository, IdentityRepos
     const mergedFrom: string[] = [];
     for (const candidate of new Set([requester.id, current?.id])) {
       const source = candidate ? this.participants.get(candidate) : undefined;
-      // Сливаем только анонимных той же кампании; участник с другим email остаётся отдельным.
-      if (!source || source.id === target.id || source.normalizedEmail !== null || source.campaignSlug !== target.campaignSlug) continue;
+      // Сливаем только анонимных веб-участников той же кампании; участник с другим email или из Telegram остаётся отдельным.
+      if (!source || source.id === target.id || source.normalizedEmail !== null || (source.platform ?? null) !== null || source.campaignSlug !== target.campaignSlug) continue;
       this.merge(source.id, target.id, source.id !== requester.id || sameDevice);
       mergedFrom.push(source.id);
     }

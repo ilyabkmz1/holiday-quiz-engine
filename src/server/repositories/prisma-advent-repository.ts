@@ -185,6 +185,8 @@ async function mergeInTx(tx: Tx, fromId: string, intoId: string, moveKeys = true
   if (!from || !into) throw participantMissing();
   if (from.campaignSlug !== into.campaignSlug) throw new DomainError("invalid", "Участники из разных кампаний.");
   if (from.normalizedEmail !== null) throw new DomainError("invalid", "Нельзя влить участника, привязанного к email.");
+  // Участник Telegram живёт по своей идентичности: слияние удалило бы его (и псевдоним) и перенесло бы награды, выданные без email.
+  if (from.platform !== null) throw new DomainError("invalid", "Нельзя влить участника платформы.");
   // Команда поглощённого не пропадает, если итоговый свою ещё не выбрал.
   if (into.teamId === null && from.teamId !== null) await tx.participant.update({ where: { id: intoId }, data: { teamId: from.teamId } });
 
@@ -791,8 +793,8 @@ export class PrismaAdventRepository implements AdventRepository, IdentityReposit
     if (revokeRequesterKeys) await tx.participantKey.deleteMany({ where: { participantId: target.id } });
     const current = input.currentParticipantId ? await tx.participant.findUnique({ where: { id: input.currentParticipantId } }) : null;
     for (const source of [requester, current]) {
-      // Сливаем только анонимных той же кампании; участник с другим email остаётся отдельным.
-      if (!source || source.id === target.id || source.normalizedEmail !== null || source.campaignSlug !== target.campaignSlug) continue;
+      // Сливаем только анонимных веб-участников той же кампании; участник с другим email или из Telegram остаётся отдельным.
+      if (!source || source.id === target.id || source.normalizedEmail !== null || source.platform !== null || source.campaignSlug !== target.campaignSlug) continue;
       if (mergedFrom.includes(source.id)) continue;
       await mergeInTx(tx, source.id, target.id, source.id !== requester.id || sameDevice);
       mergedFrom.push(source.id);
