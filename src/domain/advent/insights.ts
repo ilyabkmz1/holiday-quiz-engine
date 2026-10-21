@@ -75,7 +75,7 @@ export function buildInsights(data: AdventAnalytics): AnalyticsInsight[] {
     if (kpis.d1.share < T.d1Low) {
       out.push({ key: "d1", tone: "watch", text: `На следующий день возвращаются ${percent(kpis.d1.share)} новых участников. Это немного: стоит предложить сохранить прогресс по email и включить напоминания сразу после первой двери.` });
     } else if (kpis.d1.share >= T.d1High) {
-      out.push({ key: "d1", tone: "good", text: `На следующий день возвращаются ${percent(kpis.d1.share)} новых участников — серия и подарки за вход работают.` });
+      out.push({ key: "d1", tone: "good", text: `На следующий день возвращаются ${percent(kpis.d1.share)} новых участников — это хороший показатель.` });
     }
   }
 
@@ -102,7 +102,7 @@ export function buildInsights(data: AdventAnalytics): AnalyticsInsight[] {
 
   for (const reward of data.rewards) {
     if (reward.stockLeft === 0 && reward.stockTotal) {
-      out.push({ key: `stock-${reward.rewardId}`, tone: "info", text: `Приз «${reward.label}» разыгран полностью (${reward.stockTotal}). Дальше удача выдаёт утешительный приз.` });
+      out.push({ key: `stock-${reward.rewardId}`, tone: "info", text: `Приз «${reward.label}» разыгран полностью (${reward.stockTotal}). Дальше удача разыгрывает остальные призы пула.` });
     }
     if (reward.codesTotal !== null && reward.codesFree === 0 && reward.codesTotal > 0) {
       out.push({ key: `pool-${reward.rewardId}`, tone: "watch", text: `Коды награды «${reward.label}» закончились. Загрузите ещё, иначе участники получат пустую выдачу.` });
@@ -112,7 +112,7 @@ export function buildInsights(data: AdventAnalytics): AnalyticsInsight[] {
   const opened = data.days.reduce((sum, day) => sum + day.opened, 0);
   const caught = data.days.reduce((sum, day) => sum + day.caughtUp, 0);
   if (opened >= MIN_GROUP && caught / opened >= T.catchUpHigh) {
-    out.push({ key: "catch-up", tone: "info", text: `${percent(caught / opened)} дверей открыты с опозданием: люди возвращаются к пропущенному. Правила догоняния работают, но серия при этом не растёт.` });
+    out.push({ key: "catch-up", tone: "info", text: `${percent(caught / opened)} дверей открыты с опозданием: люди возвращаются к пропущенному. Догнанные двери засчитываются в прогресс, но не в серию.` });
   }
 
   if (data.reminders && data.reminders.channel === "email" && data.reminders.sent >= MIN_GROUP) {
@@ -120,7 +120,7 @@ export function buildInsights(data: AdventAnalytics): AnalyticsInsight[] {
     out.push({
       key: "reminders",
       tone: rate < T.reminderLow ? "watch" : "good",
-      text: `После письма-напоминания день открыли ${percent(rate)} получателей (${data.reminders.openedAfter} из ${data.reminders.sent}).${rate < T.reminderLow ? " Попробуйте другую тему письма или время отправки." : ""}`
+      text: `После письма-напоминания день открыли в ${percent(rate)} случаев (${data.reminders.openedAfter} из ${data.reminders.sent} писем).${rate < T.reminderLow ? " Попробуйте другую тему письма или время отправки." : ""}`
     });
   }
 

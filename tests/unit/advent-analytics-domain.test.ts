@@ -201,3 +201,15 @@ describe("retentionRate: срок возврата вне дней кампан�
     expect(retentionRate([{ date: "2026-12-18", size: 6, returned: [] }], 1, "2026-12-25", openable)).toEqual({ count: 0, base: 0 });
   });
 });
+
+describe("buildInsights: формулировки без преувеличений", () => {
+  it("напоминания считаются по письмам, а не по людям; возврат D1 без причинных обещаний", async () => {
+    const { analyticsFixture } = await import("../support/analytics-fixture");
+    const data = analyticsFixture();
+    data.kpis.d1 = { count: 50, base: 100, share: 0.5 };
+    data.reminders = { channel: "email", subscribed: 20, unsubscribed: 0, sent: 200, failed: 0, clicked: 90, openedAfter: 120 };
+    const insights = buildInsights(data);
+    expect(insights.find((insight) => insight.key === "reminders")?.text).toBe("После письма-напоминания день открыли в 60% случаев (120 из 200 писем).");
+    expect(insights.find((insight) => insight.key === "d1")?.text).not.toMatch(/работают/);
+  });
+});
