@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useId, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent } from "react";
+import { useEffect, useId, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent, type ReactNode } from "react";
 
 import { AdventIcon } from "@/components/advent/icons";
 import { dayLabel, fill } from "@/components/advent/format";
@@ -30,6 +30,10 @@ type Props = {
   onOpen: (n: number) => void;
   /** Подсказка для окна, которое нельзя открыть. */
   onHint: (text: string) => void;
+  /** Хозяин на улице (`StreetHost`): рисуется поверх стены, а в двери его уже нет. Без него хозяин стоит в двери. */
+  street?: ReactNode;
+  /** Действие окна идёт через ходьбу хозяина: `immediate` — с клавиатуры, без ожидания. Без него действие выполняется сразу. */
+  walk?: (n: number, act: () => void, immediate: boolean) => void;
 };
 
 /** Цвета фасада: роли шаблона превращаются в CSS-переменные со ссылками на токены бренда (в компонентах нет ни одного hex). */
@@ -41,12 +45,45 @@ export function facadeVars(colors: FacadeColors): CSSProperties {
 
 const EAVE_LIGHTS = 13;
 const EAVE_COLORS = ["var(--gold)", "var(--cyan)", "var(--coral)", "var(--green)"] as const;
+/** Диодов в ряду юнита стойки: первый — «активность» (мигает у сегодняшнего окна), остальные — питание и сеть. */
+const UNIT_LEDS = 3;
+/** Вес ряда узкой сетки при выборе «прокручивать или вписывать»: ряд юнита примерно вдвое ниже ряда обычного окна. */
+const RACK_ROW_WEIGHT = 0.4;
+/** Блоки охлаждения на крыше: левый край каждого в координатах viewBox 400×80; середина блока — вентилятор. */
+const COOLING_UNITS = [40, 158, 276] as const;
+const COOLING_UNIT_WIDTH = 84;
+
+/** Крыша дата-центра: плита с тремя блоками охлаждения; лопасти вентиляторов крутит CSS (без движения стоят на месте). */
+function CoolingUnits() {
+  return (
+    <>
+      <rect className="adv-roof-fill" x="-6" y="40" width="412" height="40" rx="4" />
+      <rect className="adv-roof-trim" x="-6" y="36" width="412" height="8" rx="3" />
+      {COOLING_UNITS.map((x) => {
+        const cx = x + COOLING_UNIT_WIDTH / 2;
+        return (
+          <g key={x}>
+            <rect className="adv-roof-unit" x={x} y="6" width={COOLING_UNIT_WIDTH} height="32" rx="3" />
+            <path className="adv-roof-vent" d={`M${x + 6} 12h12M${x + 6} 17h12M${x + 6} 22h12M${x + 6} 27h12M${x + 66} 12h12M${x + 66} 17h12M${x + 66} 22h12M${x + 66} 27h12`} />
+            <circle className="adv-roof-fan-ring" cx={cx} cy="22" r="12.5" />
+            <g className="adv-roof-fan">
+              {[0, 90, 180, 270].map((angle) => (
+                <ellipse key={angle} className="adv-roof-blade" cx={cx} cy="16" rx="3.2" ry="6" transform={`rotate(${angle} ${cx} 22)`} />
+              ))}
+            </g>
+            <circle className="adv-roof-hub" cx={cx} cy="22" r="2.4" />
+          </g>
+        );
+      })}
+    </>
+  );
+}
 
 function Roof({ template, signText }: { template: FacadeTemplate; signText: string }) {
   const clip = `awn-${useId().replace(/:/g, "")}`;
   return (
     <div className="adv-roof" data-roof={template.roof.shape} data-awning={template.roof.awning || undefined}>
-      <svg className="adv-roof-svg" viewBox="0 0 400 96" preserveAspectRatio="none" aria-hidden="true" focusable="false">
+      <svg className="adv-roof-svg" viewBox={template.roof.shape === "cooling" ? "0 0 400 80" : "0 0 400 96"} preserveAspectRatio="none" aria-hidden="true" focusable="false">
         {template.roof.shape === "gable" && <path className="adv-roof-fill" d="M-6 96L200 6 406 96z" />}
         {template.roof.shape === "flat" && (
           <>
@@ -54,6 +91,7 @@ function Roof({ template, signText }: { template: FacadeTemplate; signText: stri
             <rect className="adv-roof-trim" x="-6" y="52" width="412" height="9" rx="3" />
           </>
         )}
+        {template.roof.shape === "cooling" && <CoolingUnits />}
         {template.roof.shape === "dome" && <path className="adv-roof-fill" d="M-6 96C-6 36 96 4 200 4S406 36 406 96z" />}
         {template.decor.snow && template.roof.shape === "gable" && <path className="adv-roof-snow" d="M52 70.6L200 6 348 70.6 338 82 318 72 298 84 276 70 250 82 226 68 200 78 174 68 150 82 124 70 102 84 82 72 62 82z" />}
         {template.decor.snow && template.roof.shape !== "gable" && <path className="adv-roof-snow" d={template.roof.shape === "dome" ? "M86 28C120 10 160 4 200 4s80 6 114 24c-16 6-26-2-42 4-16-6-26 2-42-4-16 6-26-2-44 4-16-6-26 2-42-4-14 6-26-2-38 4z" : "M-6 52h412v8c-16 6-26-2-42 4-16-6-26 2-42-4-16 6-26-2-44 4-16-6-26 2-42-4-16 6-26-2-44 4-16-6-26 2-42-4-16 6-26-2-44 4-16-6-26 2-42-4z"} />}
@@ -93,12 +131,14 @@ function Roof({ template, signText }: { template: FacadeTemplate; signText: stri
  * Каждое окно — кнопка со статусом, который читается формой и значком, а не только цветом.
  * Клавиатура: Tab заходит одной остановкой, стрелки двигают фокус по окнам в порядке дней, Home и End — к краям.
  */
-export function Facade({ template, signText, host, doors, grants, today, copy, timezone, phase, busy, lit, reduced, onOpen, onHint }: Props) {
+export function Facade({ template, signText, host, doors, grants, today, copy, timezone, phase, busy, lit, reduced, onOpen, onHint, street, walk }: Props) {
   const layout = useMemo(() => facadeLayout(doors.length, today, template), [doors.length, today, template]);
   const wallRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const todayDoor = doors.find((door) => door.n === today) ?? doors.find((door) => door.status === "today") ?? doors.find((door) => door.status === "catchup") ?? doors[0];
   const [active, setActive] = useState<number | null>(null);
+  // Enter и пробел на окне: действие выполняется сразу, а не после ходьбы хозяина (флаг снимает указатель или сам клик).
+  const viaKeyRef = useRef(false);
   const tabStop = active ?? todayDoor?.n ?? 1;
   const doorByN = useMemo(() => new Map(doors.map((door) => [door.n, door])), [doors]);
 
@@ -116,6 +156,7 @@ export function Facade({ template, signText, host, doors, grants, today, copy, t
   }
 
   function onKeyDown(event: KeyboardEvent<HTMLElement>) {
+    if (event.key === "Enter" || event.key === " ") viaKeyRef.current = true;
     if (event.altKey || event.ctrlKey || event.metaKey) return;
     const current = Number((event.target as HTMLElement).closest<HTMLElement>("[data-door]")?.dataset.door);
     if (!Number.isInteger(current)) return;
@@ -131,10 +172,16 @@ export function Facade({ template, signText, host, doors, grants, today, copy, t
   }
 
   function activate(door: AdventDoor) {
-    if (door.status === "locked") onHint(fill(copy.doorLockedHint, { date: dayLabel(door.unlocksAt, timezone) }));
-    else if (door.status === "missed") onHint(copy.doorMissedHint);
-    else if (door.status !== "opened" && phase !== "running") onHint(copy.doorFinaleHint);
-    else onOpen(door.n);
+    const immediate = viaKeyRef.current;
+    viaKeyRef.current = false;
+    const act = () => {
+      if (door.status === "locked") onHint(fill(copy.doorLockedHint, { date: dayLabel(door.unlocksAt, timezone) }));
+      else if (door.status === "missed") onHint(copy.doorMissedHint);
+      else if (door.status !== "opened" && phase !== "running") onHint(copy.doorFinaleHint);
+      else onOpen(door.n);
+    };
+    if (walk) walk(door.n, act, immediate);
+    else act();
   }
 
   const windowNode = (cell: FacadeCell) => {
@@ -162,6 +209,7 @@ export function Facade({ template, signText, host, doors, grants, today, copy, t
           data-shape={WINDOW_SHAPE[status]}
           data-big={cell.big || undefined}
           data-finale={finale || undefined}
+          data-wide={cell.colSpan >= layout.columns || undefined}
           data-done={door.completed || undefined}
           data-igniting={lit === door.n || undefined}
           tabIndex={door.n === tabStop ? 0 : -1}
@@ -169,6 +217,7 @@ export function Facade({ template, signText, host, doors, grants, today, copy, t
           aria-busy={busy === door.n || undefined}
           aria-disabled={status === "locked" || status === "missed" || undefined}
           onFocus={() => setActive(door.n)}
+          onPointerDown={() => { viaKeyRef.current = false; }}
           onClick={() => activate(door)}
         >
           <span className="adv-window-glass" aria-hidden="true" />
@@ -177,6 +226,11 @@ export function Facade({ template, signText, host, doors, grants, today, copy, t
           {icon && <AdventIcon name={icon} size={finale ? 24 : 22} className="adv-window-icon" />}
           {(cell.big || finale) && <span className="adv-window-tag" aria-hidden="true">{cell.big ? copy.windowToday : copy.windowFinale}</span>}
           {finale && <AdventIcon name="star" size={16} className="adv-window-star" />}
+          {template.windows.shape === "unit" && (
+            <span className="adv-window-leds" aria-hidden="true">
+              {Array.from({ length: UNIT_LEDS }, (_, index) => <i key={index} />)}
+            </span>
+          )}
           {status === "opened" && door.blocksTotal > 0 && !door.completed && (
             <span className="adv-window-pips" aria-hidden="true">
               {Array.from({ length: door.blocksTotal }, (_, index) => <i key={index} className={index < door.blocksDone ? "on" : ""} />)}
@@ -188,8 +242,8 @@ export function Facade({ template, signText, host, doors, grants, today, copy, t
   };
 
   return (
-    <div className="adv-facade-scroll" ref={scrollRef} data-fit={phase === "running" || undefined} data-scroll={layout.rows > 6 ? "true" : undefined}>
-      <div className="adv-facade" data-roof={template.roof.shape} data-windows={template.windows.shape} data-panes={template.windows.panes} data-door-shape={template.door.shape} data-template={template.id} data-snow={template.decor.snow ? "on" : "off"} style={{ ...facadeVars(template.colors), "--rows": layout.rows } as CSSProperties}>
+    <div className="adv-facade-scroll" ref={scrollRef} data-fit={phase === "running" || undefined} data-scroll={layout.rows * (layout.columns === 2 ? RACK_ROW_WEIGHT : 1) > 6 ? "true" : undefined}>
+      <div className="adv-facade" data-roof={template.roof.shape} data-windows={template.windows.shape} data-panes={template.windows.panes} data-door-shape={template.door.shape} data-template={template.id} data-snow={template.decor.snow ? "on" : "off"} style={{ ...facadeVars(template.colors), "--rows": layout.rows, "--cols": layout.columns } as CSSProperties}>
         <Roof template={template} signText={signText} />
         <div className="adv-wall" ref={wallRef}>
           <div className="adv-windows" role="list" aria-label={copy.windowsLabel} onKeyDown={onKeyDown}>
@@ -199,10 +253,11 @@ export function Facade({ template, signText, host, doors, grants, today, copy, t
             <div key="door" className="adv-cell" style={{ "--col": cell.col, "--row": cell.row, "--cs": cell.colSpan, "--rs": cell.rowSpan } as CSSProperties} data-cell="door">
               <div className="adv-front-door">
                 <span className="adv-front-light" aria-hidden="true" />
-                <span className="adv-host"><HeroSprite hero={host} mood="happy" pose="wave" facing={1} marker={null} /></span>
+                {!street && <span className="adv-host"><HeroSprite hero={host} mood="happy" pose="wave" facing={1} marker={null} /></span>}
               </div>
             </div>
           ))}
+          {street}
         </div>
         <div className="adv-ground" aria-hidden="true"><i /><i /><i /></div>
       </div>

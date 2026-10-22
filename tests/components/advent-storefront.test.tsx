@@ -1,6 +1,9 @@
 // @vitest-environment jsdom
 
 import "@testing-library/jest-dom/vitest";
+import { readFileSync } from "node:fs";
+import path from "node:path";
+
 import { act, cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { useState } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -297,7 +300,7 @@ describe("Facade: награды закрытых дней не раскрыва
 });
 
 describe("Facade: шаблоны", () => {
-  it.each(["cafe", "shop", "office", "salon"])("шаблон %s рисует крышу, окна нужной формы и дверь", async (id) => {
+  it.each(["cafe", "shop", "office", "salon", "datacenter"])("шаблон %s рисует крышу, окна нужной формы и дверь", async (id) => {
     const { state } = await fiveStatus();
     const template = loadFacade(id);
     mountFacade(state, { template });
@@ -309,6 +312,76 @@ describe("Facade: шаблоны", () => {
     expect(facade.getAttribute("style")).toContain(`--fc-wall: var(--${template.colors.wall})`);
     expect(facade.getAttribute("style")).not.toMatch(/#[0-9a-f]{3,8}/i);
     expect(!!document.querySelector(".adv-awning")).toBe(template.roof.awning);
+  });
+});
+
+describe("Facade: дата-центр", () => {
+  async function mountRack() {
+    const { state } = await fiveStatus();
+    mountFacade(state, { template: loadFacade("datacenter") });
+    return state;
+  }
+
+  it("крыша с блоками охлаждения, гермодверь, сетка в 2 колонки; цвета только токенами", async () => {
+    await mountRack();
+    const facade = document.querySelector<HTMLElement>(".adv-facade")!;
+    expect(facade).toMatchObject({ dataset: expect.objectContaining({ roof: "cooling", windows: "unit", doorShape: "hatch" }) });
+    expect(facade.style.getPropertyValue("--cols")).toBe("2");
+    expect(document.querySelectorAll(".adv-roof-unit")).toHaveLength(3);
+    expect(document.querySelectorAll(".adv-roof-fan")).toHaveLength(3);
+    expect(document.querySelector(".adv-roof")!.innerHTML + document.querySelector(".adv-windows")!.innerHTML).not.toMatch(/#[0-9a-f]{3,8}\b/i);
+    expect(document.querySelector(".adv-front-door .adv-host")).not.toBeNull();
+  });
+
+  it("каждый юнит — одно окно с рядом из трёх диодов; диоды скрыты от скринридера и не попадают в подпись", async () => {
+    await mountRack();
+    for (const button of document.querySelectorAll<HTMLElement>(".adv-window")) {
+      const leds = button.querySelector(".adv-window-leds");
+      expect(leds).toHaveAttribute("aria-hidden", "true");
+      expect(leds!.querySelectorAll("i")).toHaveLength(3);
+      expect(button.getAttribute("aria-label")).toBeTruthy();
+    }
+    // Статус читается формой и подписью, не только диодами: у сегодняшнего юнита подпись «Сегодня», у окон — свои форма и подпись.
+    expect(win(4).dataset.status).toBe("today");
+    expect(win(4).dataset.shape).toBe(WINDOW_SHAPE.today);
+    expect(win(4).querySelector(".adv-window-tag")).toHaveTextContent(copy.windowToday);
+    expect(win(1).dataset.status).toBe("opened");
+  });
+
+  it("сегодняшний юнит занимает ширину стойки в два ряда, финал — верхний юнит на всю ширину", async () => {
+    await mountRack();
+    const cell = (n: number) => win(n).closest<HTMLElement>(".adv-cell")!;
+    expect(cell(4).style.getPropertyValue("--cs")).toBe("2");
+    expect(cell(4).style.getPropertyValue("--rs")).toBe("2");
+    expect(win(12).dataset.finale).toBe("true");
+    expect(cell(12).style.getPropertyValue("--cs")).toBe("2");
+    expect(cell(12).style.getPropertyValue("--row")).toBe("0");
+  });
+
+  it("клавиатура как на других фасадах: одна остановка Tab, стрелки двигают фокус по дням", async () => {
+    await mountRack();
+    expect(document.querySelectorAll('.adv-window[tabindex="0"]')).toHaveLength(1);
+    win(4).focus();
+    fireEvent.keyDown(win(4), { key: "ArrowDown" });
+    expect(document.activeElement).toBe(win(5));
+    fireEvent.keyDown(win(5), { key: "End" });
+    expect(document.activeElement).toBe(win(12));
+    expect(document.querySelector(".adv-windows")).toHaveAttribute("role", "list");
+  });
+
+  it("вентиляторы и диоды анимирует только CSS, а при prefers-reduced-motion анимации выключены, и диоды горят статично", () => {
+    const css = readFileSync(path.join(process.cwd(), "src/components/advent/storefront/storefront.css"), "utf8");
+    expect(css).toMatch(/\.adv-roof-fan\s*\{[^}]*animation: advFanSpin/);
+    expect(css).toMatch(/\.adv-window-today \.adv-window-leds i:nth-child\(1\)\s*\{[^}]*animation: advLedActivity/);
+    const reduced = css.slice(css.lastIndexOf("@media (prefers-reduced-motion: reduce)"));
+    expect(reduced).toMatch(/\.adv-window-leds i/);
+    expect(reduced).toMatch(/\.adv-roof-fan/);
+    expect(reduced).toContain("animation: none !important");
+    // Цвет диода задан отдельно от анимации: без анимации остаётся полная яркость.
+    expect(css).toMatch(/\.adv-window-today \.adv-window-leds i:nth-child\(1\)\s*\{[^}]*background: var\(--green\)/);
+    // Раздел дата-центра без hex.
+    const section = css.slice(css.indexOf("Дата-центр:"), css.indexOf("Нижняя плашка"));
+    expect(section.match(/#[0-9a-fA-F]{3,8}\b/g)).toBeNull();
   });
 });
 

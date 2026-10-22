@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { FACADE_COLUMNS, facadeLayout, type FacadeCell, type FacadeLayout } from "@/domain/advent";
+import { FACADE_COLUMNS, RACK_COLUMNS, RACK_DOOR_ROWS, facadeLayout, type FacadeCell, type FacadeLayout } from "@/domain/advent";
 
 const withAttic = { layout: { attic: true } };
 const noAttic = { layout: { attic: false } };
@@ -113,5 +113,61 @@ describe("facadeLayout: раскладка окон фасада", () => {
   it("число дней должно быть целым от 1", () => {
     expect(() => facadeLayout(0, null, withAttic)).toThrow();
     expect(() => facadeLayout(2.5, null, withAttic)).toThrow();
+  });
+});
+
+describe("facadeLayout: стойка (layout.columns: 2)", () => {
+  const rack = { layout: { attic: true, columns: 2 as const } };
+  const rackNoAttic = { layout: { attic: false, columns: 2 as const } };
+
+  it("для любого числа дней 5–31 и любого сегодняшнего дня: каждое окно один раз, без перекрытий и дыр, дверь внизу по центру", () => {
+    for (const attic of [true, false]) {
+      for (let days = 5; days <= 31; days += 1) {
+        for (const today of [null, ...Array.from({ length: days }, (_, index) => index + 1)]) {
+          const label = `дней ${days}, сегодня ${today}, мансарда ${attic}`;
+          const layout = facadeLayout(days, today, attic ? rack : rackNoAttic);
+          expect(layout.columns, label).toBe(RACK_COLUMNS);
+          const windows = layout.cells.filter((cell) => cell.kind !== "door");
+          expect(windows.map((cell) => cell.n).sort((a, b) => a! - b!), label).toEqual(Array.from({ length: days }, (_, index) => index + 1));
+          const door = layout.cells.find((cell) => cell.kind === "door")!;
+          expect(door, label).toMatchObject({ col: 0.5, colSpan: 1, rowSpan: RACK_DOOR_ROWS });
+          expect(door.row + door.rowSpan, label).toBe(layout.rows);
+          // Ряды заполнены целиком (каждая клетка сетки занята ровно одним окном), перекрытий нет.
+          const taken = new Map<string, number>();
+          for (const cell of [...windows, door]) {
+            expect(cell.col + cell.colSpan, label).toBeLessThanOrEqual(RACK_COLUMNS);
+            for (let r = cell.row; r < cell.row + cell.rowSpan; r += 1) {
+              for (let c = cell.col; c < cell.col + cell.colSpan; c += 0.5) {
+                const key = `${r}:${c}`;
+                expect(taken.has(key), `${label}: перекрытие ${key}`).toBe(false);
+                taken.set(key, cell.n ?? 0);
+              }
+            }
+          }
+          for (let r = 0; r < door.row; r += 1) {
+            expect(taken.has(`${r}:0`) && taken.has(`${r}:1`), `${label}: дыра в ряду ${r}`).toBe(true);
+          }
+          // Сегодняшнее окно на всю ширину в два ряда; финал в мансарде на всю ширину сверху.
+          const big = windows.filter((cell) => cell.big);
+          expect(big.map((cell) => cell.n), label).toEqual(today === null ? [] : [today]);
+          for (const cell of big) expect(cell, label).toMatchObject({ col: 0, colSpan: 2, rowSpan: 2 });
+          if (attic) expect(windows.find((cell) => cell.n === days), label).toMatchObject({ kind: "attic", col: 0, row: 0, colSpan: 2 });
+        }
+      }
+    }
+  });
+
+  it("окна идут парами, нечётное последнее растягивается на ширину, сегодняшнее при нечётной позиции забирает место у предыдущего", () => {
+    const eight = facadeLayout(8, null, rackNoAttic);
+    expect(eight.cells.filter((cell) => cell.kind === "window").map((cell) => [cell.n, cell.col, cell.row])).toEqual([[1, 0, 0], [2, 1, 0], [3, 0, 1], [4, 1, 1], [5, 0, 2], [6, 1, 2], [7, 0, 3], [8, 1, 3]]);
+    const odd = facadeLayout(7, null, rackNoAttic);
+    expect(odd.cells.find((cell) => cell.n === 7)).toMatchObject({ col: 0, colSpan: 2 });
+    const today = facadeLayout(7, 4, rackNoAttic);
+    expect(today.cells.find((cell) => cell.n === 3)).toMatchObject({ col: 0, colSpan: 2 });
+    expect(today.cells.find((cell) => cell.n === 4)).toMatchObject({ col: 0, row: 2, rowSpan: 2, big: true });
+  });
+
+  it("обычная сетка по умолчанию остаётся в 4 колонки", () => {
+    expect(facadeLayout(12, 6, withAttic).columns).toBe(FACADE_COLUMNS);
   });
 });

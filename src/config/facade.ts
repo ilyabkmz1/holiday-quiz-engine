@@ -16,9 +16,10 @@ export type FacadeToken = z.infer<typeof facadeTokenSchema>;
 
 const id = z.string().regex(/^[a-z][a-z0-9-]{0,40}$/, "id фасада: строчные латинские буквы, цифры и дефис");
 
-export const ROOF_SHAPES = ["gable", "flat", "dome"] as const;
-export const WINDOW_SHAPES = ["arch", "square", "round"] as const;
-export const DOOR_SHAPES = ["arch", "square", "round"] as const;
+/** `cooling` — плоская крыша с блоками охлаждения и вентиляторами (дата-центр); `unit` — окно-юнит стойки: узкая прорезь с номером дня и рядом диодов; `hatch` — гермодверь машинного зала. */
+export const ROOF_SHAPES = ["gable", "flat", "dome", "cooling"] as const;
+export const WINDOW_SHAPES = ["arch", "square", "round", "unit"] as const;
+export const DOOR_SHAPES = ["arch", "square", "round", "hatch"] as const;
 
 /** Роли цвета: стена, крыша, обводка окон, стекло закрытого окна, свет открытого, дверь, земля, вывеска. */
 export const facadeColorsSchema = z.strictObject({
@@ -64,7 +65,9 @@ export const facadeSchema = z.strictObject({
   }),
   layout: z.strictObject({
     /** Финальное окно — «мансарда» шириной 2 колонки по центру сверху; без неё оно стоит в ряду последним. */
-    attic: z.boolean().default(true)
+    attic: z.boolean().default(true),
+    /** Колонок сетки окон: 4 (обычная) или 2 (узкие юниты стойки: пара в ряду, дверь в три ряда высотой). */
+    columns: z.union([z.literal(4), z.literal(2)]).default(4)
   }),
   /** Предметная обложка заданий «собери»: чашка со слоями для кофейни, коробка для остальных. */
   vessel: z.enum(["cup", "box", "stack"]).default("box"),
@@ -81,7 +84,9 @@ export const facadeChoiceSchema = z.strictObject({
   /** Герой, который стоит в двери; без поля — первый герой пакета. */
   hostHeroId: z.string().min(1).max(64).optional(),
   /** Текст вывески; без поля — название бренда. */
-  signText: z.string().trim().min(1).max(28).optional()
+  signText: z.string().trim().min(1).max(28).optional(),
+  /** Хозяин ходит по улице перед фасадом (выходит к сегодняшнему окну, идёт к тапнутому). `false` — стоит в двери, как раньше. */
+  hostWalks: z.boolean().default(true)
 });
 export type FacadeChoice = z.infer<typeof facadeChoiceSchema>;
 

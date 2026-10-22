@@ -92,7 +92,7 @@ describe("«Витрина» в заготовке адвента", () => {
     (profile, template) => {
       const { advent } = adventPackSchema.parse(buildAdventTemplate({ tenant: "acme", days: 12, profile }));
       expect(advent.presentation).toBe("storefront");
-      expect(advent.facade).toEqual({ templateId: template, hostHeroId: "hero-1" });
+      expect(advent.facade).toEqual({ templateId: template, hostHeroId: "hero-1", hostWalks: true });
     }
   );
 
@@ -107,7 +107,7 @@ describe("«Витрина» в заготовке адвента", () => {
     const pack = buildAdventTemplate({ tenant: "acme", days: 12, profile: "horeca" }) as { hosts: string[]; advent: Record<string, any> }; // eslint-disable-line @typescript-eslint/no-explicit-any
     const applied = applyAdventBrief(pack, parseBrief("- Вид (storefront / calendar): storefront\n- Фасад (cafe, shop, office, salon): salon\n- Вывеска (до 28 символов): Белый лотос"));
     expect(applied).toEqual(expect.arrayContaining(["presentation", "facade.templateId", "facade.signText"]));
-    expect(adventPackSchema.parse(pack).advent.facade).toEqual({ templateId: "salon", hostHeroId: "hero-1", signText: "Белый лотос" });
+    expect(adventPackSchema.parse(pack).advent.facade).toEqual({ templateId: "salon", hostHeroId: "hero-1", signText: "Белый лотос", hostWalks: true });
   });
 
   it("шаблон брифа знает поля «Фасад» и «Вывеска»", () => {

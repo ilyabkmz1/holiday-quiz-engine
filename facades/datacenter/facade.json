@@ -1,0 +1,37 @@
+{
+  "id": "datacenter",
+  "title": "Дата-центр: плоская крыша с блоками охлаждения, юниты стойки, гермодверь",
+  "roof": {
+    "shape": "cooling",
+    "awning": false
+  },
+  "windows": {
+    "shape": "unit",
+    "panes": "single"
+  },
+  "door": {
+    "shape": "hatch"
+  },
+  "decor": {
+    "garland": true,
+    "snow": false,
+    "sign": true
+  },
+  "layout": {
+    "attic": true,
+    "columns": 2
+  },
+  "vessel": "stack",
+  "colors": {
+    "wall": "deep",
+    "roof": "royal",
+    "trim": "haze",
+    "glass": "void",
+    "glow": "cyan",
+    "glowInk": "void",
+    "door": "panel",
+    "ground": "deep",
+    "sign": "gold",
+    "signInk": "on-gold"
+  }
+}
